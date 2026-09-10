@@ -12,7 +12,11 @@ import { StatusPill } from "@/components/agents/status-pill";
 import { LastCheckSummary } from "@/components/agents/last-check-summary";
 import { ReliabilityScoreBadge } from "@/components/agents/reliability-score";
 import { AgentCardSummary } from "@/components/agents/agent-card-summary";
-import { updateAgentAction, deleteAgentAction } from "@/lib/agents/actions";
+import {
+  updateAgentAction,
+  deleteAgentAction,
+  activateAgentAction,
+} from "@/lib/agents/actions";
 
 export default async function AgentDetailPage({
   params,
@@ -33,6 +37,8 @@ export default async function AgentDetailPage({
 
   const boundUpdate = updateAgentAction.bind(null, agent.id);
   const boundDelete = deleteAgentAction.bind(null, agent.id);
+  const boundActivate = activateAgentAction.bind(null, agent.id);
+  const isDraft = agent.lifecycleStatus === "draft";
 
   return (
     <div className="flex flex-col gap-6">
@@ -58,6 +64,26 @@ export default async function AgentDetailPage({
           View public profile →
         </Link>
       </div>
+
+      {isDraft && (
+        <div className="max-w-xl rounded-lg border border-accent/30 bg-surface p-4">
+          <h2 className="text-sm font-medium">This agent is still a draft</h2>
+          <p className="mt-1 text-sm text-muted">
+            Draft agents aren&apos;t on their public profile and aren&apos;t
+            checked by monitoring yet. Activate it to make it publicly
+            visible and start pull-based health checks and heartbeats
+            counting toward its trust score.
+          </p>
+          <form action={boundActivate} className="mt-3">
+            <button
+              type="submit"
+              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:opacity-90"
+            >
+              Activate agent
+            </button>
+          </form>
+        </div>
+      )}
 
       <div className="max-w-xl rounded-lg border border-border bg-surface p-4">
         <div className="flex items-center justify-between">

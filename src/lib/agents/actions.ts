@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { verifySession } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import {
+  activateOwnedAgent,
   createAgent,
   deleteOwnedAgent,
   updateOwnedAgent,
@@ -88,4 +89,12 @@ export async function deleteAgentAction(agentId: string) {
   await deleteOwnedAgent(db, session.userId, agentId);
   revalidatePath("/dashboard/agents");
   redirect("/dashboard/agents");
+}
+
+/** Draft -> active: the one step that makes an agent both publicly visible and eligible for pull monitoring. */
+export async function activateAgentAction(agentId: string) {
+  const session = await verifySession();
+  const agent = await activateOwnedAgent(db, session.userId, agentId);
+  revalidatePath("/dashboard/agents");
+  revalidatePath(`/dashboard/agents/${agent.slug}`);
 }

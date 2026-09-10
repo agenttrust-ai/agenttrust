@@ -4,6 +4,7 @@ import { createTestDb, seedUser } from "@/lib/db/test-harness";
 import type { AppDatabase } from "@/lib/db/rls";
 import { AppError, ErrorCode } from "@/lib/errors";
 import {
+  activateOwnedAgent,
   createAgent,
   deleteOwnedAgent,
   getOwnedAgent,
@@ -249,6 +250,44 @@ describe("deleteOwnedAgent", () => {
       },
     );
     expect(await getOwnedAgent(db, userA, created.id)).toBeTruthy();
+  });
+});
+
+describe("activateOwnedAgent — the draft -> active transition", () => {
+  it("lets the owner activate their own draft agent", async () => {
+    const created = await createAgent(db, userA, baseInput);
+    expect(created.lifecycleStatus).toBe("draft");
+
+    const activated = await activateOwnedAgent(db, userA, created.id);
+    expect(activated.lifecycleStatus).toBe("active");
+  });
+
+  it("rejects activation from a non-owner as NOT_FOUND, and leaves the agent in draft", async () => {
+    const created = await createAgent(db, userA, baseInput);
+    await expect(activateOwnedAgent(db, userB, created.id)).rejects.toMatchObject({
+      code: ErrorCode.NOT_FOUND,
+    });
+
+    const stillDraft = await getOwnedAgent(db, userA, created.id);
+    expect(stillDraft.lifecycleStatus).toBe("draft");
+  });
+
+  it("rejects activating a nonexistent agent", async () => {
+    await expect(
+      activateOwnedAgent(db, userA, "00000000-0000-0000-0000-000000000000"),
+    ).rejects.toMatchObject({ code: ErrorCode.NOT_FOUND });
+  });
+
+  it("makes the agent visible on its public profile once activated (it was NOT_FOUND before)", async () => {
+    const created = await createAgent(db, userA, baseInput);
+    await expect(getPublicAgentBySlug(db, created.slug)).rejects.toMatchObject({
+      code: ErrorCode.NOT_FOUND,
+    });
+
+    await activateOwnedAgent(db, userA, created.id);
+
+    const found = await getPublicAgentBySlug(db, created.slug);
+    expect(found.id).toBe(created.id);
   });
 });
 

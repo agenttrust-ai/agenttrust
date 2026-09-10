@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import { createTestDb, seedUser } from "@/lib/db/test-harness";
 import type { AppDatabase } from "@/lib/db/rls";
-import { createAgent } from "./agents";
+import { activateOwnedAgent, createAgent } from "./agents";
 import {
   claimDueAgents,
   getLatestChecksForAgents,
@@ -59,6 +59,18 @@ afterEach(async () => {
 });
 
 describe("claimDueAgents", () => {
+  it("a freshly-registered (draft) agent is not claimed until its owner activates it via activateOwnedAgent", async () => {
+    const agent = await createAgent(db, userA, baseInput);
+
+    const beforeActivation = await claimDueAgents(db, 10);
+    expect(beforeActivation.map((a) => a.id)).not.toContain(agent.id);
+
+    await activateOwnedAgent(db, userA, agent.id);
+
+    const afterActivation = await claimDueAgents(db, 10);
+    expect(afterActivation.map((a) => a.id)).toContain(agent.id);
+  });
+
   it("claims an active agent that has never been checked (next_check_at is null)", async () => {
     const agent = await createAgent(db, userA, baseInput);
     await activateAgent(agent.id);

@@ -198,6 +198,34 @@ export async function deleteOwnedAgent(
 }
 
 /**
+ * Moves an owned agent out of `draft` into `active` — the one flag that
+ * simultaneously (a) makes it visible under RLS's "public reads active
+ * public agents" policy and (b) makes it eligible for the pull-monitoring
+ * cron, since `claimDueAgents` (src/lib/db/queries/health-checks.ts) only
+ * ever claims `active` agents. There is deliberately no automatic path to
+ * this state — every agent starts `draft` (the column's own default) and
+ * stays invisible/unmonitored until its owner explicitly activates it.
+ * Scoped by owner exactly like every other write here; a non-owner gets
+ * the same NOT_FOUND every other function in this file uses to avoid
+ * leaking existence.
+ */
+export async function activateOwnedAgent(
+  db: AppDatabase,
+  ownerId: string,
+  agentId: string,
+): Promise<Agent> {
+  return withUserContext(db, ownerId, async (tx) => {
+    const [agent] = await tx
+      .update(agents)
+      .set({ lifecycleStatus: "active", updatedAt: new Date() })
+      .where(and(eq(agents.id, agentId), eq(agents.ownerId, ownerId)))
+      .returning();
+    if (!agent) throw new AppError(ErrorCode.NOT_FOUND, AGENT_NOT_FOUND);
+    return agent;
+  });
+}
+
+/**
  * Marks an owned agent alive right now, using the server's own clock — the
  * timestamp is never taken from the caller, so there's no way for a client
  * to backdate or future-date a heartbeat. The `slug`+`ownerId` match in the
