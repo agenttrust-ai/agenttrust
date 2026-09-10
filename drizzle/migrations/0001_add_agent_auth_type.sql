@@ -1,0 +1,2 @@
+CREATE TYPE "public"."agent_auth_type" AS ENUM('none', 'api_key', 'bearer', 'oauth2', 'custom');--> statement-breakpoint
+ALTER TABLE "agents" ADD COLUMN "auth_type" "agent_auth_type" DEFAULT 'none' NOT NULL;

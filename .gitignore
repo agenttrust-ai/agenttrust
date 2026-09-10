@@ -32,9 +32,15 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
+
+# one-off local verification/audit scripts (talk to the real Supabase
+# project with throwaway data; never meant to be committed)
+.verify-*.mjs
+.audit-*.mjs
 
 # typescript
 *.tsbuildinfo

@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1788793207942,
+      "tag": "0000_medical_sunspot",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788872580570,
+      "tag": "0001_add_agent_auth_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788875044314,
+      "tag": "0002_add_health_check_fields",
+      "breakpoints": true
+    }
+  ]
+}
