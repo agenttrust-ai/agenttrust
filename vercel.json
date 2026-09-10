@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/internal/cron/run-health-checks",
-      "schedule": "* * * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }
