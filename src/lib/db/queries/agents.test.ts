@@ -1,10 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import { createTestDb, seedUser } from "@/lib/db/test-harness";
 import type { AppDatabase } from "@/lib/db/rls";
 import { AppError, ErrorCode } from "@/lib/errors";
+
+vi.mock("@/lib/monitoring/safe-fetch", () => ({
+  fetchOwnershipVerificationFile: vi.fn(),
+}));
+
 import {
   activateOwnedAgent,
+  checkOwnershipVerification,
   createAgent,
   deleteOwnedAgent,
   getOwnedAgent,
@@ -13,12 +19,16 @@ import {
   listAgentsForOwner,
   listPublicAgents,
   recordAgentHeartbeatBySlug,
+  startOwnershipVerification,
   updateOwnedAgent,
 } from "./agents";
 import type { AgentInput } from "@/lib/validation/agent";
 import { AGENT_CARD_SCHEMA_VERSION } from "@/lib/validation/agent-card";
 import { decryptAgentCredential } from "@/lib/security/agent-credentials";
 import { env } from "@/lib/config.server";
+import { fetchOwnershipVerificationFile } from "@/lib/monitoring/safe-fetch";
+
+const mockedFetchOwnershipVerificationFile = vi.mocked(fetchOwnershipVerificationFile);
 
 const userA = "11111111-1111-1111-1111-111111111111";
 const userB = "22222222-2222-2222-2222-222222222222";
@@ -42,6 +52,7 @@ beforeEach(async () => {
   db = harness.db;
   await seedUser(client, userA, "a@example.com");
   await seedUser(client, userB, "b@example.com");
+  mockedFetchOwnershipVerificationFile.mockReset();
 });
 
 afterEach(async () => {
@@ -233,6 +244,37 @@ describe("updateOwnedAgent", () => {
         endpointUrl: "http://insecure.example.com",
       }),
     ).rejects.toThrow();
+  });
+
+  it("clears any ownership-verification token/timestamp when the endpoint URL changes", async () => {
+    const created = await createAgent(db, userA, baseInput);
+    await startOwnershipVerification(db, userA, created.id);
+    mockedFetchOwnershipVerificationFile.mockResolvedValue({
+      success: true,
+      body: (await getOwnedAgent(db, userA, created.id)).ownershipVerificationToken!,
+    });
+    const verified = await checkOwnershipVerification(db, userA, created.id);
+    expect(verified.ownershipVerifiedAt).not.toBeNull();
+
+    const updated = await updateOwnedAgent(db, userA, created.id, {
+      ...baseInput,
+      endpointUrl: "https://a-different-endpoint.example.com/v1/invoke",
+    });
+
+    expect(updated.ownershipVerificationToken).toBeNull();
+    expect(updated.ownershipVerifiedAt).toBeNull();
+  });
+
+  it("preserves the ownership-verification state when the endpoint URL is unchanged", async () => {
+    const created = await createAgent(db, userA, baseInput);
+    const started = await startOwnershipVerification(db, userA, created.id);
+
+    const updated = await updateOwnedAgent(db, userA, created.id, {
+      ...baseInput,
+      name: "Renamed, same endpoint",
+    });
+
+    expect(updated.ownershipVerificationToken).toBe(started.ownershipVerificationToken);
   });
 });
 
@@ -444,6 +486,187 @@ describe("credential create/preserve/replace/clear semantics", () => {
 
       expect(updated.name).toBe("Still None");
       expect(updated.authCredentialCiphertext).toBeNull();
+    });
+  });
+});
+
+describe("endpoint-ownership verification", () => {
+  describe("startOwnershipVerification", () => {
+    it("generates and stores a token for a fresh agent", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      expect(created.ownershipVerificationToken).toBeNull();
+
+      const started = await startOwnershipVerification(db, userA, created.id);
+      expect(started.ownershipVerificationToken).not.toBeNull();
+      expect(started.ownershipVerificationToken).toMatch(/^[0-9a-f]{48}$/);
+      expect(started.ownershipVerifiedAt).toBeNull();
+    });
+
+    it("is idempotent — a second call returns the same token, not a new one", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      const first = await startOwnershipVerification(db, userA, created.id);
+      const second = await startOwnershipVerification(db, userA, created.id);
+      expect(second.ownershipVerificationToken).toBe(first.ownershipVerificationToken);
+    });
+
+    it("rejects a non-owner as NOT_FOUND, and never calls the network fetcher", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      await expect(
+        startOwnershipVerification(db, userB, created.id),
+      ).rejects.toMatchObject({ code: ErrorCode.NOT_FOUND });
+      expect(mockedFetchOwnershipVerificationFile).not.toHaveBeenCalled();
+    });
+
+    it("raises NOT_FOUND for a nonexistent agent id", async () => {
+      await expect(
+        startOwnershipVerification(db, userA, "00000000-0000-0000-0000-000000000000"),
+      ).rejects.toMatchObject({ code: ErrorCode.NOT_FOUND });
+    });
+  });
+
+  describe("checkOwnershipVerification", () => {
+    it("marks the agent verified and records a timestamp when the served file matches the token", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      const started = await startOwnershipVerification(db, userA, created.id);
+      mockedFetchOwnershipVerificationFile.mockResolvedValue({
+        success: true,
+        body: started.ownershipVerificationToken!,
+      });
+
+      const before = new Date();
+      const verified = await checkOwnershipVerification(db, userA, created.id);
+      expect(verified.ownershipVerifiedAt).not.toBeNull();
+      expect(verified.ownershipVerifiedAt!.getTime()).toBeGreaterThanOrEqual(before.getTime());
+    });
+
+    it("tolerates a trailing newline in the served file, same as a real text file would have", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      const started = await startOwnershipVerification(db, userA, created.id);
+      mockedFetchOwnershipVerificationFile.mockResolvedValue({
+        success: true,
+        body: `${started.ownershipVerificationToken}\n`,
+      });
+
+      const verified = await checkOwnershipVerification(db, userA, created.id);
+      expect(verified.ownershipVerifiedAt).not.toBeNull();
+    });
+
+    it("does NOT mark verified, and returns a safe error, on an incorrect token", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      await startOwnershipVerification(db, userA, created.id);
+      mockedFetchOwnershipVerificationFile.mockResolvedValue({
+        success: true,
+        body: "the-wrong-value",
+      });
+
+      await expect(
+        checkOwnershipVerification(db, userA, created.id),
+      ).rejects.toMatchObject({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: "The verification file's contents didn't match the expected token.",
+      });
+      const after = await getOwnedAgent(db, userA, created.id);
+      expect(after.ownershipVerifiedAt).toBeNull();
+    });
+
+    it("does NOT mark verified when the file is missing (fetch reports failure)", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      await startOwnershipVerification(db, userA, created.id);
+      mockedFetchOwnershipVerificationFile.mockResolvedValue({
+        success: false,
+        errorCode: "HTTP_404",
+        errorMessage: "The verification endpoint responded with HTTP 404.",
+      });
+
+      await expect(
+        checkOwnershipVerification(db, userA, created.id),
+      ).rejects.toMatchObject({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: "The verification endpoint responded with HTTP 404.",
+      });
+      const after = await getOwnedAgent(db, userA, created.id);
+      expect(after.ownershipVerifiedAt).toBeNull();
+    });
+
+    it("does NOT mark verified on a timeout, and surfaces the fetcher's safe error message", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      await startOwnershipVerification(db, userA, created.id);
+      mockedFetchOwnershipVerificationFile.mockResolvedValue({
+        success: false,
+        errorCode: "TIMEOUT",
+        errorMessage: "The endpoint took too long to respond.",
+      });
+
+      await expect(
+        checkOwnershipVerification(db, userA, created.id),
+      ).rejects.toMatchObject({ code: ErrorCode.VALIDATION_ERROR });
+    });
+
+    it("does NOT mark verified when the fetcher reports an SSRF block", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      await startOwnershipVerification(db, userA, created.id);
+      mockedFetchOwnershipVerificationFile.mockResolvedValue({
+        success: false,
+        errorCode: "SSRF_BLOCKED",
+        errorMessage: "The endpoint resolved to a blocked network address.",
+      });
+
+      await expect(
+        checkOwnershipVerification(db, userA, created.id),
+      ).rejects.toMatchObject({ code: ErrorCode.VALIDATION_ERROR });
+      const after = await getOwnedAgent(db, userA, created.id);
+      expect(after.ownershipVerifiedAt).toBeNull();
+    });
+
+    it("rejects checking before starting — a nonexistent token is a validation error, not a crash", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      await expect(
+        checkOwnershipVerification(db, userA, created.id),
+      ).rejects.toMatchObject({ code: ErrorCode.VALIDATION_ERROR });
+      expect(mockedFetchOwnershipVerificationFile).not.toHaveBeenCalled();
+    });
+
+    it("rejects a non-owner as NOT_FOUND, and never calls the network fetcher", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      await startOwnershipVerification(db, userA, created.id);
+      await expect(
+        checkOwnershipVerification(db, userB, created.id),
+      ).rejects.toMatchObject({ code: ErrorCode.NOT_FOUND });
+      expect(mockedFetchOwnershipVerificationFile).not.toHaveBeenCalled();
+    });
+
+    it("fetches the well-known path at the endpoint's origin, not the endpoint's own invocation URL", async () => {
+      const created = await createAgent(db, userA, baseInput); // endpointUrl: https://agent.acme.io/v1/invoke
+      const started = await startOwnershipVerification(db, userA, created.id);
+      mockedFetchOwnershipVerificationFile.mockResolvedValue({
+        success: true,
+        body: started.ownershipVerificationToken!,
+      });
+
+      await checkOwnershipVerification(db, userA, created.id);
+
+      expect(mockedFetchOwnershipVerificationFile).toHaveBeenCalledWith(
+        "https://agent.acme.io/.well-known/agenttrust-verification.txt",
+      );
+    });
+  });
+
+  describe("existing agents with no verification state", () => {
+    it("an agent that has never started verification has null token and null verifiedAt", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      expect(created.ownershipVerificationToken).toBeNull();
+      expect(created.ownershipVerifiedAt).toBeNull();
+    });
+
+    it("existing NULL-credential agents are completely unaffected by ownership-verification columns", async () => {
+      const created = await createAgent(db, userA, {
+        ...baseInput,
+        authType: "none",
+        authCredential: undefined,
+      });
+      expect(created.authCredentialCiphertext).toBeNull();
+      expect(created.ownershipVerificationToken).toBeNull();
+      expect(created.ownershipVerifiedAt).toBeNull();
     });
   });
 });

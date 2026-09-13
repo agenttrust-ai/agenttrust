@@ -47,6 +47,11 @@ export default async function PublicAgentProfilePage({
         <div className="flex flex-col items-end gap-1.5">
           <StatusPill status={getEffectiveAgentStatus(agent)} />
           <ReliabilityScoreBadge score={latestScore?.score ?? null} />
+          {agent.ownershipVerifiedAt && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-400">
+              Endpoint verified
+            </span>
+          )}
         </div>
       </div>
 

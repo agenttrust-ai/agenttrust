@@ -407,3 +407,175 @@ export async function checkAgentEndpoint(
 
   return fetchWithGuard(url, { lookup: createSafeLookup(), authHeader });
 }
+
+/** Hard cap on how much of a verification-file response body is ever read into memory. */
+const VERIFICATION_MAX_BODY_BYTES = 4_096;
+const VERIFICATION_CONNECT_TIMEOUT_MS = 5_000;
+const VERIFICATION_TOTAL_TIMEOUT_MS = 8_000;
+
+export type VerificationFetchOutcome =
+  | { success: true; body: string }
+  | { success: false; errorCode: string; errorMessage: string };
+
+/**
+ * Fetches a small text resource (the ownership-verification well-known
+ * file) under the same SSRF defenses as `fetchWithGuard` — same DNS-
+ * rebinding-safe `lookup`, same per-hop `assertSafeAgentUrl` revalidation,
+ * same bounded connect/total timeouts — but, unlike every other fetch in
+ * this module, actually reads the response body (health checks always
+ * discard it). Reading is capped at `VERIFICATION_MAX_BODY_BYTES`: the
+ * stream is aborted the instant that's exceeded, so a misconfigured or
+ * hostile server streaming gigabytes back can never be read into memory.
+ *
+ * Deliberately a sibling function rather than a `fetchWithGuard` option:
+ * that function's `FetchOutcome`/health-check callers never need a body,
+ * and threading one through would touch tested, unrelated code for a
+ * concern only this feature has.
+ */
+export type FetchOwnershipVerificationOptions = {
+  /** Injectable so tests can point resolution at a local test server without going through real DNS. Defaults to the real DNS-rebinding-safe resolver. */
+  lookup?: CustomLookup;
+  connectTimeoutMs?: number;
+  totalTimeoutMs?: number;
+  /** Test-only: an extra CA certificate to trust, same purpose as `FetchWithGuardOptions.extraCaCert`. */
+  extraCaCert?: string | Buffer;
+};
+
+export async function fetchOwnershipVerificationFile(
+  url: string,
+  opts: FetchOwnershipVerificationOptions = {},
+): Promise<VerificationFetchOutcome> {
+  const {
+    lookup = createSafeLookup(),
+    connectTimeoutMs = VERIFICATION_CONNECT_TIMEOUT_MS,
+    totalTimeoutMs = VERIFICATION_TOTAL_TIMEOUT_MS,
+    extraCaCert,
+  } = opts;
+
+  try {
+    assertSafeAgentUrl(url);
+  } catch (error) {
+    return {
+      success: false,
+      errorCode: "SSRF_BLOCKED",
+      errorMessage: error instanceof Error ? error.message : "Blocked URL.",
+    };
+  }
+
+  const agent = new Agent({
+    connect: {
+      lookup,
+      timeout: connectTimeoutMs,
+      ...(extraCaCert ? { ca: extraCaCert } : {}),
+    },
+    keepAliveTimeout: 1,
+    keepAliveMaxTimeout: 1,
+  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), totalTimeoutMs);
+
+  try {
+    let currentUrl = url;
+
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      try {
+        assertSafeAgentUrl(currentUrl);
+      } catch (error) {
+        return {
+          success: false,
+          errorCode: "SSRF_BLOCKED",
+          errorMessage: error instanceof Error ? error.message : "Blocked URL.",
+        };
+      }
+
+      let response: Awaited<ReturnType<typeof undiciFetch>>;
+      try {
+        response = await undiciFetch(currentUrl, {
+          method: "GET",
+          redirect: "manual",
+          dispatcher: agent,
+          signal: controller.signal,
+          headers: { "user-agent": USER_AGENT },
+        });
+      } catch (error) {
+        const classified = classifyNetworkError(error, 0);
+        return {
+          success: false,
+          errorCode: classified.errorCode ?? "UNKNOWN_ERROR",
+          errorMessage:
+            classified.errorMessage ?? "The verification check couldn't be completed.",
+        };
+      }
+
+      const isRedirect =
+        response.status >= 300 &&
+        response.status < 400 &&
+        response.headers.has("location");
+
+      if (isRedirect) {
+        await response.body?.cancel().catch(() => {});
+        let nextUrl: string;
+        try {
+          nextUrl = new URL(
+            response.headers.get("location")!,
+            currentUrl,
+          ).toString();
+        } catch {
+          return {
+            success: false,
+            errorCode: "INVALID_REDIRECT",
+            errorMessage: "The verification endpoint returned an invalid redirect.",
+          };
+        }
+        currentUrl = nextUrl;
+        continue;
+      }
+
+      if (response.status !== 200) {
+        await response.body?.cancel().catch(() => {});
+        return {
+          success: false,
+          errorCode: `HTTP_${response.status}`,
+          errorMessage: `The verification endpoint responded with HTTP ${response.status}.`,
+        };
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        return {
+          success: false,
+          errorCode: "EMPTY_BODY",
+          errorMessage: "The verification endpoint returned no body.",
+        };
+      }
+
+      let receivedBytes = 0;
+      const chunks: Uint8Array[] = [];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        receivedBytes += value.byteLength;
+        if (receivedBytes > VERIFICATION_MAX_BODY_BYTES) {
+          await reader.cancel().catch(() => {});
+          return {
+            success: false,
+            errorCode: "TOO_LARGE",
+            errorMessage: "The verification endpoint's response was too large.",
+          };
+        }
+        chunks.push(value);
+      }
+      return { success: true, body: Buffer.concat(chunks).toString("utf8") };
+    }
+
+    return {
+      success: false,
+      errorCode: "TOO_MANY_REDIRECTS",
+      errorMessage: "The verification endpoint redirected too many times.",
+    };
+  } finally {
+    clearTimeout(timer);
+    await agent.close().catch(() => {});
+  }
+}

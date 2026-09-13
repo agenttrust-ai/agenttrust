@@ -12,6 +12,8 @@ import { StatusPill } from "@/components/agents/status-pill";
 import { LastCheckSummary } from "@/components/agents/last-check-summary";
 import { ReliabilityScoreBadge } from "@/components/agents/reliability-score";
 import { AgentCardSummary } from "@/components/agents/agent-card-summary";
+import { OwnershipVerificationPanel } from "@/components/agents/ownership-verification";
+import { buildVerificationUrl } from "@/lib/verification/ownership";
 import {
   updateAgentAction,
   deleteAgentAction,
@@ -34,6 +36,18 @@ export default async function AgentDetailPage({
     agent.id,
   );
   const card = buildAgentCard(agent);
+  // endpointUrl is always a well-formed URL by the time it's stored (the
+  // same zod validation `agentColumns` relies on), so this can't actually
+  // fail — the try/catch is just defense against ever crashing this page
+  // render on a future/unexpected edge case.
+  let verificationUrl: string | null = null;
+  if (agent.ownershipVerificationToken) {
+    try {
+      verificationUrl = buildVerificationUrl(agent.endpointUrl);
+    } catch {
+      verificationUrl = null;
+    }
+  }
 
   const boundUpdate = updateAgentAction.bind(null, agent.id);
   const boundDelete = deleteAgentAction.bind(null, agent.id);
@@ -129,6 +143,13 @@ export default async function AgentDetailPage({
             <p className="mt-3 text-sm text-red-600">{latest.errorMessage}</p>
           )}
       </div>
+
+      <OwnershipVerificationPanel
+        agentId={agent.id}
+        verificationToken={agent.ownershipVerificationToken}
+        verificationUrl={verificationUrl}
+        verifiedAt={agent.ownershipVerifiedAt?.toISOString() ?? null}
+      />
 
       <div className="max-w-xl rounded-lg border border-border bg-surface p-4">
         <div className="flex items-center justify-between">

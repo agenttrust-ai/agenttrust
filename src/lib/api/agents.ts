@@ -38,6 +38,11 @@ function toPublicAgentJson(agent: Agent) {
     // Built purely from fields already on `agent` — no extra query, so
     // this is free on both the list and detail endpoints alike.
     agentCard: buildAgentCard(agent),
+    // The endpoint-ownership verification *result* — never the challenge
+    // token itself (agent.ownershipVerificationToken is deliberately never
+    // referenced here; see src/lib/verification/ownership.ts).
+    verified: agent.ownershipVerifiedAt !== null,
+    ownershipVerifiedAt: agent.ownershipVerifiedAt,
   };
 }
 

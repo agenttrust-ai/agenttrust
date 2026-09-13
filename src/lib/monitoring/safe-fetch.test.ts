@@ -14,6 +14,7 @@ import {
 import {
   checkAgentEndpoint,
   fetchWithGuard,
+  fetchOwnershipVerificationFile,
   createSafeLookup,
   type CustomLookup,
   type FetchAuthHeader,
@@ -130,6 +131,28 @@ beforeAll(async () => {
           res.writeHead(200);
           res.end("too slow");
         }, 3000);
+        return;
+      }
+      if (url === "/.well-known/agenttrust-verification.txt") {
+        res.writeHead(200, { "content-type": "text/plain" });
+        res.end("the-correct-token\n");
+        return;
+      }
+      if (url === "/redirect-to-verification-file") {
+        res.writeHead(302, { Location: "/.well-known/agenttrust-verification.txt" });
+        res.end();
+        return;
+      }
+      if (url === "/verification-too-large") {
+        res.writeHead(200, { "content-type": "text/plain" });
+        res.end("x".repeat(10_000));
+        return;
+      }
+      if (url === "/verification-slow") {
+        setTimeout(() => {
+          res.writeHead(200);
+          res.end("the-correct-token");
+        }, 500);
         return;
       }
       res.writeHead(404);
@@ -495,5 +518,110 @@ describe("fetchWithGuard — authenticated requests", () => {
     });
     const serialized = JSON.stringify(result);
     expect(serialized).not.toContain("secret-token");
+  });
+});
+
+describe("fetchOwnershipVerificationFile", () => {
+  it("returns the response body on a successful fetch", async () => {
+    const result = await fetchOwnershipVerificationFile(
+      withPort("/.well-known/agenttrust-verification.txt", port),
+      { lookup: testLookup, extraCaCert: cert.cert },
+    );
+    expect(result).toEqual({ success: true, body: "the-correct-token\n" });
+  });
+
+  it("follows a redirect to reach the file", async () => {
+    const result = await fetchOwnershipVerificationFile(
+      withPort("/redirect-to-verification-file", port),
+      { lookup: testLookup, extraCaCert: cert.cert },
+    );
+    expect(result).toEqual({ success: true, body: "the-correct-token\n" });
+  });
+
+  it("fails with a safe error on a non-200 response, never exposing raw response content", async () => {
+    const result = await fetchOwnershipVerificationFile(withPort("/notfound", port), {
+      lookup: testLookup,
+      extraCaCert: cert.cert,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.errorCode).toBe("HTTP_404");
+      expect(result.errorMessage).not.toContain("nope"); // the /notfound route's actual body text
+    }
+  });
+
+  it("fails with a safe error on a 500 response", async () => {
+    const result = await fetchOwnershipVerificationFile(withPort("/error", port), {
+      lookup: testLookup,
+      extraCaCert: cert.cert,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.errorCode).toBe("HTTP_500");
+  });
+
+  it("rejects a response body larger than the size cap, without reading it all into memory first", async () => {
+    const result = await fetchOwnershipVerificationFile(
+      withPort("/verification-too-large", port),
+      { lookup: testLookup, extraCaCert: cert.cert },
+    );
+    expect(result).toEqual({
+      success: false,
+      errorCode: "TOO_LARGE",
+      errorMessage: "The verification endpoint's response was too large.",
+    });
+  });
+
+  it("times out on a slow endpoint", async () => {
+    const result = await fetchOwnershipVerificationFile(withPort("/verification-slow", port), {
+      lookup: testLookup,
+      extraCaCert: cert.cert,
+      totalTimeoutMs: 100,
+    });
+    expect(result.success).toBe(false);
+    // errorCode's exact value depends on how Node surfaces the abort (a
+    // DOMException's `.code` can be numeric) — the fixed, safe message is
+    // the reliable, meaningful assertion, same reasoning `fetchWithGuard`'s
+    // own timeout test already applies (it only checks `status`, not the
+    // raw code, for exactly this reason).
+    if (!result.success) {
+      expect(result.errorMessage).toBe("The endpoint took too long to respond.");
+    }
+  });
+
+  it("blocks a request to a private IP literal (SSRF)", async () => {
+    const result = await fetchOwnershipVerificationFile("https://127.0.0.1/.well-known/agenttrust-verification.txt", {
+      lookup: testLookup,
+      extraCaCert: cert.cert,
+    });
+    expect(result).toMatchObject({ success: false, errorCode: "SSRF_BLOCKED" });
+  });
+
+  it("blocks a redirect that points at a private IP literal", async () => {
+    const result = await fetchOwnershipVerificationFile(withPort("/redirect-private", port), {
+      lookup: testLookup,
+      extraCaCert: cert.cert,
+    });
+    expect(result).toMatchObject({ success: false, errorCode: "SSRF_BLOCKED" });
+  });
+
+  it("gives up after too many redirects", async () => {
+    const result = await fetchOwnershipVerificationFile(withPort("/redirect-loop", port), {
+      lookup: testLookup,
+      extraCaCert: cert.cert,
+    });
+    expect(result).toMatchObject({ success: false, errorCode: "TOO_MANY_REDIRECTS" });
+  });
+
+  it("classifies a DNS resolution failure safely", async () => {
+    const dnsFailLookup: CustomLookup = (_hostname, _options, callback) => {
+      const err = new Error("not found") as NodeJS.ErrnoException;
+      err.code = "ENOTFOUND";
+      callback(err, "", undefined);
+    };
+    const result = await fetchOwnershipVerificationFile(
+      "https://this-does-not-matter.invalid/.well-known/agenttrust-verification.txt",
+      { lookup: dnsFailLookup },
+    );
+    expect(result).toMatchObject({ success: false, errorCode: "ENOTFOUND" });
   });
 });

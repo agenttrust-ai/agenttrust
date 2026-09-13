@@ -198,6 +198,24 @@ describe("handleListAgents", () => {
     expect(serialized).not.toContain("authCredentialCiphertext");
     expect(serialized).not.toContain("auth_credential_ciphertext");
   });
+
+  it("never leaks the ownership-verification challenge token in the public agents listing", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const agent = await createAgent(db, userA, baseInput);
+    await activate(agent.id);
+    await client.query(
+      `update public.agents set ownership_verification_token = $2 where id = $1`,
+      [agent.id, "another-planted-fake-verification-token"],
+    );
+
+    const res = await handleListAgents(db, requestTo("/api/v1/agents", rawKey));
+    const body = await bodyOf(res);
+    const serialized = JSON.stringify(body);
+
+    expect(serialized).not.toContain("another-planted-fake-verification-token");
+    expect(serialized).not.toContain("ownershipVerificationToken");
+    expect(serialized).not.toContain("ownership_verification_token");
+  });
 });
 
 describe("handleGetAgent", () => {
@@ -269,6 +287,50 @@ describe("handleGetAgent", () => {
     expect(serialized).not.toContain(agent.authCredentialCiphertext);
     expect(serialized).not.toContain("authCredentialCiphertext");
     expect(serialized).not.toContain("auth_credential_ciphertext");
+  });
+
+  it("reports verified: false and a null ownershipVerifiedAt for an agent that was never verified", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const agent = await createAgent(db, userA, baseInput);
+    await activate(agent.id);
+
+    const res = await handleGetAgent(db, requestTo(`/api/v1/agents/${agent.slug}`, rawKey), agent.slug);
+    const body = await bodyOf(res);
+    expect(body.data.verified).toBe(false);
+    expect(body.data.ownershipVerifiedAt).toBeNull();
+  });
+
+  it("reports verified: true and a real timestamp once ownership has been verified", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const agent = await createAgent(db, userA, baseInput);
+    await activate(agent.id);
+    await client.query(
+      `update public.agents set ownership_verified_at = now() where id = $1`,
+      [agent.id],
+    );
+
+    const res = await handleGetAgent(db, requestTo(`/api/v1/agents/${agent.slug}`, rawKey), agent.slug);
+    const body = await bodyOf(res);
+    expect(body.data.verified).toBe(true);
+    expect(body.data.ownershipVerifiedAt).not.toBeNull();
+  });
+
+  it("never leaks the ownership-verification challenge token in the public agent JSON", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const agent = await createAgent(db, userA, baseInput);
+    await activate(agent.id);
+    await client.query(
+      `update public.agents set ownership_verification_token = $2 where id = $1`,
+      [agent.id, "planted-fake-verification-token-value"],
+    );
+
+    const res = await handleGetAgent(db, requestTo(`/api/v1/agents/${agent.slug}`, rawKey), agent.slug);
+    const body = await bodyOf(res);
+    const serialized = JSON.stringify(body);
+
+    expect(serialized).not.toContain("planted-fake-verification-token-value");
+    expect(serialized).not.toContain("ownershipVerificationToken");
+    expect(serialized).not.toContain("ownership_verification_token");
   });
 });
 

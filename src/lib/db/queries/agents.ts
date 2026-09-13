@@ -13,6 +13,12 @@ import { AGENT_CARD_SCHEMA_VERSION } from "@/lib/validation/agent-card";
 import { AppError, ErrorCode } from "@/lib/errors";
 import { env } from "@/lib/config.server";
 import { encryptAgentCredential } from "@/lib/security/agent-credentials";
+import {
+  buildVerificationUrl,
+  generateVerificationToken,
+  tokenMatches,
+} from "@/lib/verification/ownership";
+import { fetchOwnershipVerificationFile } from "@/lib/monitoring/safe-fetch";
 
 export type Agent = typeof agents.$inferSelect;
 
@@ -171,6 +177,28 @@ function resolveCredentialColumnsForUpdate(
 }
 
 /**
+ * Endpoint-ownership verification proves control of one specific origin —
+ * it says nothing about any *other* origin. If the owner changes the
+ * endpoint URL, a previously-verified (or in-progress) check for the old
+ * origin must not silently carry over to the new one; that would let
+ * anyone verify once against a domain they control and then repoint the
+ * agent at an arbitrary different endpoint while keeping the "verified"
+ * badge. Comparing the full URL (not just the origin) is deliberately
+ * stricter than necessary for the security property alone, but simpler to
+ * reason about and still correct: a path-only change means AgentTrust
+ * hasn't re-confirmed anything about how *this* URL behaves either.
+ */
+function resolveOwnershipColumnsForUpdate(
+  input: AgentInput,
+  current: Pick<Agent, "endpointUrl">,
+) {
+  if (input.endpointUrl !== current.endpointUrl) {
+    return { ownershipVerificationToken: null, ownershipVerifiedAt: null };
+  }
+  return {};
+}
+
+/**
  * Every function below scopes its query by `ownerId` in the `WHERE` clause
  * (application-level authorization) *and* runs inside `withUserContext`, so
  * Postgres's own RLS policies (supabase/migrations/0001_rls_and_triggers.sql)
@@ -278,6 +306,7 @@ export async function updateOwnedAgent(
           authType: agents.authType,
           authCredentialCiphertext: agents.authCredentialCiphertext,
           authHeaderName: agents.authHeaderName,
+          endpointUrl: agents.endpointUrl,
         })
         .from(agents)
         .where(and(eq(agents.id, agentId), eq(agents.ownerId, ownerId)))
@@ -289,6 +318,7 @@ export async function updateOwnedAgent(
         .set({
           ...agentColumns(input),
           ...resolveCredentialColumnsForUpdate(input, current),
+          ...resolveOwnershipColumnsForUpdate(input, current),
           updatedAt: new Date(),
         })
         .where(and(eq(agents.id, agentId), eq(agents.ownerId, ownerId)))
@@ -348,6 +378,88 @@ export async function activateOwnedAgent(
       .returning();
     if (!agent) throw new AppError(ErrorCode.NOT_FOUND, AGENT_NOT_FOUND);
     return agent;
+  });
+}
+
+/**
+ * Begins (or re-fetches) endpoint-ownership verification for an owned
+ * agent: generates a random challenge token the first time this is called
+ * and stores it, so the owner's dashboard can show them what to publish.
+ * Idempotent — calling this again once a token already exists just returns
+ * the current row unchanged, so re-visiting the page never invalidates a
+ * token the owner may have already published.
+ */
+export async function startOwnershipVerification(
+  db: AppDatabase,
+  ownerId: string,
+  agentId: string,
+): Promise<Agent> {
+  const agent = await getOwnedAgent(db, ownerId, agentId);
+  if (agent.ownershipVerificationToken) return agent;
+
+  return withUserContext(db, ownerId, async (tx) => {
+    const [updated] = await tx
+      .update(agents)
+      .set({
+        ownershipVerificationToken: generateVerificationToken(),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(agents.id, agentId), eq(agents.ownerId, ownerId)))
+      .returning();
+    if (!updated) throw new AppError(ErrorCode.NOT_FOUND, AGENT_NOT_FOUND);
+    return updated;
+  });
+}
+
+/**
+ * Performs one endpoint-ownership check: fetches the agent's well-known
+ * verification file and compares it against the stored token. The network
+ * call deliberately happens *outside* any `withUserContext` transaction —
+ * `getOwnedAgent` (a full, fast, ownership-checked read) resolves first,
+ * then the slow outbound fetch runs with no DB transaction held open across
+ * it, then a second short transaction records the result. This mirrors why
+ * `claimDueAgents`/`run-batch.ts` never hold a lock across a health check's
+ * network I/O either.
+ *
+ * Throws (never silently returns an "unverified" `Agent`) on any failure —
+ * a missing token, an unreachable/blocked/oversized endpoint, or a
+ * mismatched value — so the caller's error handling is the same shape as
+ * every other mutating DAL function here, and a failed check can never be
+ * mistaken for a successful (if unverified) read.
+ */
+export async function checkOwnershipVerification(
+  db: AppDatabase,
+  ownerId: string,
+  agentId: string,
+): Promise<Agent> {
+  const agent = await getOwnedAgent(db, ownerId, agentId);
+  if (!agent.ownershipVerificationToken) {
+    throw new AppError(
+      ErrorCode.VALIDATION_ERROR,
+      "Start verification before checking it.",
+    );
+  }
+
+  const verificationUrl = buildVerificationUrl(agent.endpointUrl);
+  const result = await fetchOwnershipVerificationFile(verificationUrl);
+  if (!result.success) {
+    throw new AppError(ErrorCode.VALIDATION_ERROR, result.errorMessage);
+  }
+  if (!tokenMatches(result.body, agent.ownershipVerificationToken)) {
+    throw new AppError(
+      ErrorCode.VALIDATION_ERROR,
+      "The verification file's contents didn't match the expected token.",
+    );
+  }
+
+  return withUserContext(db, ownerId, async (tx) => {
+    const [updated] = await tx
+      .update(agents)
+      .set({ ownershipVerifiedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(agents.id, agentId), eq(agents.ownerId, ownerId)))
+      .returning();
+    if (!updated) throw new AppError(ErrorCode.NOT_FOUND, AGENT_NOT_FOUND);
+    return updated;
   });
 }
 

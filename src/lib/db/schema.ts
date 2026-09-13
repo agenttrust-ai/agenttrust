@@ -103,6 +103,20 @@ export const agents = pgTable(
     // e.g. "X-API-Key" (the default). Not sensitive on its own — safe to
     // read back, just not the credential value.
     authHeaderName: text("auth_header_name"),
+    // Domain/endpoint-ownership verification (see src/lib/verification/ownership.ts).
+    // Unlike authCredentialCiphertext this is NOT an encrypted secret — it's
+    // a random challenge value the owner is meant to *publish* at their own
+    // well-known URL, so storing it in plaintext is correct, not a shortcut.
+    // It must still never appear in public-facing serialization (the point
+    // is that AgentTrust vouches for the *result* of the check, not that the
+    // token itself is secret) — see toPublicAgentJson.
+    ownershipVerificationToken: text("ownership_verification_token"),
+    // Null until a check has actually succeeded. This (not lifecycleStatus)
+    // is the public trust signal: an agent can be "active" (monitored) long
+    // before anyone has proven they control its endpoint.
+    ownershipVerifiedAt: timestamp("ownership_verified_at", {
+      withTimezone: true,
+    }),
     healthCheckUrl: text("health_check_url"),
     mcpServerUrl: text("mcp_server_url"),
     repoUrl: text("repo_url"),

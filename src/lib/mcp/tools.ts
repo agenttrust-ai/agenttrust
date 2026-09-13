@@ -99,6 +99,8 @@ const publicAgentOutputSchema = z.object({
   status: agentStatusEnum,
   createdAt: z.string(),
   agentCard: agentCardOutputSchema,
+  verified: z.boolean(),
+  ownershipVerifiedAt: z.string().nullable(),
 });
 
 export const listAgentsInputSchema = z.object({
