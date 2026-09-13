@@ -128,6 +128,17 @@ export function createSafeLookup(): CustomLookup {
   };
 }
 
+/**
+ * A single already-decrypted credential header to attach to the outbound
+ * request — `{name: "Authorization", value: "Bearer <token>"}` for authType
+ * "bearer", `{name: <validated header name>, value: <key>}` for "api_key".
+ * Callers (checkAgentHealth -> checkAgentEndpoint -> fetchWithGuard) must
+ * decrypt immediately before passing this in and never log `value` —
+ * nothing in this module logs it either, and it only ever reaches the
+ * outbound `fetch` headers, never `FetchOutcome` or any error message.
+ */
+export type FetchAuthHeader = { name: string; value: string };
+
 export type FetchWithGuardOptions = {
   /** Injectable so tests can point resolution at a local test server without going through real DNS. */
   lookup: CustomLookup;
@@ -141,6 +152,7 @@ export type FetchWithGuardOptions = {
    * its default (true) either way, this only widens the trust store.
    */
   extraCaCert?: string | Buffer;
+  authHeader?: FetchAuthHeader;
 };
 
 /**
@@ -163,6 +175,7 @@ export async function fetchWithGuard(
     totalTimeoutMs = DEFAULT_TOTAL_TIMEOUT_MS,
     maxRedirects = MAX_REDIRECTS,
     extraCaCert,
+    authHeader,
   } = opts;
 
   const start = performance.now();
@@ -202,7 +215,13 @@ export async function fetchWithGuard(
           redirect: "manual",
           dispatcher: agent,
           signal: controller.signal,
-          headers: { "user-agent": USER_AGENT },
+          headers: {
+            "user-agent": USER_AGENT,
+            // Same header (and value) sent on every redirect hop, exactly
+            // like the user-agent above — no per-origin stripping. That's a
+            // deliberate, spec-confirmed scoping decision, not an oversight.
+            ...(authHeader ? { [authHeader.name]: authHeader.value } : {}),
+          },
         });
       } catch (error) {
         return classifyNetworkError(error, performance.now() - start);
@@ -368,7 +387,10 @@ function classifyNetworkError(error: unknown, elapsedMs: number): FetchOutcome {
  * original URL, then the redirect/timeout-bounded fetch using the real
  * DNS-rebinding-safe resolver. This is what the health-check runner calls.
  */
-export async function checkAgentEndpoint(url: string): Promise<FetchOutcome> {
+export async function checkAgentEndpoint(
+  url: string,
+  authHeader?: FetchAuthHeader,
+): Promise<FetchOutcome> {
   const start = performance.now();
   try {
     assertSafeAgentUrl(url);
@@ -383,5 +405,5 @@ export async function checkAgentEndpoint(url: string): Promise<FetchOutcome> {
     );
   }
 
-  return fetchWithGuard(url, { lookup: createSafeLookup() });
+  return fetchWithGuard(url, { lookup: createSafeLookup(), authHeader });
 }

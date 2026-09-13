@@ -92,6 +92,17 @@ export const agents = pgTable(
     version: text("version"),
     endpointUrl: text("endpoint_url").notNull(),
     authType: agentAuthType("auth_type").notNull().default("none"),
+    // AES-256-GCM ciphertext (iv + authTag + ciphertext, all base64-encoded
+    // and concatenated — see src/lib/security/agent-credentials.ts) of the
+    // bearer token or API key value used to authenticate to this agent's own
+    // endpoint during monitoring. Never the plaintext. Null when authType is
+    // "none" (or unset). Must never appear in any public-facing
+    // serialization — see toPublicAgentJson / buildAgentCard.
+    authCredentialCiphertext: text("auth_credential_ciphertext"),
+    // Header name used to send the credential when authType is "api_key",
+    // e.g. "X-API-Key" (the default). Not sensitive on its own — safe to
+    // read back, just not the credential value.
+    authHeaderName: text("auth_header_name"),
     healthCheckUrl: text("health_check_url"),
     mcpServerUrl: text("mcp_server_url"),
     repoUrl: text("repo_url"),

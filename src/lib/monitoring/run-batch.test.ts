@@ -24,6 +24,7 @@ const baseInput: AgentInput = {
   version: "1.0.0",
   capabilities: ["chat"],
   authType: "bearer",
+  authCredential: "test-bearer-token",
 };
 
 let client: PGlite;
@@ -109,5 +110,80 @@ describe("runHealthCheckBatch — reliability score integration", () => {
     const summary = await runHealthCheckBatch(db, 10);
     expect(summary.succeeded).toBe(1);
     expect(summary.failed).toBe(0);
+  });
+});
+
+describe("runHealthCheckBatch — authenticated monitoring", () => {
+  it("decrypts a stored bearer credential and passes an Authorization header to checkAgentHealth", async () => {
+    const agent = await createAgent(db, userA, {
+      ...baseInput,
+      authType: "bearer",
+      authCredential: "my-bearer-secret",
+    });
+    await activate(agent.id);
+    mockedCheckAgentHealth.mockResolvedValue(successResult());
+
+    await runHealthCheckBatch(db, 10);
+
+    expect(mockedCheckAgentHealth).toHaveBeenCalledWith(agent.endpointUrl, {
+      name: "Authorization",
+      value: "Bearer my-bearer-secret",
+    });
+  });
+
+  it("decrypts a stored api_key credential and passes the custom header name to checkAgentHealth", async () => {
+    const agent = await createAgent(db, userA, {
+      ...baseInput,
+      authType: "api_key",
+      authCredential: "my-api-key",
+      authHeaderName: "X-Custom-Key",
+    });
+    await activate(agent.id);
+    mockedCheckAgentHealth.mockResolvedValue(successResult());
+
+    await runHealthCheckBatch(db, 10);
+
+    expect(mockedCheckAgentHealth).toHaveBeenCalledWith(agent.endpointUrl, {
+      name: "X-Custom-Key",
+      value: "my-api-key",
+    });
+  });
+
+  it("passes no auth header at all for an authType-none agent — behaves exactly as before this feature", async () => {
+    const agent = await createAgent(db, userA, { ...baseInput, authType: "none", authCredential: undefined });
+    await activate(agent.id);
+    mockedCheckAgentHealth.mockResolvedValue(successResult());
+
+    await runHealthCheckBatch(db, 10);
+
+    expect(mockedCheckAgentHealth).toHaveBeenCalledWith(agent.endpointUrl, undefined);
+  });
+
+  it("records a failed check — without ever calling checkAgentHealth — when the stored ciphertext can't be decrypted, and doesn't crash the batch", async () => {
+    const agent = await createAgent(db, userA, {
+      ...baseInput,
+      authType: "bearer",
+      authCredential: "my-bearer-secret",
+    });
+    await activate(agent.id);
+    // Simulate a corrupted/mismatched-key ciphertext directly at the DB
+    // layer — not reachable through the normal create/update path.
+    await client.query(
+      `update public.agents set auth_credential_ciphertext = 'not-valid-ciphertext' where id = $1`,
+      [agent.id],
+    );
+
+    const summary = await runHealthCheckBatch(db, 10);
+
+    expect(mockedCheckAgentHealth).not.toHaveBeenCalled();
+    expect(summary.claimed).toBe(1);
+    expect(summary.failed).toBe(1);
+    expect(summary.succeeded).toBe(0);
+
+    const rows = await client.query<{ error_code: string; success: boolean }>(
+      `select error_code, success from public.health_checks where agent_id = $1`,
+      [agent.id],
+    );
+    expect(rows.rows[0]).toEqual({ error_code: "CREDENTIAL_DECRYPT_FAILED", success: false });
   });
 });

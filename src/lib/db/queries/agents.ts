@@ -8,8 +8,11 @@ import {
   type AppDatabase,
 } from "@/lib/db/rls";
 import { slugify, type AgentInput } from "@/lib/validation/agent";
+import { DEFAULT_AUTH_HEADER_NAME } from "@/lib/validation/agent-constants";
 import { AGENT_CARD_SCHEMA_VERSION } from "@/lib/validation/agent-card";
 import { AppError, ErrorCode } from "@/lib/errors";
+import { env } from "@/lib/config.server";
+import { encryptAgentCredential } from "@/lib/security/agent-credentials";
 
 export type Agent = typeof agents.$inferSelect;
 
@@ -70,6 +73,104 @@ function agentColumns(input: AgentInput) {
 }
 
 /**
+ * Credential columns for a brand-new agent. Separate from `agentColumns`
+ * because, unlike every other field, whether a credential is required (and
+ * what "blank" means) depends on `authType` — there's no existing stored
+ * state to fall back on yet, so a blank credential here is always an error
+ * for an authenticated mode, never "keep the old value" (there is none).
+ */
+function buildCredentialColumnsForCreate(input: AgentInput) {
+  if (input.authType === "none") {
+    return { authCredentialCiphertext: null, authHeaderName: null };
+  }
+  if (!input.authCredential) {
+    throw new AppError(
+      ErrorCode.VALIDATION_ERROR,
+      `A credential is required when authType is "${input.authType}".`,
+    );
+  }
+  return {
+    authCredentialCiphertext: encryptAgentCredential(
+      input.authCredential,
+      env.AGENT_CREDENTIAL_ENCRYPTION_KEY,
+    ),
+    authHeaderName:
+      input.authType === "api_key"
+        ? (input.authHeaderName ?? DEFAULT_AUTH_HEADER_NAME)
+        : null,
+  };
+}
+
+type CurrentCredentialState = Pick<
+  Agent,
+  "authType" | "authCredentialCiphertext" | "authHeaderName"
+>;
+
+/**
+ * Credential columns for an update, given what's currently stored. Unlike
+ * `agentColumns` (always a full replace), this returns a *partial* object —
+ * a key that's omitted here is left out of the eventual `.set()` call
+ * entirely, which for Drizzle means the column is untouched, not nulled.
+ * That's how "leave the credential field blank to keep the existing value"
+ * is implemented: the preserve path simply never mentions the column.
+ *
+ * Rules (all per the approved spec, not inferred):
+ *   - authType "none": clear both columns.
+ *   - authType bearer/api_key + a new credential supplied: always encrypt
+ *     and replace, whether or not the mode changed.
+ *   - authType bearer/api_key + blank credential, but the mode *changed*
+ *     from what's stored (e.g. bearer -> api_key): a new credential is
+ *     required — the old one is never silently reused across auth modes.
+ *   - authType bearer/api_key + blank credential + same mode + nothing
+ *     stored yet: a new credential is required (nothing to preserve).
+ *   - authType bearer/api_key + blank credential + same mode + something
+ *     already stored: preserve the ciphertext untouched. The header name
+ *     may still be updated independently (renaming it doesn't require
+ *     rotating the credential), defaulting only if nothing was stored.
+ */
+function resolveCredentialColumnsForUpdate(
+  input: AgentInput,
+  current: CurrentCredentialState,
+) {
+  if (input.authType === "none") {
+    return { authCredentialCiphertext: null, authHeaderName: null };
+  }
+
+  if (input.authCredential) {
+    return {
+      authCredentialCiphertext: encryptAgentCredential(
+        input.authCredential,
+        env.AGENT_CREDENTIAL_ENCRYPTION_KEY,
+      ),
+      authHeaderName:
+        input.authType === "api_key"
+          ? (input.authHeaderName ?? DEFAULT_AUTH_HEADER_NAME)
+          : null,
+    };
+  }
+
+  const switchedAuthenticatedMode = current.authType !== input.authType;
+  const hasStoredCredential = Boolean(current.authCredentialCiphertext);
+
+  if (switchedAuthenticatedMode || !hasStoredCredential) {
+    throw new AppError(
+      ErrorCode.VALIDATION_ERROR,
+      switchedAuthenticatedMode
+        ? "Switching authentication type requires a new credential."
+        : `A credential is required when authType is "${input.authType}".`,
+    );
+  }
+
+  if (input.authType !== "api_key") {
+    return {};
+  }
+  return {
+    authHeaderName:
+      input.authHeaderName ?? current.authHeaderName ?? DEFAULT_AUTH_HEADER_NAME,
+  };
+}
+
+/**
  * Every function below scopes its query by `ownerId` in the `WHERE` clause
  * (application-level authorization) *and* runs inside `withUserContext`, so
  * Postgres's own RLS policies (supabase/migrations/0001_rls_and_triggers.sql)
@@ -93,7 +194,12 @@ export async function createAgent(
     return await withUserContext(db, ownerId, async (tx) => {
       const [agent] = await tx
         .insert(agents)
-        .values({ ownerId, slug, ...agentColumns(input) })
+        .values({
+          ownerId,
+          slug,
+          ...agentColumns(input),
+          ...buildCredentialColumnsForCreate(input),
+        })
         .returning();
       return agent;
     });
@@ -162,9 +268,29 @@ export async function updateOwnedAgent(
 ): Promise<Agent> {
   try {
     return await withUserContext(db, ownerId, async (tx) => {
+      // Credential preserve/replace/clear semantics need to know what's
+      // *currently* stored, so this reads the row first, inside the same
+      // transaction/RLS context as the update that follows — a non-owner
+      // sees no row here for the same reason they'd see no row on the
+      // update below, and gets the same NOT_FOUND either way.
+      const [current] = await tx
+        .select({
+          authType: agents.authType,
+          authCredentialCiphertext: agents.authCredentialCiphertext,
+          authHeaderName: agents.authHeaderName,
+        })
+        .from(agents)
+        .where(and(eq(agents.id, agentId), eq(agents.ownerId, ownerId)))
+        .limit(1);
+      if (!current) throw new AppError(ErrorCode.NOT_FOUND, AGENT_NOT_FOUND);
+
       const [agent] = await tx
         .update(agents)
-        .set({ ...agentColumns(input), updatedAt: new Date() })
+        .set({
+          ...agentColumns(input),
+          ...resolveCredentialColumnsForUpdate(input, current),
+          updatedAt: new Date(),
+        })
         .where(and(eq(agents.id, agentId), eq(agents.ownerId, ownerId)))
         .returning();
       if (!agent) throw new AppError(ErrorCode.NOT_FOUND, AGENT_NOT_FOUND);

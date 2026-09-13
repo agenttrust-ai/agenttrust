@@ -171,6 +171,22 @@ describe("buildAgentCard — derivation and safety", () => {
     expect(serialized).not.toContain(agentWithExtraFields.id);
   });
 
+  it("never includes the credential ciphertext or header name, even when passed a full Agent-shaped row", () => {
+    const agentWithCredentialFields = {
+      ...baseAgent,
+      authType: "api_key",
+      authCredentialCiphertext: "planted-fake-ciphertext-value==",
+      authHeaderName: "X-Custom-Key",
+    };
+    const card = buildAgentCard(agentWithCredentialFields);
+    const serialized = JSON.stringify(card);
+    expect(serialized).not.toContain("planted-fake-ciphertext-value");
+    expect(serialized).not.toContain("authCredentialCiphertext");
+    expect(serialized).not.toContain("X-Custom-Key");
+    // The only auth-related thing the card ever exposes is the type.
+    expect(card.authentication).toEqual({ type: "api_key" });
+  });
+
   it("handles a legacy agent with an empty (default) stored card cleanly, with no extras", () => {
     const legacyAgent = { ...baseAgent, agentCard: {} };
     const card = buildAgentCard(legacyAgent);

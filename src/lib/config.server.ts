@@ -20,6 +20,15 @@ const serverEnvSchema = z.object({
   DIRECT_URL: z.url(),
   API_KEY_HASH_PEPPER: z.string().min(32),
   CRON_SECRET: z.string().min(32),
+  // AES-256 key for encrypting monitored-endpoint credentials (bearer
+  // tokens / API keys) at rest — see src/lib/security/agent-credentials.ts.
+  // Deliberately a separate secret from API_KEY_HASH_PEPPER/CRON_SECRET:
+  // this one must decode to real key bytes and be reversible, those are
+  // one-way hashing/comparison secrets.
+  AGENT_CREDENTIAL_ENCRYPTION_KEY: z
+    .string()
+    .length(64)
+    .regex(/^[0-9a-f]+$/i, "must be 64 hex characters (32 bytes)"),
 });
 
 function loadServerEnv() {

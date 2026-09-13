@@ -1,10 +1,68 @@
 import "server-only";
 import { z } from "zod";
 import { checkSafeAgentUrl } from "@/lib/security/url-safety";
-import { AGENT_AUTH_TYPES } from "@/lib/validation/agent-constants";
+import {
+  AGENT_AUTH_TYPES,
+  SUPPORTED_AGENT_AUTH_TYPES,
+  DEFAULT_AUTH_HEADER_NAME,
+} from "@/lib/validation/agent-constants";
 import { agentCardInputSchema, parseAgentCardFormFields } from "@/lib/validation/agent-card";
 
-export { AGENT_AUTH_TYPES };
+export { AGENT_AUTH_TYPES, SUPPORTED_AGENT_AUTH_TYPES, DEFAULT_AUTH_HEADER_NAME };
+
+// RFC 7230 `token` production — the same character class HTTP header field
+// names themselves are restricted to, so this rejects anything a real
+// header line couldn't represent (whitespace, colons, control characters)
+// before it ever reaches `fetchWithGuard`.
+const HEADER_TOKEN_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+// Hop-by-hop / connection-specific headers a caller must never be able to
+// override via a custom API-key header name — setting these would let a
+// registrant smuggle a different Host, break chunked framing, etc.
+const FORBIDDEN_AUTH_HEADER_NAMES = new Set([
+  "host",
+  "content-length",
+  "connection",
+  "transfer-encoding",
+  "upgrade",
+  "te",
+  "trailer",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "keep-alive",
+  "expect",
+]);
+
+const authCredentialField = z
+  .string()
+  .trim()
+  .max(4096, { error: "Credential must be 4096 characters or fewer." })
+  .transform((value) => (value === "" ? undefined : value))
+  .optional();
+
+const authHeaderNameField = z
+  .string()
+  .trim()
+  .max(128, { error: "Header name must be 128 characters or fewer." })
+  .transform((value) => (value === "" ? undefined : value))
+  .optional()
+  .superRefine((value, ctx) => {
+    if (value === undefined) return;
+    if (!HEADER_TOKEN_RE.test(value)) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "Enter a valid HTTP header name (letters, digits, and - _ . + ! # $ % & ' * ^ ` | ~, no spaces).",
+      });
+      return;
+    }
+    if (FORBIDDEN_AUTH_HEADER_NAMES.has(value.toLowerCase())) {
+      ctx.addIssue({
+        code: "custom",
+        message: `"${value}" is a reserved header name and can't be used here.`,
+      });
+    }
+  });
 
 const capabilityTag = z
   .string()
@@ -50,9 +108,21 @@ export const agentInputSchema = z.object({
     .array(capabilityTag)
     .max(20, { error: "Use at most 20 capability tags." })
     .default([]),
-  authType: z.enum(AGENT_AUTH_TYPES, {
+  authType: z.enum(SUPPORTED_AGENT_AUTH_TYPES, {
     error: "Choose a valid authentication type.",
   }),
+  // Credential for authType "bearer"/"api_key" — the raw value (a token or
+  // API key), never ciphertext. Optional at the schema level on purpose:
+  // whether it's actually required depends on authType *and*, for updates,
+  // whether a credential is already stored — both of which need DB state
+  // this schema doesn't have, so that logic lives in
+  // src/lib/db/queries/agents.ts (createAgent / updateOwnedAgent), not here.
+  // Blank/omitted always means "no new value supplied", never "clear it" —
+  // clearing only happens by submitting authType "none".
+  authCredential: authCredentialField,
+  // Header name for authType "api_key" only. Blank/omitted defaults to
+  // DEFAULT_AUTH_HEADER_NAME at the DAL layer.
+  authHeaderName: authHeaderNameField,
   // Optional so every existing construction of an `AgentInput` (tests,
   // callers written before this field existed) keeps compiling — omitting
   // it entirely is treated the same as an all-defaults Agent Card by
@@ -86,6 +156,8 @@ export function parseAgentFormData(formData: FormData) {
     version: field("version"),
     capabilities,
     authType: field("authType"),
+    authCredential: field("authCredential"),
+    authHeaderName: field("authHeaderName"),
     agentCard: parseAgentCardFormFields(formData),
   });
 }

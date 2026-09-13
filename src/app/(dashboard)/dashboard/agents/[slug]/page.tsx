@@ -115,9 +115,19 @@ export default async function AgentDetailPage({
             </dd>
           </div>
         </dl>
-        {latest && !latest.success && latest.errorMessage && (
-          <p className="mt-3 text-sm text-red-600">{latest.errorMessage}</p>
+        {latest && !latest.success && (latest.statusCode === 401 || latest.statusCode === 403) && (
+          <p className="mt-3 text-sm text-red-600">
+            Authentication failed (HTTP {latest.statusCode}) — check the
+            credential and header name configured below.
+          </p>
         )}
+        {latest &&
+          !latest.success &&
+          latest.statusCode !== 401 &&
+          latest.statusCode !== 403 &&
+          latest.errorMessage && (
+            <p className="mt-3 text-sm text-red-600">{latest.errorMessage}</p>
+          )}
       </div>
 
       <div className="max-w-xl rounded-lg border border-border bg-surface p-4">
@@ -181,6 +191,8 @@ export default async function AgentDetailPage({
             version: agent.version ?? "",
             capabilities: agent.capabilityTags,
             authType: agent.authType,
+            authHeaderName: agent.authHeaderName ?? "",
+            hasStoredCredential: agent.authCredentialCiphertext !== null,
             agentCardModalities: card.interfaces.modalities,
             agentCardInteractionType: card.interfaces.interactionType ?? "",
             agentCardDocumentationUrl: card.documentationUrl ?? "",

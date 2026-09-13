@@ -45,6 +45,15 @@ describe("agentInputSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("rejects oauth2 and custom — not supported in this MVP even though they remain valid DB enum values", () => {
+    expect(
+      agentInputSchema.safeParse({ ...validInput, authType: "oauth2" }).success,
+    ).toBe(false);
+    expect(
+      agentInputSchema.safeParse({ ...validInput, authType: "custom" }).success,
+    ).toBe(false);
+  });
+
   it("rejects a malformed capability tag", () => {
     const result = agentInputSchema.safeParse({
       ...validInput,
@@ -103,6 +112,72 @@ describe("agentInputSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("treats an empty authCredential/authHeaderName as absent, not as a value", () => {
+    const result = agentInputSchema.safeParse({
+      ...validInput,
+      authCredential: "",
+      authHeaderName: "",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.authCredential).toBeUndefined();
+      expect(result.data.authHeaderName).toBeUndefined();
+    }
+  });
+
+  it("accepts a bearer token credential", () => {
+    const result = agentInputSchema.safeParse({
+      ...validInput,
+      authCredential: "sk-live-abc123",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.authCredential).toBe("sk-live-abc123");
+    }
+  });
+
+  it("accepts a custom, well-formed API key header name", () => {
+    const result = agentInputSchema.safeParse({
+      ...validInput,
+      authType: "api_key",
+      authCredential: "abc123",
+      authHeaderName: "X-Custom-Key",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.authHeaderName).toBe("X-Custom-Key");
+    }
+  });
+
+  it("rejects a header name containing invalid characters (e.g. a colon or space)", () => {
+    expect(
+      agentInputSchema.safeParse({
+        ...validInput,
+        authType: "api_key",
+        authHeaderName: "X: Key",
+      }).success,
+    ).toBe(false);
+    expect(
+      agentInputSchema.safeParse({
+        ...validInput,
+        authType: "api_key",
+        authHeaderName: "X Key",
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each(["Host", "content-length", "Connection", "Transfer-Encoding", "TE", "Upgrade"])(
+    "rejects the dangerous/connection-specific header name %s regardless of case",
+    (name) => {
+      const result = agentInputSchema.safeParse({
+        ...validInput,
+        authType: "api_key",
+        authHeaderName: name,
+      });
+      expect(result.success).toBe(false);
+    },
+  );
 });
 
 describe("parseAgentFormData", () => {
@@ -155,6 +230,22 @@ describe("parseAgentFormData", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.agentCard).toEqual({ modalities: [], interactionType: null });
+    }
+  });
+
+  it("reads authCredential and authHeaderName from form fields", () => {
+    const formData = new FormData();
+    formData.set("name", "Support Bot");
+    formData.set("endpointUrl", "https://agent.acme.io/v1/invoke");
+    formData.set("authType", "api_key");
+    formData.set("authCredential", "abc123");
+    formData.set("authHeaderName", "X-Custom-Key");
+
+    const result = parseAgentFormData(formData);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.authCredential).toBe("abc123");
+      expect(result.data.authHeaderName).toBe("X-Custom-Key");
     }
   });
 

@@ -28,6 +28,7 @@ const baseInput: AgentInput = {
   version: "1.0.0",
   capabilities: ["chat", "ticket-triage"],
   authType: "bearer",
+  authCredential: "test-bearer-token",
 };
 
 let client: PGlite;
@@ -177,6 +178,26 @@ describe("handleListAgents", () => {
     const after = await listApiKeysForOwner(db, userA);
     expect(after.find((k) => k.id === key.id)?.lastUsedAt).not.toBeNull();
   });
+
+  it("never leaks the stored credential — plaintext or ciphertext — in the public agents listing", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const agent = await createAgent(db, userA, {
+      ...baseInput,
+      authType: "bearer",
+      authCredential: "another-extremely-secret-planted-value",
+    });
+    await activate(agent.id);
+    expect(agent.authCredentialCiphertext).not.toBeNull();
+
+    const res = await handleListAgents(db, requestTo("/api/v1/agents", rawKey));
+    const body = await bodyOf(res);
+    const serialized = JSON.stringify(body);
+
+    expect(serialized).not.toContain("another-extremely-secret-planted-value");
+    expect(serialized).not.toContain(agent.authCredentialCiphertext);
+    expect(serialized).not.toContain("authCredentialCiphertext");
+    expect(serialized).not.toContain("auth_credential_ciphertext");
+  });
 });
 
 describe("handleGetAgent", () => {
@@ -225,6 +246,29 @@ describe("handleGetAgent", () => {
     await activate(agent.id);
     const res = await handleGetAgent(db, requestTo(`/api/v1/agents/${agent.slug}`), agent.slug);
     expect(res.status).toBe(401);
+  });
+
+  it("never leaks the stored credential — plaintext or ciphertext — in the public agent JSON", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const agent = await createAgent(db, userA, {
+      ...baseInput,
+      authType: "api_key",
+      authCredential: "extremely-secret-planted-value",
+      authHeaderName: "X-Custom-Key",
+    });
+    await activate(agent.id);
+    // Prove the ciphertext really is stored (i.e. this test would have
+    // caught a real leak) before proving it never reaches the response.
+    expect(agent.authCredentialCiphertext).not.toBeNull();
+
+    const res = await handleGetAgent(db, requestTo(`/api/v1/agents/${agent.slug}`, rawKey), agent.slug);
+    const body = await bodyOf(res);
+    const serialized = JSON.stringify(body);
+
+    expect(serialized).not.toContain("extremely-secret-planted-value");
+    expect(serialized).not.toContain(agent.authCredentialCiphertext);
+    expect(serialized).not.toContain("authCredentialCiphertext");
+    expect(serialized).not.toContain("auth_credential_ciphertext");
   });
 });
 

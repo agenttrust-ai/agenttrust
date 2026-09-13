@@ -24,6 +24,7 @@ const baseInput: AgentInput = {
   version: "1.0.0",
   capabilities: ["chat"],
   authType: "bearer",
+  authCredential: "test-bearer-token",
 };
 
 const successResult: HealthCheckResult = {
@@ -152,6 +153,22 @@ describe("claimDueAgents", () => {
 
     const claimedBy = [...first, ...second].filter((a) => a.id === agent.id);
     expect(claimedBy).toHaveLength(1);
+  });
+
+  it("includes the credential columns needed for authenticated monitoring — still encrypted, never plaintext", async () => {
+    const agent = await createAgent(db, userA, {
+      ...baseInput,
+      authType: "api_key",
+      authCredential: "my-api-key",
+      authHeaderName: "X-Custom-Key",
+    });
+    await activateAgent(agent.id);
+
+    const [claimed] = await claimDueAgents(db, 10);
+    expect(claimed.authType).toBe("api_key");
+    expect(claimed.authHeaderName).toBe("X-Custom-Key");
+    expect(claimed.authCredentialCiphertext).not.toBeNull();
+    expect(claimed.authCredentialCiphertext).not.toContain("my-api-key");
   });
 
   it("never claims a push-mode agent, even when it's due and active", async () => {

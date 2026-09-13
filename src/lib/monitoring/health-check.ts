@@ -1,6 +1,7 @@
 import "server-only";
 import {
   checkAgentEndpoint,
+  type FetchAuthHeader,
   type FetchOutcome,
   type CheckStatus,
 } from "./safe-fetch";
@@ -26,9 +27,10 @@ export type HealthCheckResult = FetchOutcome & { attempts: number };
 /** The health-check runner's one entry point: check an agent's endpoint, retrying only what's safe to retry. */
 export async function checkAgentHealth(
   url: string,
+  authHeader?: FetchAuthHeader,
 ): Promise<HealthCheckResult> {
   const { result, attempts } = await withRetry(
-    () => checkAgentEndpoint(url),
+    () => checkAgentEndpoint(url, authHeader),
     (outcome) => RETRYABLE_STATUSES.has(outcome.status),
   );
   return { ...result, attempts };

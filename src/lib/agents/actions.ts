@@ -23,6 +23,8 @@ export type AgentFormState =
           | "version"
           | "capabilities"
           | "authType"
+          | "authCredential"
+          | "authHeaderName"
           | "agentCard",
           string[]
         >

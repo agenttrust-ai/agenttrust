@@ -10,6 +10,7 @@ import {
 import { AppError, ErrorCode } from "@/lib/errors";
 import type { CheckStatus } from "@/lib/monitoring/safe-fetch";
 import type { AgentHealthStatus } from "@/lib/monitoring/status";
+import type { Agent } from "./agents";
 
 /**
  * Looser than `FetchOutcome`: a pull probe always measures a latency, but a
@@ -31,6 +32,10 @@ export type ClaimedAgent = {
   endpointUrl: string;
   checkIntervalSeconds: number;
   currentStatus: AgentHealthStatus;
+  authType: Agent["authType"];
+  /** Still ciphertext here — decryption happens in the monitoring runner, immediately before the outbound request. */
+  authCredentialCiphertext: Agent["authCredentialCiphertext"];
+  authHeaderName: Agent["authHeaderName"];
 };
 
 /**
@@ -62,6 +67,9 @@ export async function claimDueAgents(
           endpointUrl: agents.endpointUrl,
           checkIntervalSeconds: agents.checkIntervalSeconds,
           currentStatus: agents.currentStatus,
+          authType: agents.authType,
+          authCredentialCiphertext: agents.authCredentialCiphertext,
+          authHeaderName: agents.authHeaderName,
         })
         .from(agents)
         .where(

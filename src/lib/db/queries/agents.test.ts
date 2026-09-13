@@ -17,6 +17,8 @@ import {
 } from "./agents";
 import type { AgentInput } from "@/lib/validation/agent";
 import { AGENT_CARD_SCHEMA_VERSION } from "@/lib/validation/agent-card";
+import { decryptAgentCredential } from "@/lib/security/agent-credentials";
+import { env } from "@/lib/config.server";
 
 const userA = "11111111-1111-1111-1111-111111111111";
 const userB = "22222222-2222-2222-2222-222222222222";
@@ -28,6 +30,7 @@ const baseInput: AgentInput = {
   version: "1.0.0",
   capabilities: ["chat", "ticket-triage"],
   authType: "bearer",
+  authCredential: "test-bearer-token",
 };
 
 let client: PGlite;
@@ -230,6 +233,218 @@ describe("updateOwnedAgent", () => {
         endpointUrl: "http://insecure.example.com",
       }),
     ).rejects.toThrow();
+  });
+});
+
+describe("credential create/preserve/replace/clear semantics", () => {
+  function decrypt(ciphertext: string | null): string {
+    if (!ciphertext) throw new Error("expected a stored ciphertext");
+    return decryptAgentCredential(ciphertext, env.AGENT_CREDENTIAL_ENCRYPTION_KEY);
+  }
+
+  describe("createAgent", () => {
+    it("stores an encrypted credential for authType bearer, never the plaintext", async () => {
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        authType: "bearer",
+        authCredential: "my-bearer-secret",
+      });
+      expect(agent.authCredentialCiphertext).not.toBeNull();
+      expect(agent.authCredentialCiphertext).not.toContain("my-bearer-secret");
+      expect(decrypt(agent.authCredentialCiphertext)).toBe("my-bearer-secret");
+      expect(agent.authHeaderName).toBeNull();
+    });
+
+    it("stores an encrypted credential and defaults the header name for authType api_key", async () => {
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        authType: "api_key",
+        authCredential: "my-api-key",
+      });
+      expect(decrypt(agent.authCredentialCiphertext)).toBe("my-api-key");
+      expect(agent.authHeaderName).toBe("X-API-Key");
+    });
+
+    it("honors a custom header name for authType api_key", async () => {
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        authType: "api_key",
+        authCredential: "my-api-key",
+        authHeaderName: "X-Custom-Key",
+      });
+      expect(agent.authHeaderName).toBe("X-Custom-Key");
+    });
+
+    it("rejects creating a bearer agent with no credential", async () => {
+      await expect(
+        createAgent(db, userA, {
+          ...baseInput,
+          authType: "bearer",
+          authCredential: undefined,
+        }),
+      ).rejects.toMatchObject({ code: ErrorCode.VALIDATION_ERROR });
+    });
+
+    it("rejects creating an api_key agent with no credential", async () => {
+      await expect(
+        createAgent(db, userA, {
+          ...baseInput,
+          authType: "api_key",
+          authCredential: undefined,
+        }),
+      ).rejects.toMatchObject({ code: ErrorCode.VALIDATION_ERROR });
+    });
+
+    it("stores no credential columns for authType none", async () => {
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        authType: "none",
+        authCredential: undefined,
+      });
+      expect(agent.authCredentialCiphertext).toBeNull();
+      expect(agent.authHeaderName).toBeNull();
+    });
+  });
+
+  describe("updateOwnedAgent", () => {
+    it("preserves the existing credential when the field is left blank and the mode is unchanged", async () => {
+      const created = await createAgent(db, userA, {
+        ...baseInput,
+        authType: "bearer",
+        authCredential: "original-secret",
+      });
+
+      const updated = await updateOwnedAgent(db, userA, created.id, {
+        ...baseInput,
+        authType: "bearer",
+        authCredential: undefined,
+        name: "Renamed Bot",
+      });
+
+      expect(updated.name).toBe("Renamed Bot");
+      expect(decrypt(updated.authCredentialCiphertext)).toBe("original-secret");
+    });
+
+    it("replaces the credential when a new one is supplied", async () => {
+      const created = await createAgent(db, userA, {
+        ...baseInput,
+        authType: "bearer",
+        authCredential: "original-secret",
+      });
+
+      const updated = await updateOwnedAgent(db, userA, created.id, {
+        ...baseInput,
+        authType: "bearer",
+        authCredential: "rotated-secret",
+      });
+
+      expect(decrypt(updated.authCredentialCiphertext)).toBe("rotated-secret");
+    });
+
+    it("clears the stored credential and header name when authType switches to none", async () => {
+      const created = await createAgent(db, userA, {
+        ...baseInput,
+        authType: "api_key",
+        authCredential: "my-api-key",
+        authHeaderName: "X-Custom-Key",
+      });
+
+      const updated = await updateOwnedAgent(db, userA, created.id, {
+        ...baseInput,
+        authType: "none",
+        authCredential: undefined,
+      });
+
+      expect(updated.authCredentialCiphertext).toBeNull();
+      expect(updated.authHeaderName).toBeNull();
+    });
+
+    it("requires a new credential when switching between authenticated modes, even though one is already stored", async () => {
+      const created = await createAgent(db, userA, {
+        ...baseInput,
+        authType: "bearer",
+        authCredential: "original-secret",
+      });
+
+      await expect(
+        updateOwnedAgent(db, userA, created.id, {
+          ...baseInput,
+          authType: "api_key",
+          authCredential: undefined,
+        }),
+      ).rejects.toMatchObject({ code: ErrorCode.VALIDATION_ERROR });
+    });
+
+    it("succeeds switching between authenticated modes when a new credential is supplied", async () => {
+      const created = await createAgent(db, userA, {
+        ...baseInput,
+        authType: "bearer",
+        authCredential: "original-secret",
+      });
+
+      const updated = await updateOwnedAgent(db, userA, created.id, {
+        ...baseInput,
+        authType: "api_key",
+        authCredential: "new-api-key",
+      });
+
+      expect(decrypt(updated.authCredentialCiphertext)).toBe("new-api-key");
+      expect(updated.authHeaderName).toBe("X-API-Key");
+    });
+
+    it("rejects turning on bearer auth (from none) with no credential supplied", async () => {
+      const created = await createAgent(db, userA, {
+        ...baseInput,
+        authType: "none",
+        authCredential: undefined,
+      });
+
+      await expect(
+        updateOwnedAgent(db, userA, created.id, {
+          ...baseInput,
+          authType: "bearer",
+          authCredential: undefined,
+        }),
+      ).rejects.toMatchObject({ code: ErrorCode.VALIDATION_ERROR });
+    });
+
+    it("allows renaming the api_key header independently, without supplying a new credential", async () => {
+      const created = await createAgent(db, userA, {
+        ...baseInput,
+        authType: "api_key",
+        authCredential: "my-api-key",
+      });
+      expect(created.authHeaderName).toBe("X-API-Key");
+
+      const updated = await updateOwnedAgent(db, userA, created.id, {
+        ...baseInput,
+        authType: "api_key",
+        authCredential: undefined,
+        authHeaderName: "X-Renamed-Key",
+      });
+
+      expect(updated.authHeaderName).toBe("X-Renamed-Key");
+      expect(decrypt(updated.authCredentialCiphertext)).toBe("my-api-key");
+    });
+
+    it("existing NULL-credential agents (authType none, created before this feature) update cleanly with no backfill required", async () => {
+      const created = await createAgent(db, userA, {
+        ...baseInput,
+        authType: "none",
+        authCredential: undefined,
+      });
+      expect(created.authCredentialCiphertext).toBeNull();
+
+      const updated = await updateOwnedAgent(db, userA, created.id, {
+        ...baseInput,
+        authType: "none",
+        authCredential: undefined,
+        name: "Still None",
+      });
+
+      expect(updated.name).toBe("Still None");
+      expect(updated.authCredentialCiphertext).toBeNull();
+    });
   });
 });
 

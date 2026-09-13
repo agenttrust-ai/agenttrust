@@ -5,10 +5,55 @@ import {
   getRecentChecksForStatus,
   recordHealthCheck,
   setAgentStatus,
+  type ClaimedAgent,
 } from "@/lib/db/queries/health-checks";
 import { computeAndStoreReliabilityScore } from "@/lib/db/queries/reliability";
+import { env } from "@/lib/config.server";
+import { decryptAgentCredential } from "@/lib/security/agent-credentials";
+import { DEFAULT_AUTH_HEADER_NAME } from "@/lib/validation/agent-constants";
 import { checkAgentHealth } from "./health-check";
+import type { FetchAuthHeader, CheckStatus } from "./safe-fetch";
 import { deriveAgentStatus } from "./status";
+
+/**
+ * Resolves the outbound auth header for one claimed agent, decrypting its
+ * stored credential (if any) right here — immediately before the caller
+ * passes it to `checkAgentHealth`, never earlier, never cached. `ok: false`
+ * means decryption itself failed (wrong/rotated key, corrupted ciphertext);
+ * the caller records that as a failed check rather than falling back to an
+ * unauthenticated request, and this function never returns or logs the raw
+ * error — only a fixed, credential-free failure signal.
+ */
+function resolveAuthHeader(
+  agent: ClaimedAgent,
+): { ok: true; authHeader?: FetchAuthHeader } | { ok: false } {
+  if (!agent.authCredentialCiphertext) return { ok: true, authHeader: undefined };
+  // "none" (no ciphertext, handled above) and any legacy/unsupported
+  // authType (oauth2, custom) never get an auth header attached — this MVP
+  // only ever sends one for bearer/api_key.
+  if (agent.authType !== "bearer" && agent.authType !== "api_key") {
+    return { ok: true, authHeader: undefined };
+  }
+
+  try {
+    const plaintext = decryptAgentCredential(
+      agent.authCredentialCiphertext,
+      env.AGENT_CREDENTIAL_ENCRYPTION_KEY,
+    );
+    if (agent.authType === "bearer") {
+      return { ok: true, authHeader: { name: "Authorization", value: `Bearer ${plaintext}` } };
+    }
+    return {
+      ok: true,
+      authHeader: {
+        name: agent.authHeaderName ?? DEFAULT_AUTH_HEADER_NAME,
+        value: plaintext,
+      },
+    };
+  } catch {
+    return { ok: false };
+  }
+}
 
 export type BatchSummary = {
   claimed: number;
@@ -38,7 +83,18 @@ export async function runHealthCheckBatch(
       // behind the database's, which isn't guaranteed once they're on
       // different hosts.
       const now = new Date();
-      const result = await checkAgentHealth(agent.endpointUrl);
+      const resolution = resolveAuthHeader(agent);
+      const result = resolution.ok
+        ? await checkAgentHealth(agent.endpointUrl, resolution.authHeader)
+        : {
+            status: "unknown_error" as CheckStatus,
+            success: false,
+            httpStatus: null,
+            latencyMs: 0,
+            errorCode: "CREDENTIAL_DECRYPT_FAILED",
+            errorMessage: "Couldn't decrypt the stored credential for this agent.",
+            attempts: 0,
+          };
       await recordHealthCheck(db, agent.id, result, "pull", now);
 
       const recentChecks = await getRecentChecksForStatus(db, agent.id);

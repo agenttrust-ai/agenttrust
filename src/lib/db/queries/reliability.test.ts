@@ -24,6 +24,7 @@ const baseInput: AgentInput = {
   version: "1.0.0",
   capabilities: ["chat"],
   authType: "bearer",
+  authCredential: "test-bearer-token",
 };
 
 let client: PGlite;

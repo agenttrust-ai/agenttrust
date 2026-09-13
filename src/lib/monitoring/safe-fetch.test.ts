@@ -16,6 +16,7 @@ import {
   fetchWithGuard,
   createSafeLookup,
   type CustomLookup,
+  type FetchAuthHeader,
 } from "./safe-fetch";
 
 // Resolves our fixed fake hostname straight to the local test server —
@@ -97,6 +98,31 @@ beforeAll(async () => {
       if (url === "/redirect-loop") {
         res.writeHead(302, { Location: "/redirect-loop" });
         res.end();
+        return;
+      }
+      if (url === "/require-bearer") {
+        if (req.headers.authorization === "Bearer secret-token") {
+          res.writeHead(200);
+          res.end("ok");
+        } else {
+          res.writeHead(401);
+          res.end("unauthorized");
+        }
+        return;
+      }
+      if (url === "/redirect-to-require-bearer") {
+        res.writeHead(302, { Location: "/require-bearer" });
+        res.end();
+        return;
+      }
+      if (url === "/require-api-key") {
+        if (req.headers["x-custom-key"] === "my-api-key") {
+          res.writeHead(200);
+          res.end("ok");
+        } else {
+          res.writeHead(403);
+          res.end("forbidden");
+        }
         return;
       }
       if (url === "/slow") {
@@ -393,5 +419,81 @@ describe("createSafeLookup", () => {
       );
     });
     expect(result).toEqual({ err: null, address: "93.184.216.34", family: 4 });
+  });
+});
+
+describe("fetchWithGuard — authenticated requests", () => {
+  it("attaches a bearer auth header, so a bearer-protected endpoint succeeds", async () => {
+    const authHeader: FetchAuthHeader = {
+      name: "Authorization",
+      value: "Bearer secret-token",
+    };
+    const result = await fetchWithGuard(withPort("/require-bearer", port), {
+      lookup: testLookup,
+      extraCaCert: cert.cert,
+      authHeader,
+    });
+    expect(result).toMatchObject({ status: "success", success: true, httpStatus: 200 });
+  });
+
+  it("reports http_error 401, not a network failure, when no auth header is attached to a protected endpoint", async () => {
+    const result = await fetchWithGuard(withPort("/require-bearer", port), {
+      lookup: testLookup,
+      extraCaCert: cert.cert,
+    });
+    expect(result).toMatchObject({ status: "http_error", success: false, httpStatus: 401 });
+  });
+
+  it("reports http_error 401 when the wrong bearer value is attached", async () => {
+    const result = await fetchWithGuard(withPort("/require-bearer", port), {
+      lookup: testLookup,
+      extraCaCert: cert.cert,
+      authHeader: { name: "Authorization", value: "Bearer wrong-token" },
+    });
+    expect(result).toMatchObject({ status: "http_error", success: false, httpStatus: 401 });
+  });
+
+  it("attaches a custom api_key header, so an api-key-protected endpoint succeeds", async () => {
+    const authHeader: FetchAuthHeader = { name: "X-Custom-Key", value: "my-api-key" };
+    const result = await fetchWithGuard(withPort("/require-api-key", port), {
+      lookup: testLookup,
+      extraCaCert: cert.cert,
+      authHeader,
+    });
+    expect(result).toMatchObject({ status: "success", success: true, httpStatus: 200 });
+  });
+
+  it("reports http_error 403 when the api_key header is missing", async () => {
+    const result = await fetchWithGuard(withPort("/require-api-key", port), {
+      lookup: testLookup,
+      extraCaCert: cert.cert,
+    });
+    expect(result).toMatchObject({ status: "http_error", success: false, httpStatus: 403 });
+  });
+
+  it("carries the same auth header across a redirect hop", async () => {
+    const authHeader: FetchAuthHeader = {
+      name: "Authorization",
+      value: "Bearer secret-token",
+    };
+    const result = await fetchWithGuard(
+      withPort("/redirect-to-require-bearer", port),
+      { lookup: testLookup, extraCaCert: cert.cert, authHeader },
+    );
+    expect(result).toMatchObject({ status: "success", success: true, httpStatus: 200 });
+  });
+
+  it("never includes the auth header value anywhere in the returned outcome (status/error fields only)", async () => {
+    const authHeader: FetchAuthHeader = {
+      name: "Authorization",
+      value: "Bearer secret-token",
+    };
+    const result = await fetchWithGuard(withPort("/notfound", port), {
+      lookup: testLookup,
+      extraCaCert: cert.cert,
+      authHeader,
+    });
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("secret-token");
   });
 });

@@ -1,7 +1,10 @@
 "use client";
 
-import { useActionState } from "react";
-import { AGENT_AUTH_TYPES } from "@/lib/validation/agent-constants";
+import { useActionState, useState } from "react";
+import {
+  SUPPORTED_AGENT_AUTH_TYPES,
+  DEFAULT_AUTH_HEADER_NAME,
+} from "@/lib/validation/agent-constants";
 import {
   AGENT_CARD_INTERACTION_TYPES,
   AGENT_CARD_MODALITIES,
@@ -10,12 +13,10 @@ import {
 } from "@/lib/validation/agent-card";
 import type { AgentFormState } from "@/lib/agents/actions";
 
-const AUTH_TYPE_LABEL: Record<(typeof AGENT_AUTH_TYPES)[number], string> = {
+const AUTH_TYPE_LABEL: Record<(typeof SUPPORTED_AGENT_AUTH_TYPES)[number], string> = {
   none: "None",
-  api_key: "API key",
   bearer: "Bearer token",
-  oauth2: "OAuth 2.0",
-  custom: "Custom",
+  api_key: "API key",
 };
 
 const MODALITY_LABEL: Record<AgentCardModality, string> = {
@@ -40,6 +41,10 @@ type AgentFormValues = {
   version: string;
   capabilities: string[];
   authType: string;
+  /** Header name for authType "api_key" — never the credential itself. */
+  authHeaderName: string;
+  /** Whether a credential is already stored — never the credential itself, just drives the "leave blank to keep" vs "required" hint. */
+  hasStoredCredential: boolean;
   agentCardModalities: string[];
   agentCardInteractionType: string;
   agentCardDocumentationUrl: string;
@@ -58,6 +63,23 @@ export function AgentForm({
   submitLabel: string;
 }) {
   const [state, formAction, pending] = useActionState(action, undefined);
+
+  // The auth type has to be controlled state (not just a `defaultValue`) so
+  // the credential fields below can react to it live — e.g. showing the API
+  // key header field the instant someone picks "API key", with no round
+  // trip. `initialAuthType` (what's actually stored, from `defaultValues`)
+  // is kept separately so "switched to a different authenticated mode"
+  // can be detected client-side too, matching the DAL's own
+  // resolveCredentialColumnsForUpdate rule that a mode switch always needs
+  // a fresh credential — this only drives the hint text, the DAL is still
+  // the real enforcement.
+  const initialAuthType = defaultValues?.authType ?? "none";
+  const [authType, setAuthType] = useState(initialAuthType);
+  const hasStoredCredential = defaultValues?.hasStoredCredential ?? false;
+  const switchedAuthenticatedMode = authType !== initialAuthType;
+  const showCredentialFields = authType === "bearer" || authType === "api_key";
+  const credentialRequired =
+    showCredentialFields && (!hasStoredCredential || switchedAuthenticatedMode);
 
   return (
     <form action={formAction} className="flex flex-col gap-5">
@@ -141,24 +163,73 @@ export function AgentForm({
             id="authType"
             name="authType"
             required
-            defaultValue={defaultValues?.authType ?? "none"}
+            value={authType}
+            onChange={(e) => setAuthType(e.target.value)}
             className="rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent"
           >
-            {AGENT_AUTH_TYPES.map((type) => (
+            {SUPPORTED_AGENT_AUTH_TYPES.map((type) => (
               <option key={type} value={type}>
                 {AUTH_TYPE_LABEL[type]}
               </option>
             ))}
           </select>
           <p className="text-xs text-muted">
-            How a caller authenticates to this endpoint — no credentials are
-            collected here.
+            How AgentTrust authenticates to this endpoint when checking its
+            health.
           </p>
           {state?.errors?.authType && (
             <p className="text-sm text-red-600">{state.errors.authType[0]}</p>
           )}
         </div>
       </div>
+
+      {showCredentialFields && (
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="authCredential" className="text-sm font-medium">
+              {authType === "bearer" ? "Bearer token" : "API key value"}
+            </label>
+            <input
+              id="authCredential"
+              name="authCredential"
+              type="password"
+              autoComplete="off"
+              required={credentialRequired}
+              placeholder={credentialRequired ? "Required" : "••••••••"}
+              className="rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-accent"
+            />
+            <p className="text-xs text-muted">
+              {credentialRequired
+                ? "Encrypted at rest and never shown again after you save it."
+                : "Leave blank to keep the credential already on file — enter a new value to replace it."}
+            </p>
+            {state?.errors?.authCredential && (
+              <p className="text-sm text-red-600">{state.errors.authCredential[0]}</p>
+            )}
+          </div>
+
+          {authType === "api_key" && (
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="authHeaderName" className="text-sm font-medium">
+                Header name
+              </label>
+              <input
+                id="authHeaderName"
+                name="authHeaderName"
+                defaultValue={defaultValues?.authHeaderName}
+                placeholder={DEFAULT_AUTH_HEADER_NAME}
+                className="rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-accent"
+              />
+              <p className="text-xs text-muted">
+                Defaults to {DEFAULT_AUTH_HEADER_NAME} if left blank.
+              </p>
+              {state?.errors?.authHeaderName && (
+                <p className="text-sm text-red-600">{state.errors.authHeaderName[0]}</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="capabilities" className="text-sm font-medium">
