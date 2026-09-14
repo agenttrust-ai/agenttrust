@@ -13,6 +13,7 @@ import {
   getLatestReliabilityScorePublic,
 } from "@/lib/db/queries/reliability";
 import { getEffectiveAgentStatus } from "@/lib/monitoring/heartbeat-status";
+import { computeTrustDecision } from "@/lib/reliability/trust-decision";
 import { buildAgentCard } from "@/lib/validation/agent-card";
 import { withRateLimitedAuth } from "./rate-limit";
 import { apiSuccess } from "./response";
@@ -46,6 +47,36 @@ function toPublicAgentJson(agent: Agent) {
   };
 }
 
+/**
+ * `toPublicAgentJson` plus the trust-relevant signals a caller needs to
+ * actually decide whether to interact with this agent: the existing
+ * reliability score, the existing latest health check, and a `trustDecision`
+ * *derived* from those two plus `verified` — never a new/second score (see
+ * `computeTrustDecision`). Two extra reads per agent, so this is only used
+ * where the result set is inherently small — a single agent, or an
+ * `endpoint_url` lookup — never the unfiltered listing (see
+ * `handleListAgents`), which would turn this into an N+1 query per page.
+ */
+async function toTrustEnrichedAgentJson(db: AppDatabase, agent: Agent) {
+  const [latestScore, latestCheck] = await Promise.all([
+    getLatestReliabilityScorePublic(db, agent.id),
+    getLatestCheckPublic(db, agent.id),
+  ]);
+  const score = latestScore?.score ?? null;
+  const status = getEffectiveAgentStatus(agent);
+  const verified = agent.ownershipVerifiedAt !== null;
+
+  return {
+    ...toPublicAgentJson(agent),
+    reliabilityScore: score,
+    reliabilityScoreComputedAt: latestScore?.computedAt ?? null,
+    lastCheckedAt: latestCheck?.checkedAt ?? null,
+    latencyMs: latestCheck?.latencyMs ?? null,
+    httpStatus: latestCheck?.statusCode ?? null,
+    trustDecision: computeTrustDecision({ status, score, verified }),
+  };
+}
+
 /** GET /api/v1/agents */
 export async function handleListAgents(
   db: AppDatabase,
@@ -74,7 +105,16 @@ export async function handleListAgents(
       endpointUrl,
     });
 
-    return apiSuccess(page.agents.map(toPublicAgentJson), {
+    // Trust-signal enrichment (score/health/decision) is deliberately only
+    // added on the `endpoint_url` lookup path — a caller browsing the full,
+    // unfiltered listing gets exactly the same response shape as before,
+    // unchanged, and never pays for the extra per-agent queries that
+    // enrichment costs.
+    const data = endpointUrl
+      ? await Promise.all(page.agents.map((agent) => toTrustEnrichedAgentJson(db, agent)))
+      : page.agents.map(toPublicAgentJson);
+
+    return apiSuccess(data, {
       pagination: { nextCursor: page.nextCursor },
     });
   });
@@ -88,13 +128,7 @@ export async function handleGetAgent(
 ): Promise<Response> {
   return withRateLimitedAuth(db, request, async () => {
     const agent = await getPublicAgentBySlug(db, slug);
-    const latestScore = await getLatestReliabilityScorePublic(db, agent.id);
-
-    return apiSuccess({
-      ...toPublicAgentJson(agent),
-      reliabilityScore: latestScore?.score ?? null,
-      reliabilityScoreComputedAt: latestScore?.computedAt ?? null,
-    });
+    return apiSuccess(await toTrustEnrichedAgentJson(db, agent));
   });
 }
 

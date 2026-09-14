@@ -221,6 +221,58 @@ describe("mcpListAgents", () => {
       const slugs = (structured(result).agents as { slug: string }[]).map((a) => a.slug);
       expect(slugs).toContain(agent.slug);
     });
+
+    it("includes trustDecision and supporting signals when looking up by endpointUrl (trust check)", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        name: "MCP Trust Check Bot",
+        endpointUrl: "https://mcp-trust-check.example.com/v1/invoke",
+      });
+      await activate(agent.id);
+      for (let i = 0; i < MIN_SAMPLES_FOR_SCORE; i++) {
+        await recordHealthCheck(db, agent.id, {
+          status: "success",
+          success: true,
+          latencyMs: 90,
+          httpStatus: 200,
+          errorCode: null,
+          errorMessage: null,
+        });
+      }
+      const { computeAndStoreReliabilityScore } = await import("@/lib/db/queries/reliability");
+      await computeAndStoreReliabilityScore(db, agent.id, new Date());
+      await client.query(`update public.agents set current_status = 'healthy' where id = $1`, [
+        agent.id,
+      ]);
+
+      const result = await mcpListAgents(db, rawKey, {
+        endpointUrl: "https://mcp-trust-check.example.com/v1/invoke",
+      });
+      const data = structured(result);
+      const [found] = data.agents as Array<{
+        trustDecision: { recommended: boolean; confidence: string; reasons: string[] };
+        reliabilityScore: number | null;
+        verified: boolean;
+      }>;
+      expect(found.trustDecision).toMatchObject({ recommended: true, confidence: "low" }); // unverified
+      expect(typeof found.reliabilityScore).toBe("number");
+      expect(found.verified).toBe(false);
+    });
+
+    it("does not include trustDecision when no endpointUrl is given — plain listing unaffected", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const agent = await createAgent(db, userA, { ...baseInput, name: "MCP Plain Bot" });
+      await activate(agent.id);
+
+      const result = await mcpListAgents(db, rawKey, {});
+      const data = structured(result);
+      const found = (data.agents as Array<{ name: string; trustDecision?: unknown }>).find(
+        (a) => a.name === "MCP Plain Bot",
+      );
+      expect(found).toBeDefined();
+      expect(found!.trustDecision).toBeUndefined();
+    });
   });
 });
 
@@ -241,6 +293,12 @@ describe("mcpGetAgent", () => {
       interfaces: { modalities: ["text"], interactionType: "streaming" },
     });
     expect(data).toHaveProperty("reliabilityScore");
+    expect(data).toHaveProperty("trustDecision");
+    expect(data.trustDecision).toMatchObject({
+      recommended: expect.any(Boolean),
+      confidence: expect.any(String),
+      reasons: expect.any(Array),
+    });
   });
 
   it("returns a structured NOT_FOUND error for an unknown slug", async () => {

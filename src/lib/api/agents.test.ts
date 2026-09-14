@@ -901,6 +901,322 @@ describe("reliability score integration", () => {
   });
 });
 
+describe("trust decision (External Agent Trust Check E2E)", () => {
+  async function giveAgentAScore(agentId: string, score: "high" | "low") {
+    for (let i = 0; i < MIN_SAMPLES_FOR_SCORE; i++) {
+      await recordHealthCheck(db, agentId, {
+        status: score === "high" ? "success" : "http_error",
+        success: score === "high",
+        latencyMs: 90,
+        httpStatus: score === "high" ? 200 : 500,
+        errorCode: score === "high" ? null : "HTTP_500",
+        errorMessage: score === "high" ? null : "boom",
+      });
+    }
+    const { computeAndStoreReliabilityScore } = await import("@/lib/db/queries/reliability");
+    await computeAndStoreReliabilityScore(db, agentId, new Date());
+    // recordHealthCheck alone never updates the cached currentStatus column
+    // — that's a separate step the real cron/heartbeat handler performs via
+    // deriveAgentStatus + setAgentStatus after recording each check. Trust
+    // decisions read `status` from that cached column (via
+    // getEffectiveAgentStatus), so a test that wants a "healthy" agent with
+    // a real score needs to set both, exactly as the real monitoring flow
+    // would end up doing for a genuinely healthy run of checks.
+    await client.query(`update public.agents set current_status = $2 where id = $1`, [
+      agentId,
+      score === "high" ? "healthy" : "down",
+    ]);
+  }
+
+  async function setCurrentStatus(agentId: string, status: string) {
+    await client.query(`update public.agents set current_status = $2 where id = $1`, [
+      agentId,
+      status,
+    ]);
+  }
+
+  async function markVerified(agentId: string) {
+    await client.query(`update public.agents set ownership_verified_at = now() where id = $1`, [
+      agentId,
+    ]);
+  }
+
+  describe("GET /agents?endpoint_url= — enriched trust-check response", () => {
+    it("recommends a healthy, well-scored, verified agent with high confidence and no reasons", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        name: "Trustworthy Bot",
+        endpointUrl: "https://trust-healthy.example.com/v1/invoke",
+      });
+      await activate(agent.id);
+      await giveAgentAScore(agent.id, "high");
+      await markVerified(agent.id);
+
+      const res = await handleListAgents(
+        db,
+        requestTo(
+          `/api/v1/agents?endpoint_url=${encodeURIComponent("https://trust-healthy.example.com/v1/invoke")}`,
+          rawKey,
+        ),
+      );
+      const body = await bodyOf(res);
+      expect(body.data).toHaveLength(1);
+      const [found] = body.data;
+      expect(found.verified).toBe(true);
+      expect(typeof found.reliabilityScore).toBe("number");
+      expect(found.trustDecision).toMatchObject({ recommended: true, confidence: "high" });
+      expect(found.trustDecision.reasons).toEqual([]);
+    });
+
+    it("does not recommend an unhealthy (down) agent, and says why, even with a strong score", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        name: "Down Bot",
+        endpointUrl: "https://trust-down.example.com/v1/invoke",
+      });
+      await activate(agent.id);
+      await giveAgentAScore(agent.id, "high");
+      await setCurrentStatus(agent.id, "down");
+
+      const res = await handleListAgents(
+        db,
+        requestTo(
+          `/api/v1/agents?endpoint_url=${encodeURIComponent("https://trust-down.example.com/v1/invoke")}`,
+          rawKey,
+        ),
+      );
+      const body = await bodyOf(res);
+      expect(body.data[0].trustDecision.recommended).toBe(false);
+      expect(body.data[0].trustDecision.reasons.join(" ")).toContain("not healthy");
+    });
+
+    it("still recommends an unverified agent when health and score are strong — verification is not a hard gate", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        name: "Unverified But Solid Bot",
+        endpointUrl: "https://trust-unverified.example.com/v1/invoke",
+      });
+      await activate(agent.id);
+      await giveAgentAScore(agent.id, "high");
+      // never verified
+
+      const res = await handleListAgents(
+        db,
+        requestTo(
+          `/api/v1/agents?endpoint_url=${encodeURIComponent("https://trust-unverified.example.com/v1/invoke")}`,
+          rawKey,
+        ),
+      );
+      const body = await bodyOf(res);
+      expect(body.data[0].verified).toBe(false);
+      expect(body.data[0].trustDecision.recommended).toBe(true);
+      expect(body.data[0].trustDecision.confidence).not.toBe("high"); // downgraded, but still recommended
+      expect(body.data[0].trustDecision.reasons.join(" ")).toContain("ownership has not been verified");
+    });
+
+    it("verification raises confidence without changing the recommendation, for an otherwise-identical agent", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const unverified = await createAgent(db, userA, {
+        ...baseInput,
+        name: "Confidence Unverified",
+        endpointUrl: "https://trust-conf-a.example.com/v1/invoke",
+      });
+      await activate(unverified.id);
+      await giveAgentAScore(unverified.id, "high");
+
+      const verified = await createAgent(db, userA, {
+        ...baseInput,
+        name: "Confidence Verified",
+        endpointUrl: "https://trust-conf-b.example.com/v1/invoke",
+      });
+      await activate(verified.id);
+      await giveAgentAScore(verified.id, "high");
+      await markVerified(verified.id);
+
+      const resA = await handleListAgents(
+        db,
+        requestTo(`/api/v1/agents?endpoint_url=${encodeURIComponent("https://trust-conf-a.example.com/v1/invoke")}`, rawKey),
+      );
+      const resB = await handleListAgents(
+        db,
+        requestTo(`/api/v1/agents?endpoint_url=${encodeURIComponent("https://trust-conf-b.example.com/v1/invoke")}`, rawKey),
+      );
+      const bodyA = await bodyOf(resA);
+      const bodyB = await bodyOf(resB);
+
+      expect(bodyA.data[0].trustDecision.recommended).toBe(true);
+      expect(bodyB.data[0].trustDecision.recommended).toBe(true);
+      expect(bodyA.data[0].trustDecision.confidence).toBe("low");
+      expect(bodyB.data[0].trustDecision.confidence).toBe("high");
+    });
+
+    it("does not recommend a healthy agent with a poor score", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        name: "Poor Score Bot",
+        endpointUrl: "https://trust-poor.example.com/v1/invoke",
+      });
+      await activate(agent.id);
+      await giveAgentAScore(agent.id, "low");
+      // Isolate the score as the reason: override the "down" status
+      // `giveAgentAScore("low")` also sets, so this specifically tests a
+      // *healthy* agent whose score alone is what disqualifies it.
+      await setCurrentStatus(agent.id, "healthy");
+
+      const res = await handleListAgents(
+        db,
+        requestTo(`/api/v1/agents?endpoint_url=${encodeURIComponent("https://trust-poor.example.com/v1/invoke")}`, rawKey),
+      );
+      const body = await bodyOf(res);
+      expect(body.data[0].trustDecision.recommended).toBe(false);
+      expect(body.data[0].trustDecision.reasons.join(" ")).toContain("low");
+    });
+
+    it("reports insufficient_data and does not recommend an agent with no monitoring history yet", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        name: "Brand New Bot",
+        endpointUrl: "https://trust-new.example.com/v1/invoke",
+      });
+      await activate(agent.id);
+      // no health checks recorded at all — score stays null
+
+      const res = await handleListAgents(
+        db,
+        requestTo(`/api/v1/agents?endpoint_url=${encodeURIComponent("https://trust-new.example.com/v1/invoke")}`, rawKey),
+      );
+      const body = await bodyOf(res);
+      expect(body.data[0].reliabilityScore).toBeNull();
+      expect(body.data[0].trustDecision).toMatchObject({
+        recommended: false,
+        confidence: "insufficient_data",
+      });
+    });
+
+    it("returns 200 with an empty array, not an error, for an unregistered endpoint URL (enriched path)", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const res = await handleListAgents(
+        db,
+        requestTo(`/api/v1/agents?endpoint_url=${encodeURIComponent("https://trust-nothing-here.example.com/x")}`, rawKey),
+      );
+      expect(res.status).toBe(200);
+      const body = await bodyOf(res);
+      expect(body.data).toEqual([]);
+    });
+
+    it("applies the same trailing-slash normalization to the enriched (trust-check) path", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        name: "Normalized Trust Bot",
+        endpointUrl: "https://trust-norm.example.com/v1/invoke",
+      });
+      await activate(agent.id);
+      await giveAgentAScore(agent.id, "high");
+
+      const res = await handleListAgents(
+        db,
+        requestTo(`/api/v1/agents?endpoint_url=${encodeURIComponent("https://trust-norm.example.com/v1/invoke/")}`, rawKey),
+      );
+      const body = await bodyOf(res);
+      expect(body.data).toHaveLength(1);
+      expect(body.data[0].trustDecision).toBeDefined();
+    });
+
+    it("still requires authentication on the enriched path", async () => {
+      const res = await handleListAgents(
+        db,
+        requestTo(`/api/v1/agents?endpoint_url=${encodeURIComponent("https://anything.example.com")}`),
+      );
+      expect(res.status).toBe(401);
+    });
+
+    it("never leaks owner-private or security fields, even in the fully-enriched trust-check response", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        name: "Full Privacy Check Bot",
+        endpointUrl: "https://trust-privacy.example.com/v1/invoke",
+        authType: "bearer",
+        authCredential: "extremely-secret-trust-check-value",
+      });
+      await activate(agent.id);
+      await giveAgentAScore(agent.id, "high");
+      await markVerified(agent.id);
+
+      const res = await handleListAgents(
+        db,
+        requestTo(`/api/v1/agents?endpoint_url=${encodeURIComponent("https://trust-privacy.example.com/v1/invoke")}`, rawKey),
+      );
+      const body = await bodyOf(res);
+      const serialized = JSON.stringify(body);
+
+      expect(serialized).not.toContain("extremely-secret-trust-check-value");
+      expect(serialized).not.toContain(agent.authCredentialCiphertext);
+      expect(serialized).not.toContain("ownershipVerificationToken");
+      expect(serialized).not.toContain("endpointUrl");
+      expect(serialized).not.toContain("ownerId");
+      expect(serialized).not.toContain(userA);
+    });
+
+    it("does NOT add trust-decision fields to the plain, unfiltered listing — existing behavior preserved", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const agent = await createAgent(db, userA, { ...baseInput, name: "Plain Listing Bot" });
+      await activate(agent.id);
+      await giveAgentAScore(agent.id, "high");
+
+      const res = await handleListAgents(db, requestTo("/api/v1/agents", rawKey));
+      const body = await bodyOf(res);
+      const found = body.data.find((a: { name: string }) => a.name === "Plain Listing Bot");
+      expect(found).toBeDefined();
+      expect(found.trustDecision).toBeUndefined();
+      expect(found.reliabilityScore).toBeUndefined();
+      expect(found.lastCheckedAt).toBeUndefined();
+    });
+  });
+
+  describe("GET /agents/{slug} — same trust enrichment", () => {
+    it("includes trustDecision alongside the pre-existing reliabilityScore field", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const agent = await createAgent(db, userA, baseInput);
+      await activate(agent.id);
+      await giveAgentAScore(agent.id, "high");
+      await markVerified(agent.id);
+
+      const res = await handleGetAgent(db, requestTo(`/api/v1/agents/${agent.slug}`, rawKey), agent.slug);
+      const body = await bodyOf(res);
+      expect(typeof body.data.reliabilityScore).toBe("number");
+      expect(body.data.trustDecision).toMatchObject({ recommended: true, confidence: "high" });
+      expect(body.data.verified).toBe(true);
+    });
+
+    it("includes the latest health-check snapshot (lastCheckedAt/latencyMs/httpStatus)", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const agent = await createAgent(db, userA, baseInput);
+      await activate(agent.id);
+      await recordHealthCheck(db, agent.id, {
+        status: "success",
+        success: true,
+        latencyMs: 123,
+        httpStatus: 200,
+        errorCode: null,
+        errorMessage: null,
+      });
+
+      const res = await handleGetAgent(db, requestTo(`/api/v1/agents/${agent.slug}`, rawKey), agent.slug);
+      const body = await bodyOf(res);
+      expect(body.data.latencyMs).toBe(123);
+      expect(body.data.httpStatus).toBe(200);
+      expect(body.data.lastCheckedAt).toBeTruthy();
+    });
+  });
+});
+
 describe("Agent Card in the Public API", () => {
   it("GET /agents/{slug} includes the derived + stored Agent Card fields", async () => {
     const { rawKey } = await createApiKey(db, userA, { name: "k" });

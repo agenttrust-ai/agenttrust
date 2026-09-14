@@ -46,6 +46,17 @@ export const UPTIME_FLOOR_FACTOR = 0.4;
 /** Bumped whenever the formula changes, so stored snapshots stay attributable to the rules that produced them. */
 export const FORMULA_VERSION = "v1";
 
+/**
+ * Interpretation bands applied to an already-computed score — not part of
+ * the formula above, and changing them never changes what a score *is*,
+ * only how it's labeled/acted on downstream. Shared by the dashboard badge
+ * (`ReliabilityScoreBadge`) and the Public API's trust-decision logic
+ * (`src/lib/reliability/trust-decision.ts`) so the two never quietly drift
+ * apart into different opinions about what counts as "good enough".
+ */
+export const SCORE_THRESHOLD_HIGH_CONFIDENCE = 90;
+export const SCORE_THRESHOLD_RECOMMENDED = 50;
+
 export type ScoredCheck = {
   checkedAt: Date;
   success: boolean;

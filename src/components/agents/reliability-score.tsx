@@ -1,6 +1,11 @@
+import {
+  SCORE_THRESHOLD_HIGH_CONFIDENCE,
+  SCORE_THRESHOLD_RECOMMENDED,
+} from "@/lib/reliability/scoring";
+
 const SCORE_BANDS = [
   {
-    min: 90,
+    min: SCORE_THRESHOLD_HIGH_CONFIDENCE,
     label: "Excellent",
     className:
       "bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-400 dark:border-green-900",
@@ -12,7 +17,7 @@ const SCORE_BANDS = [
       "bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-400 dark:border-green-900",
   },
   {
-    min: 50,
+    min: SCORE_THRESHOLD_RECOMMENDED,
     label: "Fair",
     className:
       "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-900",

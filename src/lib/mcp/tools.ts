@@ -89,6 +89,16 @@ const agentCardOutputSchema = z.object({
   documentationUrl: z.string().nullable(),
 });
 
+/**
+ * Derived from the agent's own status/reliability-score/verification —
+ * never a second score. See src/lib/reliability/trust-decision.ts.
+ */
+const trustDecisionOutputSchema = z.object({
+  recommended: z.boolean(),
+  confidence: z.enum(["high", "medium", "low", "insufficient_data"]),
+  reasons: z.array(z.string()),
+});
+
 const publicAgentOutputSchema = z.object({
   id: z.string(),
   slug: z.string(),
@@ -101,6 +111,15 @@ const publicAgentOutputSchema = z.object({
   agentCard: agentCardOutputSchema,
   verified: z.boolean(),
   ownershipVerifiedAt: z.string().nullable(),
+  // Present only when this result came from an `endpointUrl` lookup (a
+  // trust check), not from browsing the plain unfiltered listing — see
+  // `mcpListAgents` / `handleListAgents`.
+  reliabilityScore: z.number().nullable().optional(),
+  reliabilityScoreComputedAt: z.string().nullable().optional(),
+  lastCheckedAt: z.string().nullable().optional(),
+  latencyMs: z.number().nullable().optional(),
+  httpStatus: z.number().nullable().optional(),
+  trustDecision: trustDecisionOutputSchema.optional(),
 });
 
 export const listAgentsInputSchema = z.object({
@@ -125,7 +144,7 @@ export const listAgentsInputSchema = z.object({
     .max(2048)
     .optional()
     .describe(
-      "Look up the agent registered with exactly this invocation URL, instead of browsing the full listing. Matches ignore trailing-slash and scheme/host-casing differences only — never a fuzzy match. Returns an empty list, not an error, if nothing is registered with that URL.",
+      "Look up the agent registered with exactly this invocation URL, instead of browsing the full listing — the entry point for a trust check on an agent you only have a URL for. Matches ignore trailing-slash and scheme/host-casing differences only — never a fuzzy match. Returns an empty list, not an error, if nothing is registered with that URL. Unlike a plain (unfiltered) call, results here also include reliabilityScore, lastCheckedAt/latencyMs/httpStatus, and a derived trustDecision ({recommended, confidence, reasons}) so a caller can decide whether to interact with the agent from this one call.",
     ),
 });
 export type ListAgentsInput = z.infer<typeof listAgentsInputSchema>;
@@ -172,6 +191,10 @@ export type GetAgentInput = z.infer<typeof getAgentInputSchema>;
 export const getAgentOutputSchema = publicAgentOutputSchema.extend({
   reliabilityScore: z.number().nullable(),
   reliabilityScoreComputedAt: z.string().nullable(),
+  lastCheckedAt: z.string().nullable(),
+  latencyMs: z.number().nullable(),
+  httpStatus: z.number().nullable(),
+  trustDecision: trustDecisionOutputSchema,
 });
 
 export async function mcpGetAgent(
