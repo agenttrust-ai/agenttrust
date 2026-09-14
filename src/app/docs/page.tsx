@@ -91,7 +91,113 @@ export default function DocsPage() {
             https://agenttrust-umber.vercel.app
           </code>
         </p>
+        <p className="mt-4 rounded-md border border-accent/30 bg-surface p-3 text-sm text-muted">
+          <strong className="text-foreground">5-minute beta path:</strong>{" "}
+          <a href="/signup" className="text-accent hover:underline">
+            sign up
+          </a>{" "}
+          → Dashboard → API keys → Create key → Dashboard → Agents →
+          Register agent → Activate agent →{" "}
+          <a href="#getting-started" className="text-accent hover:underline">
+            call <code>?endpoint_url=</code>
+          </a>{" "}
+          and read <code>trustDecision</code> from the response. Skip
+          ownership verification for now — it&apos;s optional (see Step 5
+          below).
+        </p>
       </div>
+
+      <Section id="getting-started" title="Getting started">
+        <p>
+          <strong>Step 1 — Create an account.</strong> Sign up at{" "}
+          <code>/signup</code> with email + password; confirm your email
+          before continuing. There&apos;s no programmatic/self-service
+          account-creation API yet — this one step is manual.
+        </p>
+        <p>
+          <strong>Step 2 — Create an API key.</strong> Dashboard → API
+          keys → Create key. The raw key is shown <strong>exactly
+          once</strong> — copy it immediately. Use it as{" "}
+          <code>Authorization: Bearer YOUR_API_KEY</code> on every request
+          below (see Authentication further down for error details).
+        </p>
+        <p>
+          <strong>Step 3 — Register an agent.</strong> Dashboard → Agents
+          → Register agent. Required: <code>name</code>,{" "}
+          <code>endpointUrl</code> (must be <code>https://</code>).
+          Optional: <code>description</code>, <code>version</code>,{" "}
+          <code>authType</code> (<code>none</code> / <code>api_key</code>{" "}
+          / <code>bearer</code> / <code>oauth2</code> / <code>custom</code>{" "}
+          — how AgentTrust&apos;s monitor authenticates to{" "}
+          <em>your</em> endpoint, with a credential stored encrypted and
+          never exposed back), and <code>capabilities</code>
+          (comma-separated tags). The agent starts as a private{" "}
+          <code>draft</code> — not monitored, not publicly visible yet.
+        </p>
+        <p>
+          <strong>Step 4 — Configure the agent endpoint.</strong> This is
+          just the <code>endpointUrl</code> (and{" "}
+          <code>authType</code>/credential, if your endpoint needs one)
+          from Step 3 — it&apos;s the exact URL other callers will look
+          you up by. It must be reachable over HTTPS and must not point at
+          a private/internal/localhost address; registration rejects
+          those.
+        </p>
+        <p>
+          <strong>Step 5 — Endpoint ownership verification (optional).</strong>{" "}
+          On the agent&apos;s dashboard page: Start verification → publish
+          a file at the given URL containing the given token → Check now.
+          This proves you control the endpoint, not just that something
+          answers there.{" "}
+          <strong>
+            Verification is entirely optional and never gates{" "}
+            <code>recommended</code>
+          </strong>{" "}
+          — an unverified agent with strong health/reliability history can
+          still be <code>recommended: true</code>. Verification only
+          raises <code>confidence</code>, and its absence always appears
+          as one entry in <code>reasons</code> — it&apos;s a signal, not a
+          hard requirement. Checks are throttled to one per 60 seconds per
+          agent.
+        </p>
+        <p>
+          <strong>Step 6 — Let monitoring collect health/reliability data.</strong>{" "}
+          Click <strong>Activate agent</strong> on its dashboard page —
+          this makes it public and puts it on the monitoring schedule.
+          Pull-mode (default) checks run once per day via cron, and{" "}
+          <code>reliabilityScore</code> stays <code>null</code> (shown as{" "}
+          <strong>&quot;Not enough data yet&quot;</strong>) until at
+          least 5 checks exist, which can take several days in pull mode.
+          For a faster first score, send a heartbeat instead:{" "}
+          <code>POST /api/v1/agents/{"{slug}"}/heartbeat</code>{" "}
+          (owner-only, same Bearer auth).
+        </p>
+        <p>
+          <strong>Step 7 — Discover an agent by endpoint URL.</strong>{" "}
+          <code>GET /api/v1/agents?endpoint_url=&lt;url&gt;</code> — exact
+          match against the <code>endpointUrl</code> you registered (only
+          trailing slash and scheme/host casing are normalized — see
+          Normalization below). An unregistered URL returns{" "}
+          <code>200</code> with an empty <code>data</code> array, never an
+          error.
+        </p>
+        <p>
+          <strong>Step 8 — Request/read the trust decision.</strong> The
+          Step 7 response already includes <code>trustDecision</code> —
+          there&apos;s no separate call. See &quot;Interpreting
+          trustDecision&quot; below for exactly what{" "}
+          <code>recommended</code>/<code>confidence</code>/
+          <code>reasons</code> mean.
+        </p>
+        <p>Your first call — also the trust lookup itself:</p>
+        <Code>{`curl -s "https://agenttrust-umber.vercel.app/api/v1/agents?endpoint_url=YOUR_AGENT_ENDPOINT" \\
+  -H "Authorization: Bearer YOUR_API_KEY"
+
+# YOUR_AGENT_ENDPOINT must be URL-encoded, e.g.
+# https%3A%2F%2Fyour-agent.example.com%2Fv1%2Finvoke`}</Code>
+        <p>Response shape (fictional values):</p>
+        <Code>{LOOKUP_RESPONSE_EXAMPLE}</Code>
+      </Section>
 
       <Section id="workflow" title="The workflow">
         <p>
