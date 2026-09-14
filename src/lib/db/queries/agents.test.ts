@@ -27,6 +27,7 @@ import { AGENT_CARD_SCHEMA_VERSION } from "@/lib/validation/agent-card";
 import { decryptAgentCredential } from "@/lib/security/agent-credentials";
 import { env } from "@/lib/config.server";
 import { fetchOwnershipVerificationFile } from "@/lib/monitoring/safe-fetch";
+import { OWNERSHIP_CHECK_COOLDOWN_SECONDS } from "@/lib/verification/ownership";
 
 const mockedFetchOwnershipVerificationFile = vi.mocked(fetchOwnershipVerificationFile);
 
@@ -648,6 +649,137 @@ describe("endpoint-ownership verification", () => {
       expect(mockedFetchOwnershipVerificationFile).toHaveBeenCalledWith(
         "https://agent.acme.io/.well-known/agenttrust-verification.txt",
       );
+    });
+  });
+
+  describe("checkOwnershipVerification — rate limiting (beta blocker fix)", () => {
+    function mockSuccess(token: string) {
+      mockedFetchOwnershipVerificationFile.mockResolvedValue({ success: true, body: token });
+    }
+
+    it("a normal, isolated check still succeeds", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      const started = await startOwnershipVerification(db, userA, created.id);
+      mockSuccess(started.ownershipVerificationToken!);
+
+      const verified = await checkOwnershipVerification(db, userA, created.id);
+      expect(verified.ownershipVerifiedAt).not.toBeNull();
+    });
+
+    it("throttles a second immediate attempt on the same agent with RATE_LIMITED, and includes a retryAfterSeconds", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      const started = await startOwnershipVerification(db, userA, created.id);
+      mockSuccess(started.ownershipVerificationToken!);
+
+      await checkOwnershipVerification(db, userA, created.id); // first attempt claims the cooldown
+
+      await expect(
+        checkOwnershipVerification(db, userA, created.id),
+      ).rejects.toMatchObject({
+        code: ErrorCode.RATE_LIMITED,
+        details: { retryAfterSeconds: expect.any(Number) },
+      });
+    });
+
+    it("throttles repeated attempts even when every prior attempt failed — the cooldown bounds outbound requests, not just successes", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      await startOwnershipVerification(db, userA, created.id);
+      mockedFetchOwnershipVerificationFile.mockResolvedValue({
+        success: false,
+        errorCode: "HTTP_404",
+        errorMessage: "The verification endpoint responded with HTTP 404.",
+      });
+
+      await expect(checkOwnershipVerification(db, userA, created.id)).rejects.toMatchObject({
+        code: ErrorCode.VALIDATION_ERROR,
+      });
+      // A second attempt right after a *failed* first one must still be
+      // throttled -- the failure already consumed the cooldown slot.
+      await expect(checkOwnershipVerification(db, userA, created.id)).rejects.toMatchObject({
+        code: ErrorCode.RATE_LIMITED,
+      });
+    });
+
+    it("a throttled attempt never performs the outbound verification fetch", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      const started = await startOwnershipVerification(db, userA, created.id);
+      mockSuccess(started.ownershipVerificationToken!);
+
+      await checkOwnershipVerification(db, userA, created.id);
+      mockedFetchOwnershipVerificationFile.mockClear();
+
+      await expect(checkOwnershipVerification(db, userA, created.id)).rejects.toMatchObject({
+        code: ErrorCode.RATE_LIMITED,
+      });
+      expect(mockedFetchOwnershipVerificationFile).not.toHaveBeenCalled();
+    });
+
+    it("allows checking again once the cooldown window has elapsed", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      const started = await startOwnershipVerification(db, userA, created.id);
+      mockSuccess(started.ownershipVerificationToken!);
+      await checkOwnershipVerification(db, userA, created.id);
+
+      // Simulate the cooldown having elapsed by directly backdating the
+      // claimed timestamp -- the same "manipulate DB state directly for
+      // test setup" convention already used throughout this file, and
+      // avoids a real 60s sleep in the test suite.
+      await client.query(
+        `update public.agents set ownership_last_checked_at = now() - ($2 || ' seconds')::interval where id = $1`,
+        [created.id, OWNERSHIP_CHECK_COOLDOWN_SECONDS + 5],
+      );
+
+      await expect(checkOwnershipVerification(db, userA, created.id)).resolves.toMatchObject({
+        ownershipVerifiedAt: expect.any(Date),
+      });
+    });
+
+    it("does not throttle a request that arrives exactly as the window elapses vs. one that's still inside it — different agents never share a limit", async () => {
+      const agentA = await createAgent(db, userA, { ...baseInput, name: "Throttle Agent A" });
+      const startedA = await startOwnershipVerification(db, userA, agentA.id);
+      mockSuccess(startedA.ownershipVerificationToken!);
+      await checkOwnershipVerification(db, userA, agentA.id); // claims agent A's cooldown
+
+      const agentB = await createAgent(db, userA, { ...baseInput, name: "Throttle Agent B" });
+      const startedB = await startOwnershipVerification(db, userA, agentB.id);
+      mockSuccess(startedB.ownershipVerificationToken!);
+
+      // Agent B, same owner, has never been checked -- must succeed even
+      // though agent A (same owner) is still inside its own cooldown.
+      await expect(checkOwnershipVerification(db, userA, agentB.id)).resolves.toMatchObject({
+        ownershipVerifiedAt: expect.any(Date),
+      });
+      // Agent A, meanwhile, is still throttled.
+      await expect(checkOwnershipVerification(db, userA, agentA.id)).rejects.toMatchObject({
+        code: ErrorCode.RATE_LIMITED,
+      });
+    });
+
+    it("different owners' agents never share a limit", async () => {
+      const agentA = await createAgent(db, userA, baseInput);
+      const startedA = await startOwnershipVerification(db, userA, agentA.id);
+      mockSuccess(startedA.ownershipVerificationToken!);
+      await checkOwnershipVerification(db, userA, agentA.id); // claims userA's agent's cooldown
+
+      const agentB = await createAgent(db, userB, baseInput);
+      const startedB = await startOwnershipVerification(db, userB, agentB.id);
+      mockSuccess(startedB.ownershipVerificationToken!);
+
+      // userB's own, entirely separate agent must be unaffected by userA's
+      // cooldown.
+      await expect(checkOwnershipVerification(db, userB, agentB.id)).resolves.toMatchObject({
+        ownershipVerifiedAt: expect.any(Date),
+      });
+    });
+
+    it("still rejects a non-owner as NOT_FOUND, never a rate-limit response, and never calls the fetcher", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      await startOwnershipVerification(db, userA, created.id);
+
+      await expect(checkOwnershipVerification(db, userB, created.id)).rejects.toMatchObject({
+        code: ErrorCode.NOT_FOUND,
+      });
+      expect(mockedFetchOwnershipVerificationFile).not.toHaveBeenCalled();
     });
   });
 

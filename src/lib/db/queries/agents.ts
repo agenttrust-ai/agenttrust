@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import { agents } from "@/lib/db/schema";
 import {
   withUserContext,
@@ -17,6 +17,7 @@ import {
   buildVerificationUrl,
   generateVerificationToken,
   tokenMatches,
+  OWNERSHIP_CHECK_COOLDOWN_SECONDS,
 } from "@/lib/verification/ownership";
 import { fetchOwnershipVerificationFile } from "@/lib/monitoring/safe-fetch";
 
@@ -417,12 +418,26 @@ export async function startOwnershipVerification(
  * call deliberately happens *outside* any `withUserContext` transaction —
  * `getOwnedAgent` (a full, fast, ownership-checked read) resolves first,
  * then the slow outbound fetch runs with no DB transaction held open across
- * it, then a second short transaction records the result. This mirrors why
+ * it, then a short transaction records the result. This mirrors why
  * `claimDueAgents`/`run-batch.ts` never hold a lock across a health check's
  * network I/O either.
  *
+ * Throttled to at most one attempt per `OWNERSHIP_CHECK_COOLDOWN_SECONDS`
+ * per agent — this is the only place in the app that lets an authenticated
+ * account make AgentTrust's own servers fetch an arbitrary caller-chosen
+ * HTTPS URL on demand, so unlike the Public API (rate-limited per API key)
+ * this needs its own server-side throttle regardless of how fast someone
+ * clicks "Check now". The claim is a single atomic `UPDATE ... WHERE
+ * ownership_last_checked_at IS NULL OR < cutoff`, not a separate
+ * read-then-write — closing the race where two concurrent attempts could
+ * otherwise both pass a plain check before either one persists. The
+ * timestamp is claimed *before* the outbound fetch and stays claimed
+ * whether the check succeeds or fails, so a slow or consistently-failing
+ * endpoint can't be used to bypass the cooldown by triggering repeated
+ * fetches while never reaching the "success" branch.
+ *
  * Throws (never silently returns an "unverified" `Agent`) on any failure —
- * a missing token, an unreachable/blocked/oversized endpoint, or a
+ * throttled, missing token, an unreachable/blocked/oversized endpoint, or a
  * mismatched value — so the caller's error handling is the same shape as
  * every other mutating DAL function here, and a failed check can never be
  * mistaken for a successful (if unverified) read.
@@ -437,6 +452,52 @@ export async function checkOwnershipVerification(
     throw new AppError(
       ErrorCode.VALIDATION_ERROR,
       "Start verification before checking it.",
+    );
+  }
+
+  const cooldownCutoff = new Date(
+    Date.now() - OWNERSHIP_CHECK_COOLDOWN_SECONDS * 1000,
+  );
+  const claimed = await withUserContext(db, ownerId, async (tx) => {
+    const [row] = await tx
+      .update(agents)
+      .set({ ownershipLastCheckedAt: new Date() })
+      .where(
+        and(
+          eq(agents.id, agentId),
+          eq(agents.ownerId, ownerId),
+          or(
+            isNull(agents.ownershipLastCheckedAt),
+            lt(agents.ownershipLastCheckedAt, cooldownCutoff),
+          ),
+        ),
+      )
+      .returning({ id: agents.id });
+    return row;
+  });
+
+  if (!claimed) {
+    // Not throttled by coincidence — `agent.ownershipLastCheckedAt` above
+    // is exactly the value the failed claim's WHERE clause compared
+    // against (nothing else can have changed it between that read and
+    // this point except another attempt, which would only ever make the
+    // remaining wait longer, never shorter), so it's a safe, accurate
+    // basis for the retry-after estimate without a second read.
+    const retryAfterSeconds = agent.ownershipLastCheckedAt
+      ? Math.max(
+          1,
+          Math.ceil(
+            (agent.ownershipLastCheckedAt.getTime() +
+              OWNERSHIP_CHECK_COOLDOWN_SECONDS * 1000 -
+              Date.now()) /
+              1000,
+          ),
+        )
+      : OWNERSHIP_CHECK_COOLDOWN_SECONDS;
+    throw new AppError(
+      ErrorCode.RATE_LIMITED,
+      `Checking too often — try again in ${retryAfterSeconds}s.`,
+      { retryAfterSeconds },
     );
   }
 

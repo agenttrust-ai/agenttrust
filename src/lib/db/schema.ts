@@ -117,6 +117,13 @@ export const agents = pgTable(
     ownershipVerifiedAt: timestamp("ownership_verified_at", {
       withTimezone: true,
     }),
+    // Server-side throttle for the "Check now" action — set on every
+    // attempt (successful or not), so a slow/failing endpoint can't be used
+    // to bypass the cooldown by triggering repeated outbound fetches. See
+    // OWNERSHIP_CHECK_COOLDOWN_SECONDS in src/lib/verification/ownership.ts.
+    ownershipLastCheckedAt: timestamp("ownership_last_checked_at", {
+      withTimezone: true,
+    }),
     healthCheckUrl: text("health_check_url"),
     mcpServerUrl: text("mcp_server_url"),
     repoUrl: text("repo_url"),

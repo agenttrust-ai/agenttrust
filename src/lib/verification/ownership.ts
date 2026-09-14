@@ -10,6 +10,17 @@ import { randomBytes } from "node:crypto";
 export const WELL_KNOWN_VERIFICATION_PATH = "/.well-known/agenttrust-verification.txt";
 
 /**
+ * Minimum time between "Check now" attempts for the same agent, whether or
+ * not the previous attempt succeeded. This is what stands between an
+ * authenticated account and unlimited outbound requests to an arbitrary
+ * HTTPS URL through AgentTrust's own servers — the same 60-second window
+ * already used for the Public API's own rate limit
+ * (`RATE_LIMIT_WINDOW_SECONDS`), reused here for consistency rather than
+ * inventing a second, differently-sized window.
+ */
+export const OWNERSHIP_CHECK_COOLDOWN_SECONDS = 60;
+
+/**
  * A cryptographically random domain-ownership challenge value. Unlike an
  * `agent-credentials.ts` credential, this is *not* a secret AgentTrust must
  * protect — it's meant to be published by the owner on their own public web
