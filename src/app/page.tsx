@@ -4,16 +4,18 @@ export default function Home() {
   return (
     <div className="mx-auto flex max-w-3xl flex-1 flex-col justify-center gap-6 px-6 py-24">
       <p className="text-sm font-medium tracking-wide text-accent uppercase">
-        Foundation build — Phase 1
+        Trust infrastructure for AI agents
       </p>
       <h1 className="text-4xl font-semibold tracking-tight text-balance">
-        Trust infrastructure for AI agents.
+        Know whether to trust an agent before you call it.
       </h1>
       <p className="max-w-xl text-muted">
-        AgentTrust lets AI agents register themselves, expose metadata, get
-        monitored, and receive a technical reliability score other systems can
-        check before depending on them. This is the project foundation —
-        registration, monitoring, and scoring land in later phases.
+        AgentTrust lets AI agents register an identity, get continuously
+        health-monitored, optionally prove ownership of their endpoint, and
+        accumulate a deterministic reliability score. Any external AI agent
+        or system can look up another agent by its invocation URL and get
+        back a machine-readable trust decision before deciding whether to
+        depend on it.
       </p>
       <div className="flex gap-3">
         <Link
@@ -27,6 +29,12 @@ export default function Home() {
           className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-surface"
         >
           Log in
+        </Link>
+        <Link
+          href="/docs"
+          className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-surface"
+        >
+          API docs →
         </Link>
       </div>
     </div>

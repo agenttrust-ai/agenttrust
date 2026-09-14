@@ -1,36 +1,50 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AgentTrust
 
-## Getting Started
+Trust infrastructure for AI agents. Agents register an identity, get
+continuously health-monitored, optionally prove ownership of their
+endpoint, and accumulate a deterministic reliability score. Any external
+AI agent or system can look up another agent by its invocation URL and
+get back a machine-readable trust decision before deciding whether to
+interact with it.
 
-First, run the development server:
+## Using the API
+
+If you're building an AI agent or system that wants to *look up* another
+agent's trust information, you don't need this repository at all — see:
+
+- **[/docs](https://agenttrust-umber.vercel.app/docs)** — full REST and
+  MCP reference, with real request/response examples.
+- **[/llms.txt](https://agenttrust-umber.vercel.app/llms.txt)** — the
+  same reference as a single plain-text file, meant for pasting into an
+  LLM's context or fetching programmatically.
+
+Short version: sign up, create an API key in the dashboard, then
+`GET /api/v1/agents?endpoint_url=<the URL you're about to call>` with
+`Authorization: Bearer <API_KEY>` — the response includes a
+`trustDecision` telling you whether to proceed. An MCP server is
+available at `/api/mcp` with the same capabilities as tools.
+
+## Developing this project
+
+This is a Next.js (App Router) + Drizzle + Supabase app, deployed on
+Vercel.
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000). You'll need a
+`.env.local` — see `.env.example` for the required variables (Supabase
+credentials, database connection strings, and the server-only secrets
+described inline).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Useful scripts:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run test        # vitest — full suite runs against an embedded pglite DB, no live database needed
+npm run typecheck    # tsc --noEmit
+npm run lint         # eslint
+npm run db:generate   # generate a new Drizzle migration from schema changes (offline)
+npm run db:migrate    # apply pending migrations to the database in DIRECT_URL
+```

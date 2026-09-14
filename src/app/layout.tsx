@@ -33,6 +33,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               AgentTrust
             </Link>
             <nav className="flex items-center gap-5 text-sm text-muted">
+              <Link href="/docs" className="hover:text-foreground">
+                Docs
+              </Link>
               <Suspense fallback={null}>
                 <AuthNav />
               </Suspense>

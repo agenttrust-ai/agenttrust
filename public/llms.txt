@@ -1,0 +1,197 @@
+# AgentTrust
+
+> Trust infrastructure for AI agents. Agents register an identity, get
+> continuously health-monitored, optionally prove ownership of their
+> endpoint, and accumulate a deterministic reliability score. Any external
+> AI agent or system can look up another agent by its invocation URL and
+> get back a machine-readable trust decision before deciding whether to
+> interact with it.
+
+Base URL: https://agenttrust-umber.vercel.app
+Full human-readable reference: https://agenttrust-umber.vercel.app/docs
+
+## Workflow
+
+1. Discover — this file, or /docs.
+2. Authenticate — a human creates an API key once, via the dashboard
+   (sign up -> /dashboard/api-keys -> "Create key"). The raw key
+   (`at_live_...`) is shown exactly once at creation; AgentTrust cannot
+   show it again. Use it as `Authorization: Bearer <API_KEY>` on every
+   request, REST or MCP.
+3. Look up an agent by the URL you are about to call:
+   `GET /api/v1/agents?endpoint_url=<url>`
+4. Receive trust information: reliabilityScore, status, verified,
+   lastCheckedAt/latencyMs/httpStatus, and a derived trustDecision.
+5. Interpret trustDecision: recommended (boolean), confidence
+   (high|medium|low|insufficient_data), reasons (string[]).
+6. Make your own policy decision — e.g. only proceed when
+   `recommended === true`, or apply a stricter rule yourself using
+   `confidence`/`verified` directly.
+
+## Authentication
+
+Every `/api/v1/*` request requires `Authorization: Bearer <API_KEY>`.
+Getting a key is a one-time human step (sign up, then create a key in the
+dashboard) — there is currently no unauthenticated or self-service
+account-creation API. Revoked keys remain visible in the owner's
+dashboard for audit/usage history but can never authenticate again once
+revoked.
+
+Missing key -> 401:
+`{"error":{"code":"UNAUTHENTICATED","message":"Missing API key. Provide one as: Authorization: Bearer <API_KEY>"}}`
+
+Invalid/expired/revoked key -> 401:
+`{"error":{"code":"UNAUTHENTICATED","message":"Invalid, expired, or revoked API key."}}`
+
+## Rate limits
+
+100 requests / 60 seconds, per API key, fixed window. Every response
+carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+headers. Over the limit -> 429 with a `Retry-After` header (seconds):
+`{"error":{"code":"RATE_LIMITED","message":"Rate limit exceeded. Try again later."}}`
+
+## Endpoints
+
+GET /api/v1/agents
+  Plain listing of public, active agents. Query params: `limit` (1-100,
+  default 20), `cursor` (opaque, from a previous response's
+  `pagination.nextCursor`). No endpoint_url given -> the base fields only
+  (no reliabilityScore/trustDecision — see the lookup form below).
+
+GET /api/v1/agents?endpoint_url=<url>
+  The trust-check entry point. Exact match only (see Normalization) on
+  an agent's registered endpoint URL. Same response envelope as the plain
+  listing, but each matched agent also carries reliabilityScore,
+  reliabilityScoreComputedAt, lastCheckedAt, latencyMs, httpStatus, and
+  trustDecision. An unregistered URL returns 200 with `"data": []` — not
+  an error.
+
+  Example request:
+    GET /api/v1/agents?endpoint_url=https%3A%2F%2Fapi.example-acme.com%2Fv1%2Finvoke
+    Authorization: Bearer at_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+  Example response (200, fictional values):
+    {
+      "data": [
+        {
+          "id": "3fa1c2b0-1234-4a5b-8c9d-abcdef123456",
+          "slug": "acme-support-bot",
+          "name": "Acme Support Bot",
+          "description": "Handles tier-1 customer support requests.",
+          "version": "1.2.0",
+          "capabilities": ["chat", "ticket-triage"],
+          "status": "healthy",
+          "createdAt": "2026-01-15T10:00:00.000Z",
+          "agentCard": {
+            "schemaVersion": "1.0",
+            "name": "Acme Support Bot",
+            "description": "Handles tier-1 customer support requests.",
+            "capabilities": ["chat", "ticket-triage"],
+            "authentication": { "type": "none" },
+            "interfaces": { "modalities": ["text"], "interactionType": "request-response" },
+            "documentationUrl": null
+          },
+          "verified": false,
+          "ownershipVerifiedAt": null,
+          "reliabilityScore": 97,
+          "reliabilityScoreComputedAt": "2026-09-14T00:44:16.440Z",
+          "lastCheckedAt": "2026-09-14T00:44:13.152Z",
+          "latencyMs": 142,
+          "httpStatus": 200,
+          "trustDecision": {
+            "recommended": true,
+            "confidence": "low",
+            "reasons": ["Endpoint ownership has not been verified."]
+          }
+        }
+      ],
+      "pagination": { "nextCursor": null }
+    }
+
+  This is a realistic pattern, not a corner case: a strong, healthy,
+  UNVERIFIED agent is still `recommended: true` — see "trustDecision"
+  below for why.
+
+GET /api/v1/agents/{slug}
+  Same enrichment as the endpoint_url lookup, for one agent by its
+  AgentTrust slug. 404 `{"error":{"code":"NOT_FOUND", "message":"..."}}`
+  if the slug doesn't exist or isn't public+active.
+
+GET /api/v1/agents/{slug}/health
+  `{agentId, slug, status, lastCheckedAt, latencyMs, httpStatus, checkStatus, reliabilityScore, reliabilityScoreComputedAt}`
+
+POST /api/v1/agents/{slug}/heartbeat
+  Owner-only (the key must belong to that agent's own account) — records
+  a push-mode liveness signal. Reads no request body.
+  `{slug, status, lastHeartbeatAt}`
+
+## Common errors
+
+- 401 UNAUTHENTICATED — missing, invalid, expired, or revoked key.
+- 404 NOT_FOUND — unknown slug on `GET /agents/{slug}`. An unknown
+  `endpoint_url` on the list endpoint is NOT an error — it's 200 with an
+  empty `data` array.
+- 400 VALIDATION_ERROR — e.g. `limit=0` or a malformed `cursor`; the body
+  includes a `details` object with per-field messages.
+- 429 RATE_LIMITED — see Rate limits above.
+
+## URL normalization (endpoint_url lookup)
+
+Exact match only — never fuzzy or partial. Normalized for exactly two
+things before comparing:
+  1. A trailing slash on a non-root path (`.../invoke/` matches `.../invoke`).
+  2. Scheme/host casing (`HTTPS://Example.com` matches `https://example.com`).
+Nothing else is normalized — path casing, query strings, and ports are
+compared exactly as given.
+
+## Interpreting trustDecision
+
+Derived entirely from an agent's existing status, reliability score, and
+verification state — never a second/independent score.
+
+recommended (boolean): true only when `status === "healthy"` AND
+`reliabilityScore !== null` AND `reliabilityScore >= 50`.
+
+confidence ("high" | "medium" | "low" | "insufficient_data"):
+  - `insufficient_data` if `reliabilityScore` is null (not enough
+    monitoring history yet to compute one).
+  - otherwise `low` if the agent is unverified, regardless of score.
+  - otherwise `high` if score >= 90, `medium` if score >= 50, `low` below that.
+
+reasons (string[]): a plain-language explanation for every factor that
+counted against the agent — empty only when nothing did.
+
+IMPORTANT: `verified` is a trust SIGNAL, not a hard requirement.
+Ownership verification is optional and does not gate `recommended` — an
+unverified agent with strong health/reliability history can still be
+`recommended: true` (see the example above). Verification instead
+affects `confidence`, and its absence is always spelled out explicitly
+in `reasons`, so a caller who wants a stricter policy (e.g. "only trust
+verified agents") can enforce that themselves using the raw `verified`
+field — AgentTrust doesn't impose that policy for everyone.
+
+## MCP
+
+Endpoint: `https://agenttrust-umber.vercel.app/api/mcp` (GET and POST,
+Streamable HTTP transport). Auth: the same Bearer token as REST, in the
+`Authorization` header. `tools/list` works without a key; calling a tool
+requires one (the same 401 as REST on a missing/bad key).
+
+Tools (each backed by the exact same handler as its REST equivalent):
+  list_agents({limit?, cursor?, endpointUrl?}) — `endpointUrl` triggers
+    the same trust-check enrichment as the REST `?endpoint_url=` filter.
+  get_agent({slug}) — same enriched shape as `GET /agents/{slug}`.
+  get_agent_health({slug}) — same as `GET /agents/{slug}/health`.
+  send_heartbeat({slug}) — owner-only, same as `POST /agents/{slug}/heartbeat`.
+
+Example — list_agents with endpointUrl:
+  Request:  { "endpointUrl": "https://api.example-acme.com/v1/invoke" }
+  Response: `structuredContent.agents[0]` has the exact same fields as
+  the REST example above.
+
+## Not yet built
+
+No official SDK yet (the REST API and MCP tools above are sufficient to
+integrate directly). No programmatic/self-service account creation — a
+human creates the account and first API key. No batch/multi-URL lookup —
+call `?endpoint_url=` once per URL.
