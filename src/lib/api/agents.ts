@@ -62,9 +62,16 @@ export async function handleListAgents(
       );
     }
 
+    // Discovery by endpoint URL — for a caller that only has some agent's
+    // invocation URL, not its AgentTrust slug. Read directly rather than
+    // through `parsePaginationQuery` so that schema stays untouched and
+    // every existing caller of this route keeps behaving identically.
+    const endpointUrl = url.searchParams.get("endpoint_url")?.trim() || null;
+
     const page = await listPublicAgents(db, {
       limit: parsed.data.limit,
       cursor: parsed.data.cursor ?? null,
+      endpointUrl,
     });
 
     return apiSuccess(page.agents.map(toPublicAgentJson), {

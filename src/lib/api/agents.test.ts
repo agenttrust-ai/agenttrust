@@ -216,6 +216,137 @@ describe("handleListAgents", () => {
     expect(serialized).not.toContain("ownershipVerificationToken");
     expect(serialized).not.toContain("ownership_verification_token");
   });
+
+  describe("discovery by endpoint URL (?endpoint_url=)", () => {
+    it("returns the matching public agent for an exact endpoint URL", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        name: "Findable Via API",
+        endpointUrl: "https://api-discover.example.com/v1/invoke",
+      });
+      await activate(agent.id);
+
+      const res = await handleListAgents(
+        db,
+        requestTo(
+          `/api/v1/agents?endpoint_url=${encodeURIComponent("https://api-discover.example.com/v1/invoke")}`,
+          rawKey,
+        ),
+      );
+      expect(res.status).toBe(200);
+      const body = await bodyOf(res);
+      expect(body.data.map((a: { name: string }) => a.name)).toEqual(["Findable Via API"]);
+    });
+
+    it("matches with a trailing-slash difference", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        name: "Trailing Slash Via API",
+        endpointUrl: "https://api-trailing.example.com/v1/invoke",
+      });
+      await activate(agent.id);
+
+      const res = await handleListAgents(
+        db,
+        requestTo(
+          `/api/v1/agents?endpoint_url=${encodeURIComponent("https://api-trailing.example.com/v1/invoke/")}`,
+          rawKey,
+        ),
+      );
+      const body = await bodyOf(res);
+      expect(body.data.map((a: { name: string }) => a.name)).toEqual(["Trailing Slash Via API"]);
+    });
+
+    it("returns 200 with an empty array, not an error, for an unknown endpoint", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+
+      const res = await handleListAgents(
+        db,
+        requestTo(
+          `/api/v1/agents?endpoint_url=${encodeURIComponent("https://nothing-here.example.com/nope")}`,
+          rawKey,
+        ),
+      );
+      expect(res.status).toBe(200);
+      const body = await bodyOf(res);
+      expect(body.data).toEqual([]);
+      expect(body.pagination.nextCursor).toBeNull();
+    });
+
+    it("never returns a draft agent, even for its exact registered URL", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      await createAgent(db, userA, {
+        ...baseInput,
+        name: "Draft Via API",
+        endpointUrl: "https://api-draft.example.com/v1/invoke",
+      }); // left as draft
+
+      const res = await handleListAgents(
+        db,
+        requestTo(
+          `/api/v1/agents?endpoint_url=${encodeURIComponent("https://api-draft.example.com/v1/invoke")}`,
+          rawKey,
+        ),
+      );
+      const body = await bodyOf(res);
+      expect(body.data).toEqual([]);
+    });
+
+    it("still requires authentication — unaffected by the new filter", async () => {
+      const res = await handleListAgents(
+        db,
+        requestTo(`/api/v1/agents?endpoint_url=${encodeURIComponent("https://anything.example.com")}`),
+      );
+      expect(res.status).toBe(401);
+    });
+
+    it("still composes with the limit parameter's own validation", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const res = await handleListAgents(
+        db,
+        requestTo(
+          `/api/v1/agents?limit=0&endpoint_url=${encodeURIComponent("https://anything.example.com")}`,
+          rawKey,
+        ),
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it("never leaks owner-private fields (endpointUrl, ownerId) in an endpoint-URL-filtered result", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        name: "Privacy Check Via API",
+        endpointUrl: "https://api-privacy.example.com/v1/invoke",
+      });
+      await activate(agent.id);
+
+      const res = await handleListAgents(
+        db,
+        requestTo(
+          `/api/v1/agents?endpoint_url=${encodeURIComponent("https://api-privacy.example.com/v1/invoke")}`,
+          rawKey,
+        ),
+      );
+      const body = await bodyOf(res);
+      expect(body.data[0].endpointUrl).toBeUndefined();
+      expect(body.data[0].ownerId).toBeUndefined();
+      const serialized = JSON.stringify(body);
+      expect(serialized).not.toContain(userA);
+    });
+
+    it("leaves ordinary listing (no endpoint_url query param) unaffected", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const agent = await createAgent(db, userA, { ...baseInput, name: "Untouched Listing Bot" });
+      await activate(agent.id);
+
+      const res = await handleListAgents(db, requestTo("/api/v1/agents", rawKey));
+      const body = await bodyOf(res);
+      expect(body.data.map((a: { name: string }) => a.name)).toContain("Untouched Listing Bot");
+    });
+  });
 });
 
 describe("handleGetAgent", () => {

@@ -118,6 +118,15 @@ export const listAgentsInputSchema = z.object({
     .max(500)
     .optional()
     .describe("Opaque pagination cursor from a previous call's nextCursor."),
+  endpointUrl: z
+    .string()
+    .trim()
+    .min(1)
+    .max(2048)
+    .optional()
+    .describe(
+      "Look up the agent registered with exactly this invocation URL, instead of browsing the full listing. Matches ignore trailing-slash and scheme/host-casing differences only — never a fuzzy match. Returns an empty list, not an error, if nothing is registered with that URL.",
+    ),
 });
 export type ListAgentsInput = z.infer<typeof listAgentsInputSchema>;
 
@@ -134,6 +143,7 @@ export async function mcpListAgents(
   const path = new URL(`${SYNTHETIC_BASE_URL}/api/v1/agents`);
   if (input.limit !== undefined) path.searchParams.set("limit", String(input.limit));
   if (input.cursor) path.searchParams.set("cursor", input.cursor);
+  if (input.endpointUrl) path.searchParams.set("endpoint_url", input.endpointUrl);
 
   const request = buildSyntheticRequest(
     path.pathname + path.search,

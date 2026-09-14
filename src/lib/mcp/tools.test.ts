@@ -161,6 +161,67 @@ describe("mcpListAgents", () => {
     const text = JSON.stringify(result);
     expect(text).not.toContain("agent-private-endpoint");
   });
+
+  describe("discovery by endpoint URL", () => {
+    it("finds the agent registered with the given endpoint URL", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        name: "MCP Findable Bot",
+        endpointUrl: "https://mcp-discover.example.com/v1/invoke",
+      });
+      await activate(agent.id);
+
+      const result = await mcpListAgents(db, rawKey, {
+        endpointUrl: "https://mcp-discover.example.com/v1/invoke",
+      });
+      expect(result.isError).toBeUndefined();
+      const data = structured(result);
+      expect((data.agents as { slug: string }[]).map((a) => a.slug)).toEqual([agent.slug]);
+    });
+
+    it("returns an empty list, not an error, for an unregistered endpoint URL", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+
+      const result = await mcpListAgents(db, rawKey, {
+        endpointUrl: "https://mcp-nothing-here.example.com/nope",
+      });
+      expect(result.isError).toBeUndefined();
+      expect(structured(result).agents).toEqual([]);
+    });
+
+    it("still excludes draft agents, even for their exact registered URL", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      await createAgent(db, userA, {
+        ...baseInput,
+        name: "MCP Draft Bot",
+        endpointUrl: "https://mcp-draft.example.com/v1/invoke",
+      }); // left as draft
+
+      const result = await mcpListAgents(db, rawKey, {
+        endpointUrl: "https://mcp-draft.example.com/v1/invoke",
+      });
+      expect(structured(result).agents).toEqual([]);
+    });
+
+    it("rejects an endpointUrl input longer than the schema allows", () => {
+      expect(
+        listAgentsInputSchema.safeParse({ endpointUrl: "https://x.example.com/" + "a".repeat(2100) })
+          .success,
+      ).toBe(false);
+    });
+
+    it("still works with no endpointUrl given — existing callers unaffected", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const agent = await createAgent(db, userA, baseInput);
+      await activate(agent.id);
+
+      const result = await mcpListAgents(db, rawKey, {});
+      expect(result.isError).toBeUndefined();
+      const slugs = (structured(result).agents as { slug: string }[]).map((a) => a.slug);
+      expect(slugs).toContain(agent.slug);
+    });
+  });
 });
 
 describe("mcpGetAgent", () => {

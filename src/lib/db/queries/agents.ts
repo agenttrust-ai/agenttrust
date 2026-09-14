@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, lt, or } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
 import { agents } from "@/lib/db/schema";
 import {
   withUserContext,
@@ -552,17 +552,57 @@ function decodeAgentsCursor(
   }
 }
 
+const MAX_LOOKUP_URL_LENGTH = 2048;
+
+/**
+ * Canonicalizes a URL for exact-match discovery lookups — trailing-slash
+ * and scheme/host-casing differences only, never fuzzy matching. Parsing
+ * via `URL` already folds scheme and host casing per the WHATWG spec (e.g.
+ * `HTTPS://Example.com` and `https://example.com` parse to the same
+ * `href`); the one thing it does *not* do is treat a trailing slash on a
+ * non-root path as equivalent to the same path without one, so that's
+ * stripped explicitly here — applied identically to both the incoming
+ * query value and every stored `endpointUrl` being compared against, so
+ * "differs only by a trailing slash" means the same thing on both sides.
+ * Returns `null` for anything that isn't a parseable URL at all (or is
+ * absurdly long) — callers treat that as "can't possibly match anything",
+ * not as a validation error, matching how an unknown endpoint is handled.
+ */
+function normalizeEndpointUrlForLookup(rawUrl: string): string | null {
+  if (rawUrl.length === 0 || rawUrl.length > MAX_LOOKUP_URL_LENGTH) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  if (parsed.pathname.length > 1 && parsed.pathname.endsWith("/")) {
+    parsed.pathname = parsed.pathname.slice(0, -1);
+  }
+  return parsed.toString();
+}
+
 /**
  * Every public+active agent, newest first — the Public API's discovery
  * listing. No signed-in caller, so this runs as Supabase's anonymous role,
  * same as `getPublicAgentBySlug`; RLS's public-read policy is the real
  * gate, this query just adds the same filter explicitly too.
+ *
+ * `options.endpointUrl`, when given, narrows this to agents whose
+ * registered endpoint matches it exactly (after the normalization above) —
+ * how a caller who only has some agent's invocation URL, not its
+ * AgentTrust slug, discovers whether it's registered at all. There's no
+ * uniqueness constraint on `endpointUrl` (out of scope for this
+ * milestone), so this can legitimately match more than one agent; it's
+ * layered as an ordinary extra filter on the exact same query, so it
+ * still fully composes with cursor pagination, visibility/lifecycle
+ * gating, and the caller's own rate limiting — none of that changes.
  */
 export async function listPublicAgents(
   db: AppDatabase,
-  options: { limit: number; cursor?: string | null },
+  options: { limit: number; cursor?: string | null; endpointUrl?: string | null },
 ): Promise<PublicAgentsPage> {
-  const { limit, cursor } = options;
+  const { limit, cursor, endpointUrl } = options;
 
   let cursorCondition: ReturnType<typeof or> | undefined;
   if (cursor) {
@@ -577,6 +617,37 @@ export async function listPublicAgents(
   }
 
   return withAnonContext(db, async (tx) => {
+    let endpointUrlCondition: ReturnType<typeof inArray> | undefined;
+    if (endpointUrl) {
+      const normalizedQuery = normalizeEndpointUrlForLookup(endpointUrl);
+      if (!normalizedQuery) {
+        return { agents: [], nextCursor: null };
+      }
+
+      // No indexable normalized column exists (and adding one is out of
+      // this milestone's scope), so at MVP scale this does the match in
+      // application code: fetch the small (id, endpointUrl) candidate set
+      // already narrowed to public+active, normalize each, and only then
+      // fold the matching ids into the real query below as an ordinary
+      // `inArray` condition — everything after this point (pagination,
+      // ordering, column selection) is the exact same query path every
+      // other call to this function goes through.
+      const candidates = await tx
+        .select({ id: agents.id, endpointUrl: agents.endpointUrl })
+        .from(agents)
+        .where(
+          and(eq(agents.visibility, "public"), eq(agents.lifecycleStatus, "active")),
+        );
+      const matchedIds = candidates
+        .filter((c) => normalizeEndpointUrlForLookup(c.endpointUrl) === normalizedQuery)
+        .map((c) => c.id);
+
+      if (matchedIds.length === 0) {
+        return { agents: [], nextCursor: null };
+      }
+      endpointUrlCondition = inArray(agents.id, matchedIds);
+    }
+
     const rows = await tx
       .select()
       .from(agents)
@@ -585,6 +656,7 @@ export async function listPublicAgents(
           eq(agents.visibility, "public"),
           eq(agents.lifecycleStatus, "active"),
           cursorCondition,
+          endpointUrlCondition,
         ),
       )
       .orderBy(desc(agents.createdAt), desc(agents.id))

@@ -889,6 +889,135 @@ describe("listPublicAgents — Public API listing, RLS-sensitive access", () => 
     expect(page.agents).toEqual([]);
     expect(page.nextCursor).toBeNull();
   });
+
+  describe("discovery by endpoint URL", () => {
+    it("returns the matching agent for an exact endpoint URL", async () => {
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        name: "Findable Bot",
+        endpointUrl: "https://discover-me.example.com/v1/invoke",
+      });
+      await activate(agent.id);
+
+      const page = await listPublicAgents(db, {
+        limit: 20,
+        endpointUrl: "https://discover-me.example.com/v1/invoke",
+      });
+      expect(page.agents.map((a) => a.name)).toEqual(["Findable Bot"]);
+    });
+
+    it("matches regardless of a trailing slash on either side", async () => {
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        name: "No Trailing Slash Stored",
+        endpointUrl: "https://trailing-slash.example.com/v1/invoke",
+      });
+      await activate(agent.id);
+
+      const withSlash = await listPublicAgents(db, {
+        limit: 20,
+        endpointUrl: "https://trailing-slash.example.com/v1/invoke/",
+      });
+      expect(withSlash.agents.map((a) => a.name)).toEqual(["No Trailing Slash Stored"]);
+    });
+
+    it("matches regardless of scheme/host casing in the query", async () => {
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        name: "Casing Bot",
+        endpointUrl: "https://casing-test.example.com/v1/invoke",
+      });
+      await activate(agent.id);
+
+      const page = await listPublicAgents(db, {
+        limit: 20,
+        endpointUrl: "HTTPS://CASING-TEST.example.com/v1/invoke",
+      });
+      expect(page.agents.map((a) => a.name)).toEqual(["Casing Bot"]);
+    });
+
+    it("returns an empty page, not an error, for an unregistered endpoint URL", async () => {
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        name: "Some Bot",
+        endpointUrl: "https://registered.example.com/v1/invoke",
+      });
+      await activate(agent.id);
+
+      const page = await listPublicAgents(db, {
+        limit: 20,
+        endpointUrl: "https://never-registered.example.com/v1/invoke",
+      });
+      expect(page.agents).toEqual([]);
+      expect(page.nextCursor).toBeNull();
+    });
+
+    it("returns an empty page, not an error, for a malformed endpoint URL query value", async () => {
+      const page = await listPublicAgents(db, {
+        limit: 20,
+        endpointUrl: "not a url at all",
+      });
+      expect(page.agents).toEqual([]);
+      expect(page.nextCursor).toBeNull();
+    });
+
+    it("never surfaces a draft agent through the endpoint-URL filter, even for an exact match", async () => {
+      const draft = await createAgent(db, userA, {
+        ...baseInput,
+        name: "Draft With Findable URL",
+        endpointUrl: "https://still-draft.example.com/v1/invoke",
+      });
+      // left as 'draft' — never activated
+
+      const page = await listPublicAgents(db, {
+        limit: 20,
+        endpointUrl: "https://still-draft.example.com/v1/invoke",
+      });
+      expect(page.agents).toEqual([]);
+      expect(draft.lifecycleStatus).toBe("draft");
+    });
+
+    it("never surfaces an unlisted agent through the endpoint-URL filter, even for an exact match", async () => {
+      const unlisted = await createAgent(db, userA, {
+        ...baseInput,
+        name: "Unlisted With Findable URL",
+        endpointUrl: "https://still-unlisted.example.com/v1/invoke",
+      });
+      await client.query(
+        `update public.agents set lifecycle_status = 'active', visibility = 'unlisted' where id = $1`,
+        [unlisted.id],
+      );
+
+      const page = await listPublicAgents(db, {
+        limit: 20,
+        endpointUrl: "https://still-unlisted.example.com/v1/invoke",
+      });
+      expect(page.agents).toEqual([]);
+    });
+
+    it("leaves ordinary listing (no endpointUrl given) completely unaffected", async () => {
+      const a = await createAgent(db, userA, { ...baseInput, name: "Plain A" });
+      await activate(a.id);
+      const b = await createAgent(db, userA, { ...baseInput, name: "Plain B", endpointUrl: "https://plain-b.example.com/invoke" });
+      await activate(b.id);
+
+      const page = await listPublicAgents(db, { limit: 20 });
+      expect(page.agents.map((x) => x.name).sort()).toEqual(["Plain A", "Plain B"]);
+    });
+
+    it("still paginates correctly when the endpoint-URL filter matches more than one agent", async () => {
+      // No uniqueness constraint on endpointUrl (out of this milestone's
+      // scope) — two different agents can legitimately share one.
+      const sharedUrl = "https://shared-endpoint.example.com/v1/invoke";
+      const first = await createAgent(db, userA, { ...baseInput, name: "Shared First", endpointUrl: sharedUrl });
+      await activate(first.id);
+      const second = await createAgent(db, userB, { ...baseInput, name: "Shared Second", endpointUrl: sharedUrl });
+      await activate(second.id);
+
+      const page = await listPublicAgents(db, { limit: 20, endpointUrl: sharedUrl });
+      expect(page.agents.map((a) => a.name).sort()).toEqual(["Shared First", "Shared Second"]);
+    });
+  });
 });
 
 describe("profile bootstrap trigger", () => {
