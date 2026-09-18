@@ -36,6 +36,12 @@ function toPublicAgentJson(agent: Agent) {
     capabilities: agent.capabilityTags,
     status: getEffectiveAgentStatus(agent),
     createdAt: agent.createdAt,
+    // "owner_registered" (the only kind before this) vs
+    // "externally_observed" (discovered from a public registry, on nobody's
+    // behalf — see src/lib/discovery/). A caller must be able to tell these
+    // apart; an externally_observed agent's `verified` below is always
+    // false, since there is no owner who could ever complete verification.
+    source: agent.source,
     // Built purely from fields already on `agent` — no extra query, so
     // this is free on both the list and detail endpoints alike.
     agentCard: buildAgentCard(agent),

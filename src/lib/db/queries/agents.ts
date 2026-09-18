@@ -36,7 +36,7 @@ function isUniqueViolation(error: unknown): boolean {
   );
 }
 
-async function uniqueSlug(tx: AppDatabase, base: string): Promise<string> {
+export async function uniqueSlug(tx: AppDatabase, base: string): Promise<string> {
   return withDbErrorNormalization(async () => {
     for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt++) {
       const candidate = attempt === 0 ? base : `${base}-${attempt + 1}`;
@@ -629,7 +629,7 @@ const MAX_LOOKUP_URL_LENGTH = 2048;
  * absurdly long) — callers treat that as "can't possibly match anything",
  * not as a validation error, matching how an unknown endpoint is handled.
  */
-function normalizeEndpointUrlForLookup(rawUrl: string): string | null {
+export function normalizeEndpointUrlForLookup(rawUrl: string): string | null {
   if (rawUrl.length === 0 || rawUrl.length > MAX_LOOKUP_URL_LENGTH) return null;
   let parsed: URL;
   try {

@@ -43,6 +43,13 @@
       "when": 1789395758828,
       "tag": "0005_illegal_marvel_zombies",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789692710940,
+      "tag": "0006_long_bastion",
+      "breakpoints": true
     }
   ]
 }

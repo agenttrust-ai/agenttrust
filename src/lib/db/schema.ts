@@ -51,6 +51,17 @@ export const agentAuthType = pgEnum("agent_auth_type", [
   "oauth2",
   "custom",
 ]);
+// How an agent row came to exist. "owner_registered" (the only kind until
+// now) always has a real owner_id. "externally_observed" is a row AgentTrust
+// itself discovered from a public registry, on nobody's behalf — it always
+// has owner_id NULL (enforced by the agents_source_owner_consistency check
+// below, not just by convention) and can never be claimed/verified through
+// the existing owner-scoped verification actions, which require a session's
+// ownerId to match a non-null row.
+export const agentSource = pgEnum("agent_source", [
+  "owner_registered",
+  "externally_observed",
+]);
 // The technical category a single health check outcome falls into — distinct
 // from `success` (a plain boolean) so the dashboard and the status-derivation
 // logic can tell *why* a check failed, not just that it did.
@@ -79,9 +90,11 @@ export const agents = pgTable(
   "agents",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    ownerId: uuid("owner_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
+    // NULL only for source = "externally_observed" — see agentSource above
+    // and the agents_source_owner_consistency check below.
+    ownerId: uuid("owner_id").references(() => profiles.id, {
+      onDelete: "cascade",
+    }),
     slug: text("slug").notNull().unique(),
     name: text("name").notNull(),
     description: text("description"),
@@ -160,6 +173,15 @@ export const agents = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    source: agentSource("source").notNull().default("owner_registered"),
+    // The public registry's own id for this agent (e.g. the A2A Registry's
+    // "id" field) — an idempotency key so re-running an importer can never
+    // insert a second row for the same external listing. NULL for
+    // owner-registered agents.
+    externalRegistryId: text("external_registry_id"),
+    // When AgentTrust's own importer first discovered this agent. NULL for
+    // owner-registered agents (they have createdAt for that already).
+    discoveredAt: timestamp("discovered_at", { withTimezone: true }),
   },
   (table) => [
     index("agents_owner_idx").on(table.ownerId),
@@ -167,12 +189,26 @@ export const agents = pgTable(
       table.visibility,
       table.lifecycleStatus,
     ),
+    uniqueIndex("agents_external_registry_id_idx")
+      .on(table.externalRegistryId)
+      .where(sql`${table.externalRegistryId} is not null`),
     check(
       "monitoring_mode_valid",
       sql`${table.monitoringMode} in ('pull','push')`,
     ),
     check("check_interval_floor", sql`${table.checkIntervalSeconds} >= 60`),
     check("endpoint_is_https", sql`${table.endpointUrl} ~ '^https://'`),
+    // A hard DB-level guarantee (not just an app-level convention) that an
+    // externally-observed agent can never carry a real owner, and that an
+    // owner-registered agent always does — see agentSource above.
+    check(
+      "agents_source_owner_consistency",
+      sql`(${table.source} = 'owner_registered' and ${table.ownerId} is not null) or (${table.source} = 'externally_observed' and ${table.ownerId} is null)`,
+    ),
+    check(
+      "agents_external_source_has_registry_id",
+      sql`${table.source} = 'owner_registered' or ${table.externalRegistryId} is not null`,
+    ),
   ],
 );
 
