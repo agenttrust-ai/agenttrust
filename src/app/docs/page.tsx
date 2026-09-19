@@ -53,6 +53,7 @@ const LOOKUP_RESPONSE_EXAMPLE = `{
         "interfaces": { "modalities": ["text"], "interactionType": "request-response" },
         "documentationUrl": null
       },
+      "source": "owner_registered",
       "verified": false,
       "ownershipVerifiedAt": null,
       "reliabilityScore": 97,
@@ -205,7 +206,12 @@ export default function DocsPage() {
           it&apos;s about to call, and wants to know whether it should.
         </p>
         <ol className="ml-5 list-decimal space-y-1">
-          <li>Discover — this page, or <code>/llms.txt</code>.</li>
+          <li>
+            Discover — this page, <code>/llms.txt</code>, or AgentTrust&apos;s
+            own A2A Agent Card at{" "}
+            <code>/.well-known/agent-card.json</code> (for A2A-capable
+            agents/clients).
+          </li>
           <li>
             Authenticate — a human creates an API key once, via the dashboard
             (see below). Use it as <code>Authorization: Bearer &lt;API_KEY&gt;</code>{" "}
@@ -295,6 +301,16 @@ Authorization: Bearer at_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}</Code>
           <strong>unverified</strong> agent is still{" "}
           <code>recommended: true</code> — see &quot;Interpreting
           trustDecision&quot; below for why.
+        </p>
+        <p>
+          <code>source</code> (<code>&quot;owner_registered&quot;</code> |{" "}
+          <code>&quot;externally_observed&quot;</code>): how the agent
+          entered AgentTrust. <code>owner_registered</code> means a human
+          registered and activated it. <code>externally_observed</code>{" "}
+          means AgentTrust discovered it from a public agent registry on
+          nobody&apos;s behalf — it is always unclaimed and unverified,
+          exactly like any other unverified agent; <code>source</code> is
+          provenance, not a trust signal by itself.
         </p>
       </Section>
 

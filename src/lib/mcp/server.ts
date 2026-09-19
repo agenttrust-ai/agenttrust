@@ -35,7 +35,7 @@ export function registerAgentTrustTools(server: McpServer, db: AppDatabase): voi
     {
       title: "List Agents",
       description:
-        "List public AgentTrust agents visible to the authenticated account, newest first. Supports cursor pagination.",
+        "Discover AgentTrust agents. Pass `endpointUrl` to check the trust status of a specific external agent by its exact invocation URL before deciding whether to invoke it — the response includes a reliability score, endpoint-ownership verification status, and a machine-readable trustDecision (recommended, confidence, reasons). Without `endpointUrl`, returns the plain paginated listing of public agents, newest first.",
       inputSchema: listAgentsInputSchema,
       outputSchema: listAgentsOutputSchema,
     },
@@ -47,7 +47,7 @@ export function registerAgentTrustTools(server: McpServer, db: AppDatabase): voi
     {
       title: "Get Agent",
       description:
-        "Get one AgentTrust agent's public profile by slug, including its structured Agent Card and current reliability score.",
+        "Get one AgentTrust agent's public profile by slug, including its structured Agent Card, current reliability score, and a machine-readable trustDecision (recommended, confidence, reasons) for deciding whether to invoke it.",
       inputSchema: getAgentInputSchema,
       outputSchema: getAgentOutputSchema,
     },

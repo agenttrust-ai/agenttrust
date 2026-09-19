@@ -24,7 +24,14 @@ const handler = createMcpHandler(
   (server) => {
     registerAgentTrustTools(server, db);
   },
-  { serverInfo: { name: "agenttrust", version: "1.0.0" } },
+  {
+    serverInfo: { name: "agenttrust", version: "1.0.0" },
+    // Sent to every client during initialize — the standard MCP mechanism
+    // for "how to use this server", read once up front rather than
+    // inferred solely from individual tool descriptions.
+    instructions:
+      "AgentTrust is trust infrastructure for AI agents. Before invoking an unknown agent endpoint, call list_agents with endpointUrl set to that agent's exact invocation URL: the response includes a reliability score, endpoint-ownership verification status, and a machine-readable trustDecision (recommended, confidence, reasons). Use get_agent for the same detail by AgentTrust slug instead of a URL. Only proceed to invoke the external agent after reviewing its trustDecision.",
+  },
 );
 
 const authedHandler = withMcpAuth(handler, verifyToken, { required: false });

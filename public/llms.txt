@@ -12,7 +12,8 @@ Full human-readable reference: https://agenttrust-umber.vercel.app/docs
 
 ## Workflow
 
-1. Discover — this file, or /docs.
+1. Discover — this file, /docs, or AgentTrust's own A2A Agent Card at
+   /.well-known/agent-card.json (for A2A-capable agents/clients).
 2. Authenticate — a human creates an API key once, via the dashboard
    (sign up -> /dashboard/api-keys -> "Create key"). The raw key
    (`at_live_...`) is shown exactly once at creation; AgentTrust cannot
@@ -91,6 +92,7 @@ GET /api/v1/agents?endpoint_url=<url>
             "interfaces": { "modalities": ["text"], "interactionType": "request-response" },
             "documentationUrl": null
           },
+          "source": "owner_registered",
           "verified": false,
           "ownershipVerifiedAt": null,
           "reliabilityScore": 97,
@@ -111,6 +113,13 @@ GET /api/v1/agents?endpoint_url=<url>
   This is a realistic pattern, not a corner case: a strong, healthy,
   UNVERIFIED agent is still `recommended: true` — see "trustDecision"
   below for why.
+
+  `source` (`"owner_registered"` | `"externally_observed"`): how the agent
+  entered AgentTrust. `owner_registered` means a human registered and
+  activated it. `externally_observed` means AgentTrust discovered it from
+  a public agent registry on nobody's behalf — it is always unclaimed
+  (`ownerId` null) and unverified, exactly like any other unverified
+  agent; `source` is provenance, not a trust signal by itself.
 
 GET /api/v1/agents/{slug}
   Same enrichment as the endpoint_url lookup, for one agent by its
