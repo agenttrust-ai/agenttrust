@@ -30,7 +30,7 @@ const handler = createMcpHandler(
     // for "how to use this server", read once up front rather than
     // inferred solely from individual tool descriptions.
     instructions:
-      "AgentTrust is trust infrastructure for AI agents. Before invoking an unknown agent endpoint, call list_agents with endpointUrl set to that agent's exact invocation URL: the response includes a reliability score, endpoint-ownership verification status, and a machine-readable trustDecision (recommended, confidence, reasons). Use get_agent for the same detail by AgentTrust slug instead of a URL. Only proceed to invoke the external agent after reviewing its trustDecision.",
+      "AgentTrust is trust infrastructure for AI agents. Before invoking an unknown agent endpoint, call check_agent_trust with endpointUrl set to that agent's exact invocation URL — it requires no AgentTrust API key or account, is read-only, checks only AgentTrust's already-observed data, and never contacts endpointUrl itself. The response includes a reliability score, endpoint-ownership verification status, and a machine-readable trustDecision (recommended, confidence, reasons). Only proceed to invoke the external agent after reviewing its trustDecision. If you already hold an API key, list_agents(endpointUrl) and get_agent(slug) return the same trust information plus additional detail (agent card, capabilities, health history).",
   },
 );
 

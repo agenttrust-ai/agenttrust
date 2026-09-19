@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import { createTestDb, seedUser } from "@/lib/db/test-harness";
 import type { AppDatabase } from "@/lib/db/rls";
@@ -9,9 +9,11 @@ import { MIN_SAMPLES_FOR_SCORE } from "@/lib/reliability/scoring";
 import type { AgentInput } from "@/lib/validation/agent";
 import { DEFAULT_RATE_LIMIT_PER_WINDOW } from "@/lib/rate-limit/config";
 import {
+  checkAgentTrustInputSchema,
   getAgentHealthInputSchema,
   getAgentInputSchema,
   listAgentsInputSchema,
+  mcpCheckAgentTrust,
   mcpGetAgent,
   mcpGetAgentHealth,
   mcpListAgents,
@@ -19,6 +21,7 @@ import {
   sendHeartbeatInputSchema,
   type McpToolResult,
 } from "./tools";
+import { ANONYMOUS_RATE_LIMIT_PER_IP } from "@/lib/api/anonymous-rate-limit";
 
 const userA = "11111111-1111-1111-1111-111111111111";
 const userB = "22222222-2222-2222-2222-222222222222";
@@ -500,6 +503,222 @@ describe("mcpSendHeartbeat", () => {
     const result = await mcpSendHeartbeat(db, rawKey, { slug: agent.slug });
     expect(result.isError).toBe(true);
     expect((structured(result).error as { code: string }).code).toBe("RATE_LIMITED");
+  });
+});
+
+describe("mcpCheckAgentTrust", () => {
+  function requestFromIp(ip: string): Request {
+    return new Request("https://agenttrust-umber.vercel.app/api/mcp", {
+      headers: { "x-vercel-forwarded-for": ip },
+    });
+  }
+
+  it("works with no Authorization header at all — that's the entire point of this tool", async () => {
+    const agent = await createAgent(db, userA, {
+      ...baseInput,
+      name: "Anon Findable Bot",
+      endpointUrl: "https://anon-findable.example.com/v1/invoke",
+    });
+    await activate(agent.id);
+
+    const request = requestFromIp("203.0.113.201");
+    const result = await mcpCheckAgentTrust(db, request, {
+      endpointUrl: "https://anon-findable.example.com/v1/invoke",
+    });
+    expect(result.isError).toBeUndefined();
+    expect(structured(result).matched).toBe(true);
+  });
+
+  it("returns exactly the minimal public subset, with trustDecision, for a known public+active agent", async () => {
+    const agent = await createAgent(db, userA, {
+      ...baseInput,
+      name: "Anon Trust Bot",
+      endpointUrl: "https://anon-trust.example.com/v1/invoke",
+    });
+    await activate(agent.id);
+    for (let i = 0; i < MIN_SAMPLES_FOR_SCORE; i++) {
+      await recordHealthCheck(db, agent.id, {
+        status: "success",
+        success: true,
+        latencyMs: 90,
+        httpStatus: 200,
+        errorCode: null,
+        errorMessage: null,
+      });
+    }
+    const { computeAndStoreReliabilityScore } = await import("@/lib/db/queries/reliability");
+    await computeAndStoreReliabilityScore(db, agent.id, new Date());
+    await client.query(`update public.agents set current_status = 'healthy' where id = $1`, [
+      agent.id,
+    ]);
+
+    const result = await mcpCheckAgentTrust(db, requestFromIp("203.0.113.202"), {
+      endpointUrl: "https://anon-trust.example.com/v1/invoke",
+    });
+    const data = structured(result);
+    expect(Object.keys(data).sort()).toEqual(
+      ["matched", "name", "reliabilityScore", "slug", "status", "trustDecision", "verified"].sort(),
+    );
+    expect(data.slug).toBe(agent.slug);
+    expect(data.name).toBe("Anon Trust Bot");
+    expect(data.status).toBe("healthy");
+    expect(data.verified).toBe(false);
+    expect(typeof data.reliabilityScore).toBe("number");
+    expect(data.trustDecision).toMatchObject({ recommended: true, confidence: "low" });
+  });
+
+  it("returns a clean { matched: false } for an unregistered endpoint — never an error", async () => {
+    const result = await mcpCheckAgentTrust(db, requestFromIp("203.0.113.203"), {
+      endpointUrl: "https://anon-nothing-here.example.com/nope",
+    });
+    expect(result.isError).toBeUndefined();
+    expect(structured(result)).toEqual({ matched: false });
+  });
+
+  it("cannot discover a draft agent — same clean no-match result as an unregistered URL", async () => {
+    await createAgent(db, userA, {
+      ...baseInput,
+      name: "Anon Draft Bot",
+      endpointUrl: "https://anon-draft.example.com/v1/invoke",
+    }); // left as draft
+
+    const result = await mcpCheckAgentTrust(db, requestFromIp("203.0.113.204"), {
+      endpointUrl: "https://anon-draft.example.com/v1/invoke",
+    });
+    expect(structured(result)).toEqual({ matched: false });
+  });
+
+  it("cannot discover an unlisted agent — same clean no-match result", async () => {
+    const agent = await createAgent(db, userA, {
+      ...baseInput,
+      name: "Anon Unlisted Bot",
+      endpointUrl: "https://anon-unlisted.example.com/v1/invoke",
+    });
+    await activate(agent.id, "unlisted");
+
+    const result = await mcpCheckAgentTrust(db, requestFromIp("203.0.113.205"), {
+      endpointUrl: "https://anon-unlisted.example.com/v1/invoke",
+    });
+    expect(structured(result)).toEqual({ matched: false });
+  });
+
+  it("never exposes ownerId, credentials, verification tokens, or any other private field", async () => {
+    const agent = await createAgent(db, userA, {
+      ...baseInput,
+      name: "Anon Private Fields Bot",
+      endpointUrl: "https://anon-private-fields.example.com/v1/invoke",
+    });
+    await activate(agent.id);
+
+    const result = await mcpCheckAgentTrust(db, requestFromIp("203.0.113.206"), {
+      endpointUrl: "https://anon-private-fields.example.com/v1/invoke",
+    });
+    const data = structured(result);
+    for (const forbidden of [
+      "ownerId",
+      "authCredentialCiphertext",
+      "ownershipVerificationToken",
+      "endpointUrl",
+      "id",
+      "agentCard",
+      "capabilities",
+      "createdAt",
+    ]) {
+      expect(data).not.toHaveProperty(forbidden);
+    }
+    const text = JSON.stringify(result);
+    expect(text).not.toContain(agent.ownerId);
+    expect(text).not.toContain("anon-private-fields.example.com");
+  });
+
+  it("rejects empty endpointUrl at the schema level", () => {
+    expect(checkAgentTrustInputSchema.safeParse({ endpointUrl: "" }).success).toBe(false);
+    expect(checkAgentTrustInputSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("rejects an oversized endpointUrl at the schema level", () => {
+    expect(
+      checkAgentTrustInputSchema.safeParse({
+        endpointUrl: "https://x.example.com/" + "a".repeat(2100),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("handles a malformed (not-a-URL) endpointUrl safely as a clean no-match, never an error or a crash", async () => {
+    const result = await mcpCheckAgentTrust(db, requestFromIp("203.0.113.207"), {
+      endpointUrl: "not-a-url-at-all",
+    });
+    expect(result.isError).toBeUndefined();
+    expect(structured(result)).toEqual({ matched: false });
+  });
+
+  it("accepts no listing/search/pagination/cursor parameters — the schema has no such fields", () => {
+    const shape = checkAgentTrustInputSchema.shape;
+    expect(Object.keys(shape)).toEqual(["endpointUrl"]);
+  });
+
+  it("makes zero outbound HTTP requests during the lookup", async () => {
+    const agent = await createAgent(db, userA, {
+      ...baseInput,
+      name: "Anon No Fetch Bot",
+      endpointUrl: "https://anon-no-fetch.example.com/v1/invoke",
+    });
+    await activate(agent.id);
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    try {
+      await mcpCheckAgentTrust(db, requestFromIp("203.0.113.208"), {
+        endpointUrl: "https://anon-no-fetch.example.com/v1/invoke",
+      });
+      await mcpCheckAgentTrust(db, requestFromIp("203.0.113.209"), {
+        endpointUrl: "https://anon-unregistered-no-fetch.example.com/nope",
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("enforces the per-IP anonymous rate limit, with a structured RATE_LIMITED error and retryAfterSeconds", async () => {
+    const request = requestFromIp("203.0.113.210");
+    for (let i = 0; i < ANONYMOUS_RATE_LIMIT_PER_IP; i++) {
+      const result = await mcpCheckAgentTrust(db, request, {
+        endpointUrl: "https://anon-rate-limit.example.com/nope",
+      });
+      expect(result.isError).toBeUndefined();
+    }
+
+    const blocked = await mcpCheckAgentTrust(db, request, {
+      endpointUrl: "https://anon-rate-limit.example.com/nope",
+    });
+    expect(blocked.isError).toBe(true);
+    const error = structured(blocked).error as { code: string; retryAfterSeconds?: number };
+    expect(error.code).toBe("RATE_LIMITED");
+    expect(typeof error.retryAfterSeconds).toBe("number");
+    expect(error.retryAfterSeconds).toBeGreaterThan(0);
+  });
+
+  it("fails closed (rejects, never treats as unlimited) when no trustworthy IP header is present", async () => {
+    const requestWithNoIp = new Request("https://agenttrust-umber.vercel.app/api/mcp");
+    const result = await mcpCheckAgentTrust(db, requestWithNoIp, {
+      endpointUrl: "https://anon-no-ip.example.com/nope",
+    });
+    expect(result.isError).toBe(true);
+    expect((structured(result).error as { code: string }).code).toBe("RATE_LIMITED");
+  });
+
+  it("different anonymous callers (by IP) get independent quota — one caller's usage never blocks another", async () => {
+    const requestA = requestFromIp("203.0.113.220");
+    for (let i = 0; i < ANONYMOUS_RATE_LIMIT_PER_IP; i++) {
+      await mcpCheckAgentTrust(db, requestA, { endpointUrl: "https://anon-independent.example.com/nope" });
+    }
+    expect((await mcpCheckAgentTrust(db, requestA, { endpointUrl: "https://anon-independent.example.com/nope" })).isError).toBe(true);
+
+    const requestB = requestFromIp("203.0.113.221");
+    const resultB = await mcpCheckAgentTrust(db, requestB, {
+      endpointUrl: "https://anon-independent.example.com/nope",
+    });
+    expect(resultB.isError).toBeUndefined();
   });
 });
 

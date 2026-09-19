@@ -2,12 +2,15 @@ import "server-only";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { AppDatabase } from "@/lib/db/rls";
 import {
+  checkAgentTrustInputSchema,
+  checkAgentTrustOutputSchema,
   getAgentHealthInputSchema,
   getAgentHealthOutputSchema,
   getAgentInputSchema,
   getAgentOutputSchema,
   listAgentsInputSchema,
   listAgentsOutputSchema,
+  mcpCheckAgentTrust,
   mcpGetAgent,
   mcpGetAgentHealth,
   mcpListAgents,
@@ -76,5 +79,25 @@ export function registerAgentTrustTools(server: McpServer, db: AppDatabase): voi
       outputSchema: sendHeartbeatOutputSchema,
     },
     async (input, ctx) => mcpSendHeartbeat(db, ctx.http?.authInfo?.token, input),
+  );
+
+  server.registerTool(
+    "check_agent_trust",
+    {
+      title: "Check Agent Trust",
+      description:
+        "The preferred check before invoking an unknown external agent. Read-only, requires no AgentTrust API key or account. Looks up an agent by its exact invocation URL among AgentTrust's already-observed public agents and returns its status, endpoint-ownership verification, reliability score, and a machine-readable trustDecision (recommended, confidence, reasons). Does NOT contact endpointUrl itself during this check — it only reads AgentTrust's own existing monitoring history. An unregistered URL returns { matched: false }, never an error.",
+      inputSchema: checkAgentTrustInputSchema,
+      outputSchema: checkAgentTrustOutputSchema,
+    },
+    // ctx.http.req is the *real* inbound request (unlike every other tool
+    // here, which only ever needs the bearer token off it) -- this tool
+    // rate-limits by caller IP instead of by API key, since it has no key
+    // to key on. If a transport ever hands this tool a context with no
+    // `req` at all, fall back to a header-less Request: the rate limiter's
+    // own IP extraction already fails closed on missing IP signal, so this
+    // never silently becomes "unlimited".
+    async (input, ctx) =>
+      mcpCheckAgentTrust(db, ctx.http?.req ?? new Request("https://mcp.internal/check-agent-trust"), input),
   );
 }

@@ -183,12 +183,25 @@ field — AgentTrust doesn't impose that policy for everyone.
 
 Endpoint: `https://agenttrust-umber.vercel.app/api/mcp` (GET and POST,
 Streamable HTTP transport). Auth: the same Bearer token as REST, in the
-`Authorization` header. `tools/list` works without a key; calling a tool
-requires one (the same 401 as REST on a missing/bad key).
+`Authorization` header — except `check_agent_trust`, below, which needs
+none. `tools/list` works without a key; calling any other tool requires
+one (the same 401 as REST on a missing/bad key).
 
-Tools (each backed by the exact same handler as its REST equivalent):
+check_agent_trust({endpointUrl}) — the preferred check before invoking an
+  unknown external agent. No API key or account required. Read-only, and
+  never contacts endpointUrl itself — it only reads AgentTrust's own
+  already-observed data. Returns { matched: false } for an unregistered
+  URL, or { matched: true, slug, name, status, verified,
+  reliabilityScore, trustDecision } for a known public+active agent.
+  Anonymous calls are rate-limited per caller IP; a 429 carries
+  retryAfterSeconds.
+
+Tools requiring an API key (each backed by the exact same handler as its
+REST equivalent):
   list_agents({limit?, cursor?, endpointUrl?}) — `endpointUrl` triggers
-    the same trust-check enrichment as the REST `?endpoint_url=` filter.
+    the same trust-check enrichment as the REST `?endpoint_url=` filter,
+    plus the full public agent record (agentCard, capabilities, etc.)
+    that check_agent_trust deliberately omits.
   get_agent({slug}) — same enriched shape as `GET /agents/{slug}`.
   get_agent_health({slug}) — same as `GET /agents/{slug}/health`.
   send_heartbeat({slug}) — owner-only, same as `POST /agents/{slug}/heartbeat`.

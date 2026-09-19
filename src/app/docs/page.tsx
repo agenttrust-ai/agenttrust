@@ -436,16 +436,35 @@ Authorization: Bearer at_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}</Code>
         <p>
           Endpoint: <code>https://agenttrust-umber.vercel.app/api/mcp</code>{" "}
           (GET and POST, Streamable HTTP transport). Auth: the same Bearer
-          token as REST, in the <code>Authorization</code> header.{" "}
-          <code>tools/list</code> works without a key; calling a tool
-          requires one (the same 401 as REST on a missing/bad key).
+          token as REST, in the <code>Authorization</code> header — except{" "}
+          <code>check_agent_trust</code>, below, which needs none.{" "}
+          <code>tools/list</code> works without a key; calling any other
+          tool requires one (the same 401 as REST on a missing/bad key).
         </p>
-        <p>Tools — each backed by the exact same handler as its REST equivalent:</p>
+        <p className="rounded-md border border-accent/30 bg-surface p-3">
+          <strong className="text-foreground">
+            <code>check_agent_trust({"{endpointUrl}"})</code>
+          </strong>{" "}
+          — the preferred check before invoking an unknown external agent.
+          No API key or account required. Read-only, and never contacts{" "}
+          <code>endpointUrl</code> itself — it only reads AgentTrust&apos;s
+          own already-observed data. Returns{" "}
+          <code>{"{ matched: false }"}</code> for an unregistered URL, or{" "}
+          <code>
+            {"{ matched: true, slug, name, status, verified, reliabilityScore, trustDecision }"}
+          </code>{" "}
+          for a known public+active agent. Anonymous calls are rate-limited
+          per caller IP; a <code>429</code> carries{" "}
+          <code>retryAfterSeconds</code>.
+        </p>
+        <p>Tools requiring an API key (each backed by the exact same handler as its REST equivalent):</p>
         <ul className="ml-5 list-disc space-y-1">
           <li>
             <code>list_agents({"{limit?, cursor?, endpointUrl?}"})</code> —{" "}
             <code>endpointUrl</code> triggers the same trust-check
-            enrichment as the REST <code>?endpoint_url=</code> filter.
+            enrichment as the REST <code>?endpoint_url=</code> filter, plus
+            the full public agent record (agent card, capabilities, etc.)
+            that <code>check_agent_trust</code> deliberately omits.
           </li>
           <li>
             <code>get_agent({"{slug}"})</code> — same enriched shape as{" "}

@@ -117,3 +117,10 @@ create policy "usage_counters: owner reads own" on public.usage_counters
 -- user-facing writes — only the service role writes audit entries.
 create policy "audit_log: owner reads own" on public.audit_log
   for select using (actor_id = auth.uid());
+
+-- anonymous_rate_limits: no owner concept at all -- an anonymous caller has
+-- no account. Only the service-level connection (the same unwrapped `db`
+-- the cron/health-check writes already use) ever touches this table.
+-- Enabled with zero policies so even authenticated/anon roles are denied
+-- by default, consistent with every other table here.
+alter table public.anonymous_rate_limits enable row level security;

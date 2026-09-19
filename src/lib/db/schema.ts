@@ -11,6 +11,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  primaryKey,
   check,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -355,6 +356,26 @@ export const usageCounters = pgTable(
       table.apiKeyId,
       table.windowStart,
     ),
+  ],
+);
+
+// Anonymous per-caller rate limiting for unauthenticated MCP tools (e.g.
+// check_agent_trust) — deliberately NOT the same table as usageCounters,
+// which is hard-tied to a real api_key row and cannot represent "no key at
+// all". No FK to anything: an anonymous caller has no account to reference.
+// ipHash is a SHA-256 hash of the caller's IP (see src/lib/api/anonymous-rate-limit.ts)
+// — the raw IP is never stored. The sentinel value GLOBAL_RATE_LIMIT_KEY
+// (see that same file) reuses this table for the aggregate safety cap
+// across all anonymous callers, rather than adding a second table.
+export const anonymousRateLimits = pgTable(
+  "anonymous_rate_limits",
+  {
+    ipHash: text("ip_hash").notNull(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    requestCount: integer("request_count").notNull().default(0),
+  },
+  (table) => [
+    primaryKey({ columns: [table.ipHash, table.windowStart] }),
   ],
 );
 

@@ -50,6 +50,13 @@
       "when": 1789692710940,
       "tag": "0006_long_bastion",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789825165522,
+      "tag": "0007_red_crystal",
+      "breakpoints": true
     }
   ]
 }

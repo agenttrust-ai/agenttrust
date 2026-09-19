@@ -62,8 +62,13 @@ function toPublicAgentJson(agent: Agent) {
  * where the result set is inherently small — a single agent, or an
  * `endpoint_url` lookup — never the unfiltered listing (see
  * `handleListAgents`), which would turn this into an N+1 query per page.
+ *
+ * Exported for reuse by the anonymous `check_agent_trust` MCP tool
+ * (src/lib/mcp/tools.ts), which needs the identical trustDecision/score
+ * computation but returns only a narrower field subset of what this
+ * produces — never a second, divergent implementation of this logic.
  */
-async function toTrustEnrichedAgentJson(db: AppDatabase, agent: Agent) {
+export async function toTrustEnrichedAgentJson(db: AppDatabase, agent: Agent) {
   const [latestScore, latestCheck] = await Promise.all([
     getLatestReliabilityScorePublic(db, agent.id),
     getLatestCheckPublic(db, agent.id),

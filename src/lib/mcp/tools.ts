@@ -6,7 +6,12 @@ import {
   handleGetAgentHealth,
   handleHeartbeat,
   handleListAgents,
+  toTrustEnrichedAgentJson,
 } from "@/lib/api/agents";
+import { listPublicAgents } from "@/lib/db/queries/agents";
+import { checkAnonymousRateLimit } from "@/lib/api/anonymous-rate-limit";
+import { apiError } from "@/lib/api/response";
+import { AppError, ErrorCode } from "@/lib/errors";
 import { DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from "@/lib/validation/pagination";
 
 /**
@@ -274,4 +279,86 @@ export async function mcpSendHeartbeat(
 
   const body = (await response.json()) as { data: Record<string, unknown> };
   return toSuccessResult(body.data);
+}
+
+/**
+ * `check_agent_trust` — the one anonymous tool. No Bearer token required,
+ * no listing/search/pagination/cursor: it accepts exactly one required
+ * field and returns exactly one of two shapes (matched or not). Every
+ * other MCP tool in this file stays owner/API-key-gated exactly as before;
+ * this is deliberately the only exception, and deliberately narrower than
+ * `list_agents({endpointUrl})` in both input and output.
+ */
+export const checkAgentTrustInputSchema = z.object({
+  endpointUrl: z
+    .string()
+    .trim()
+    .min(1, { error: "endpointUrl is required." })
+    .max(2048, { error: "endpointUrl must be 2048 characters or fewer." }),
+});
+export type CheckAgentTrustInput = z.infer<typeof checkAgentTrustInputSchema>;
+
+export const checkAgentTrustOutputSchema = z.object({
+  matched: z.boolean(),
+  slug: z.string().optional(),
+  name: z.string().optional(),
+  status: agentStatusEnum.optional(),
+  verified: z.boolean().optional(),
+  reliabilityScore: z.number().nullable().optional(),
+  trustDecision: trustDecisionOutputSchema.optional(),
+});
+
+/**
+ * `request` here is the *real* inbound HTTP request (from `ctx.http.req` in
+ * `src/lib/mcp/server.ts`), not a synthetic one — this tool needs the
+ * caller's actual IP for rate-limiting, which none of the other tools
+ * (owner/API-key-gated, and rate-limited by that key instead) ever needed.
+ *
+ * Deliberately does NOT go through `handleListAgents`/`withRateLimitedAuth`
+ * — that wrapper requires a valid API key to rate-limit at all, which is
+ * exactly the requirement this tool exists to not have. It reuses
+ * `listPublicAgents` and `toTrustEnrichedAgentJson` directly instead —
+ * the identical query/normalization/trustDecision logic, just called
+ * without the auth step, so there is only ever one implementation of
+ * "how an endpoint URL is matched to a public agent" in this codebase.
+ */
+export async function mcpCheckAgentTrust(
+  db: AppDatabase,
+  request: Request,
+  input: CheckAgentTrustInput,
+): Promise<McpToolResult> {
+  const rateLimit = await checkAnonymousRateLimit(db, request);
+  if (!rateLimit.allowed) {
+    const response = apiError(
+      new AppError(
+        ErrorCode.RATE_LIMITED,
+        `Checking too often — try again in ${rateLimit.retryAfterSeconds}s.`,
+        { retryAfterSeconds: rateLimit.retryAfterSeconds },
+      ),
+    );
+    // toErrorResult (below) reads retryAfterSeconds off a Retry-After
+    // header, exactly like the REST 429 path (withRateLimitedAuth) —
+    // apiError alone doesn't set one, so it's added here explicitly.
+    response.headers.set("Retry-After", String(rateLimit.retryAfterSeconds));
+    return toErrorResult(response);
+  }
+
+  // Never queries anything but the already-stored public+active directory —
+  // no outbound request to endpointUrl happens anywhere in this call.
+  const page = await listPublicAgents(db, { limit: 1, endpointUrl: input.endpointUrl });
+  const agent = page.agents[0];
+  if (!agent) {
+    return toSuccessResult({ matched: false });
+  }
+
+  const enriched = await toTrustEnrichedAgentJson(db, agent);
+  return toSuccessResult({
+    matched: true,
+    slug: enriched.slug,
+    name: enriched.name,
+    status: enriched.status,
+    verified: enriched.verified,
+    reliabilityScore: enriched.reliabilityScore,
+    trustDecision: enriched.trustDecision,
+  });
 }
