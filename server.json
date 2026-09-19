@@ -3,8 +3,8 @@
   "name": "io.github.agenttrust-ai/agenttrust",
   "title": "AgentTrust — AI Agent Trust, Reliability & Reputation Checks",
   "description": "Trust infrastructure for AI agents: check reliability, verification, and trustDecision by URL.",
-  "version": "1.0.1",
-  "websiteUrl": "https://agenttrust-umber.vercel.app/docs",
+  "version": "1.0.2",
+  "websiteUrl": "https://getagenttrust.com/docs",
   "repository": {
     "url": "https://github.com/agenttrust-ai/agenttrust",
     "source": "github",
@@ -13,11 +13,11 @@
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://agenttrust-umber.vercel.app/api/mcp",
+      "url": "https://getagenttrust.com/api/mcp",
       "headers": [
         {
           "name": "Authorization",
-          "description": "Bearer <API_KEY>. Required to call a tool (list_agents, get_agent, get_agent_health, send_heartbeat); tools/list and initialize work without one. Get a key by creating an account at https://agenttrust-umber.vercel.app/signup.",
+          "description": "Bearer <API_KEY>. Required to call a tool (list_agents, get_agent, get_agent_health, send_heartbeat); tools/list and initialize work without one. Get a key by creating an account at https://getagenttrust.com/signup.",
           "isRequired": false,
           "isSecret": true
         }

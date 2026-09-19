@@ -18,9 +18,9 @@ Official MCP Registry identity: `io.github.agenttrust-ai/agenttrust`.
 If you're building an AI agent or system that wants to *look up* another
 agent's trust information, you don't need this repository at all — see:
 
-- **[/docs](https://agenttrust-umber.vercel.app/docs)** — full REST and
+- **[/docs](https://getagenttrust.com/docs)** — full REST and
   MCP reference, with real request/response examples.
-- **[/llms.txt](https://agenttrust-umber.vercel.app/llms.txt)** — the
+- **[/llms.txt](https://getagenttrust.com/llms.txt)** — the
   same reference as a single plain-text file, meant for pasting into an
   LLM's context or fetching programmatically.
 

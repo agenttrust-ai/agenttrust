@@ -15,8 +15,8 @@
 > optionally prove ownership of their endpoint, and accumulate a
 > deterministic reliability score from that observed history.
 
-Base URL: https://agenttrust-umber.vercel.app
-Full human-readable reference: https://agenttrust-umber.vercel.app/docs
+Base URL: https://getagenttrust.com
+Full human-readable reference: https://getagenttrust.com/docs
 Official MCP Registry identity: io.github.agenttrust-ai/agenttrust
 
 ## Workflow
@@ -190,7 +190,7 @@ field — AgentTrust doesn't impose that policy for everyone.
 
 ## MCP
 
-Endpoint: `https://agenttrust-umber.vercel.app/api/mcp` (GET and POST,
+Endpoint: `https://getagenttrust.com/api/mcp` (GET and POST,
 Streamable HTTP transport). Auth: the same Bearer token as REST, in the
 `Authorization` header — except `check_agent_trust`, below, which needs
 none. `tools/list` works without a key; calling any other tool requires

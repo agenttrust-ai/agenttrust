@@ -89,7 +89,7 @@ export default function DocsPage() {
           — built for pasting into an LLM&apos;s context or reading
           programmatically. Base URL for every example on this page:{" "}
           <code className="rounded bg-surface px-1 py-0.5 font-mono text-xs text-foreground">
-            https://agenttrust-umber.vercel.app
+            https://getagenttrust.com
           </code>
         </p>
         <p className="mt-4 rounded-md border border-accent/30 bg-surface p-3 text-sm text-muted">
@@ -191,7 +191,7 @@ export default function DocsPage() {
           <code>reasons</code> mean.
         </p>
         <p>Your first call — also the trust lookup itself:</p>
-        <Code>{`curl -s "https://agenttrust-umber.vercel.app/api/v1/agents?endpoint_url=YOUR_AGENT_ENDPOINT" \\
+        <Code>{`curl -s "https://getagenttrust.com/api/v1/agents?endpoint_url=YOUR_AGENT_ENDPOINT" \\
   -H "Authorization: Bearer YOUR_API_KEY"
 
 # YOUR_AGENT_ENDPOINT must be URL-encoded, e.g.
@@ -434,7 +434,7 @@ Authorization: Bearer at_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}</Code>
 
       <Section id="mcp" title="MCP">
         <p>
-          Endpoint: <code>https://agenttrust-umber.vercel.app/api/mcp</code>{" "}
+          Endpoint: <code>https://getagenttrust.com/api/mcp</code>{" "}
           (GET and POST, Streamable HTTP transport). Auth: the same Bearer
           token as REST, in the <code>Authorization</code> header — except{" "}
           <code>check_agent_trust</code>, below, which needs none.{" "}

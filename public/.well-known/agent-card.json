@@ -2,9 +2,9 @@
   "protocolVersion": "1.0",
   "name": "AgentTrust",
   "description": "Trust infrastructure for AI agents. Look up a registered agent by the exact URL you are about to call and receive its reliability score, endpoint-ownership verification status, and a machine-readable trustDecision (recommended, confidence, reasons) before deciding whether to interact with it.",
-  "url": "https://agenttrust-umber.vercel.app/api/v1",
+  "url": "https://getagenttrust.com/api/v1",
   "version": "1.0.0",
-  "documentationUrl": "https://agenttrust-umber.vercel.app/docs",
+  "documentationUrl": "https://getagenttrust.com/docs",
   "capabilities": {
     "streaming": false,
     "pushNotifications": false
@@ -13,7 +13,7 @@
     "bearerAuth": {
       "type": "http",
       "scheme": "bearer",
-      "description": "API key obtained by creating an account at https://agenttrust-umber.vercel.app/signup and generating a key in the dashboard. Send it as: Authorization: Bearer <API_KEY>."
+      "description": "API key obtained by creating an account at https://getagenttrust.com/signup and generating a key in the dashboard. Send it as: Authorization: Bearer <API_KEY>."
     }
   },
   "security": [

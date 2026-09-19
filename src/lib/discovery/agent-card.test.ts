@@ -89,8 +89,8 @@ describe("AgentTrust's A2A Agent Card (public/.well-known/agent-card.json)", () 
 
   it("references the real, existing documentation and API base — no fabricated URLs", () => {
     const card = readCard();
-    expect(card.documentationUrl).toBe("https://agenttrust-umber.vercel.app/docs");
-    expect(card.url).toBe("https://agenttrust-umber.vercel.app/api/v1");
+    expect(card.documentationUrl).toBe("https://getagenttrust.com/docs");
+    expect(card.url).toBe("https://getagenttrust.com/api/v1");
   });
 
   it("describes the real Bearer auth scheme without embedding any actual credential", () => {
