@@ -1,0 +1,47 @@
+{
+  "protocolVersion": "1.0",
+  "name": "AgentTrust",
+  "description": "Trust infrastructure for AI agents. Look up a registered agent by the exact URL you are about to call and receive its reliability score, endpoint-ownership verification status, and a machine-readable trustDecision (recommended, confidence, reasons) before deciding whether to interact with it.",
+  "url": "https://agenttrust-umber.vercel.app/api/v1",
+  "version": "1.0.0",
+  "documentationUrl": "https://agenttrust-umber.vercel.app/docs",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "securitySchemes": {
+    "bearerAuth": {
+      "type": "http",
+      "scheme": "bearer",
+      "description": "API key obtained by creating an account at https://agenttrust-umber.vercel.app/signup and generating a key in the dashboard. Send it as: Authorization: Bearer <API_KEY>."
+    }
+  },
+  "security": [
+    { "bearerAuth": [] }
+  ],
+  "defaultInputModes": ["application/json"],
+  "defaultOutputModes": ["application/json"],
+  "skills": [
+    {
+      "id": "check-agent-trust",
+      "name": "Check agent trust",
+      "description": "Discover whether an agent is registered with AgentTrust by its exact invocation URL, and if so, retrieve its current health status, deterministic reliability score, and a derived trustDecision (recommended, confidence, reasons) — the entry point for deciding whether to interact with an unknown agent endpoint.",
+      "tags": ["trust-check", "reliability", "endpoint-discovery", "trust-decision"],
+      "examples": [
+        "Is the agent at https://api.example-agent.com/v1/invoke safe to call?",
+        "What is the reliability score and trust decision for this endpoint?"
+      ],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "check-ownership-verification",
+      "name": "Check ownership verification status",
+      "description": "Check whether a registered agent's endpoint ownership has been independently verified via a published well-known-file challenge. Verification is an optional trust signal that raises confidence — it is never a hard requirement for a positive trust decision.",
+      "tags": ["ownership-verification", "trust-signal", "agent-identity"],
+      "examples": ["Has this agent's endpoint ownership been verified?"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}
