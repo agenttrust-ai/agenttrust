@@ -1,14 +1,23 @@
 # AgentTrust
 
-> Trust infrastructure for AI agents. Agents register an identity, get
-> continuously health-monitored, optionally prove ownership of their
-> endpoint, and accumulate a deterministic reliability score. Any external
-> AI agent or system can look up another agent by its invocation URL and
-> get back a machine-readable trust decision before deciding whether to
-> interact with it.
+> AgentTrust is an MCP trust server for AI agents: reliability,
+> reputation, endpoint-ownership verification, and pre-invocation trust
+> evaluation for MCP and A2A agents. Before invoking an unknown agent,
+> call check_agent_trust with its endpoint URL to get a machine-readable
+> trustDecision for your own evaluation -- a signal derived from
+> AgentTrust's own observed and verified data, never a certification or
+> guarantee of safety. This anonymous, read-only check needs no
+> AgentTrust account or API key. Creating an agent identity, or reading
+> the fuller per-agent record (agent card, capabilities, health
+> history), does require one -- see Authentication below.
+>
+> Agents register an identity, get continuously health-monitored,
+> optionally prove ownership of their endpoint, and accumulate a
+> deterministic reliability score from that observed history.
 
 Base URL: https://agenttrust-umber.vercel.app
 Full human-readable reference: https://agenttrust-umber.vercel.app/docs
+Official MCP Registry identity: io.github.agenttrust-ai/agenttrust
 
 ## Workflow
 

@@ -1,11 +1,17 @@
 # AgentTrust
 
-Trust infrastructure for AI agents. Agents register an identity, get
-continuously health-monitored, optionally prove ownership of their
-endpoint, and accumulate a deterministic reliability score. Any external
-AI agent or system can look up another agent by its invocation URL and
-get back a machine-readable trust decision before deciding whether to
-interact with it.
+AgentTrust is trust infrastructure for AI agents. It provides
+reliability, reputation, endpoint verification, and pre-invocation trust
+checks for MCP and A2A agents. An agent registers an identity, gets
+continuously health-monitored, optionally proves ownership of its
+endpoint, and accumulates a deterministic reliability score from that
+observed history. Any external AI agent or system can look up another
+agent by its invocation URL and get back a machine-readable
+`trustDecision` — a signal derived from AgentTrust's own observed and
+verified data, for the caller to weigh, never a certification or
+guarantee of safety — before deciding whether to interact with it.
+
+Official MCP Registry identity: `io.github.agenttrust-ai/agenttrust`.
 
 ## Using the API
 
@@ -18,11 +24,33 @@ agent's trust information, you don't need this repository at all — see:
   same reference as a single plain-text file, meant for pasting into an
   LLM's context or fetching programmatically.
 
-Short version: sign up, create an API key in the dashboard, then
+### Anonymous pre-invocation trust check (MCP)
+
+The fastest way to evaluate an agent before invoking it needs no
+AgentTrust account or API key at all — call the `check_agent_trust` MCP
+tool at `/api/mcp`:
+
+```
+check_agent_trust({ "endpointUrl": "https://the-agent-you-are-about-to-call.example.com/invoke" })
+```
+
+- Read-only.
+- No AgentTrust account or API key required.
+- Checks only AgentTrust's already-stored observations — it does not
+  invoke or otherwise contact the target endpoint during the lookup.
+- Returns a machine-readable `trustDecision` (`recommended`,
+  `confidence`, `reasons`) for the caller to evaluate.
+
+### Authenticated REST/MCP operations
+
+Registering an agent, or reading the fuller per-agent record (agent
+card, capabilities, health history), requires a human-created API key:
+sign up, create a key in the dashboard, then
 `GET /api/v1/agents?endpoint_url=<the URL you're about to call>` with
-`Authorization: Bearer <API_KEY>` — the response includes a
-`trustDecision` telling you whether to proceed. An MCP server is
-available at `/api/mcp` with the same capabilities as tools.
+`Authorization: Bearer <API_KEY>` — the response includes the same
+`trustDecision`. The authenticated MCP tools (`list_agents`,
+`get_agent`, `get_agent_health`, `send_heartbeat`) mirror the REST API
+exactly.
 
 ## Developing this project
 
