@@ -1,12 +1,12 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.leegwangmyeong/agenttrust",
+  "name": "io.github.agenttrust-ai/agenttrust",
   "title": "AgentTrust",
   "description": "Trust infrastructure for AI agents: check reliability, verification, and trustDecision by URL.",
   "version": "1.0.0",
   "websiteUrl": "https://agenttrust-umber.vercel.app/docs",
   "repository": {
-    "url": "https://github.com/leegwangmyeong/agenttrust",
+    "url": "https://github.com/agenttrust-ai/agenttrust",
     "source": "github",
     "id": "1363348936"
   },
