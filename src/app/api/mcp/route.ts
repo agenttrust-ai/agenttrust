@@ -25,7 +25,7 @@ const handler = createMcpHandler(
     registerAgentTrustTools(server, db);
   },
   {
-    serverInfo: { name: "agenttrust", version: "1.0.0" },
+    serverInfo: { name: "agenttrust", version: "1.0.2" },
     // Sent to every client during initialize — the standard MCP mechanism
     // for "how to use this server", read once up front rather than
     // inferred solely from individual tool descriptions.
