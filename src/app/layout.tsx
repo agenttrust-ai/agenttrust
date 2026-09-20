@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import "./globals.css";
 import { AuthNav } from "@/components/auth-nav";
+import { publicEnv } from "@/lib/config";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,9 +16,36 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const SITE_DESCRIPTION_SHORT =
+  "Trust infrastructure for AI agents: check an agent's reliability, reputation, and endpoint verification before invocation, with a machine-readable trustDecision.";
+const SITE_DESCRIPTION_LONG =
+  "AgentTrust is trust infrastructure for AI agents. It helps an AI check another agent or endpoint before invocation using reliability monitoring, endpoint ownership verification, reputation/trust signals, and a machine-readable trustDecision.";
+
 export const metadata: Metadata = {
-  title: "AgentTrust",
-  description: "Trust infrastructure for AI agents.",
+  metadataBase: new URL(publicEnv.NEXT_PUBLIC_APP_URL),
+  title: "AgentTrust — AI Agent Trust & Reliability",
+  description: SITE_DESCRIPTION_SHORT,
+  keywords: [
+    "AI agent trust",
+    "agent reliability",
+    "agent reputation",
+    "agent verification",
+    "MCP trust server",
+    "trust infrastructure for AI agents",
+  ],
+  robots: { index: true, follow: true },
+  openGraph: {
+    type: "website",
+    siteName: "AgentTrust",
+    title: "AgentTrust — AI Agent Trust & Reliability",
+    description: SITE_DESCRIPTION_LONG,
+    url: "/",
+  },
+  twitter: {
+    card: "summary",
+    title: "AgentTrust — AI Agent Trust & Reliability",
+    description: SITE_DESCRIPTION_SHORT,
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
