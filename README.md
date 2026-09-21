@@ -41,6 +41,22 @@ check_agent_trust({ "endpointUrl": "https://the-agent-you-are-about-to-call.exam
 - Returns a machine-readable `trustDecision` (`recommended`,
   `confidence`, `reasons`) for the caller to evaluate.
 
+#### Try it with a known endpoint
+
+To see the lookup flow work end-to-end without registering anything
+yourself, call `check_agent_trust` against an endpoint AgentTrust
+already observes:
+
+```
+check_agent_trust({ "endpointUrl": "https://allagents.app/a2a" })
+```
+
+This endpoint is already tracked by AgentTrust, so the call exercises
+the real lookup path against real observed data. Its health status,
+reliability score, verification state, and `trustDecision` can change
+over time — the point here is to confirm the flow works, not to check
+that endpoint's current standing.
+
 ### Authenticated REST/MCP operations
 
 Registering an agent, or reading the fuller per-agent record (agent
