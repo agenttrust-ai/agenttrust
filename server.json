@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.agenttrust-ai/agenttrust",
-  "title": "AgentTrust — AI Agent Trust, Reliability & Reputation Checks",
-  "description": "Trust infrastructure for AI agents: check reliability, verification, and trustDecision by URL.",
+  "title": "AgentTrust — Pre-Invocation AI Agent Trust & Reliability Checks",
+  "description": "Trust infrastructure for AI agents: a read-only, no-API-key pre-invocation trust check by endpoint URL, using existing reliability, verification, and monitoring history to return a machine-readable trustDecision — without contacting the target endpoint.",
   "version": "1.0.2",
   "websiteUrl": "https://getagenttrust.com/docs",
   "repository": {

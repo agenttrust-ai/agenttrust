@@ -25,8 +25,8 @@
     {
       "id": "check-agent-trust",
       "name": "Check agent trust",
-      "description": "Discover whether an agent is registered with AgentTrust by its exact invocation URL, and if so, retrieve its current health status, deterministic reliability score, and a derived trustDecision (recommended, confidence, reasons) — the entry point for deciding whether to interact with an unknown agent endpoint.",
-      "tags": ["trust-check", "reliability", "endpoint-discovery", "trust-decision"],
+      "description": "Discover whether an agent is registered with AgentTrust by its exact invocation URL, and if so, retrieve its current health status, deterministic reliability score, and a derived trustDecision (recommended, confidence, reasons) — the entry point for a pre-invocation trust check on an unknown agent endpoint. Read-only and requires no AgentTrust account or API key; it never contacts the target endpoint itself, only AgentTrust's own existing monitoring history.",
+      "tags": ["trust-check", "reliability", "endpoint-discovery", "trust-decision", "pre-invocation", "read-only", "no-api-key"],
       "examples": [
         "Is the agent at https://api.example-agent.com/v1/invoke safe to call?",
         "What is the reliability score and trust decision for this endpoint?"

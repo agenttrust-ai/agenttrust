@@ -17,9 +17,9 @@ const geistMono = Geist_Mono({
 });
 
 const SITE_DESCRIPTION_SHORT =
-  "Trust infrastructure for AI agents: check an agent's reliability, reputation, and endpoint verification before invocation, with a machine-readable trustDecision.";
+  "Trust infrastructure for AI agents: a read-only, no-API-key pre-invocation trust check on an agent's reliability, reputation, and endpoint verification, with a machine-readable trustDecision.";
 const SITE_DESCRIPTION_LONG =
-  "AgentTrust is trust infrastructure for AI agents. It helps an AI check another agent or endpoint before invocation using reliability monitoring, endpoint ownership verification, reputation/trust signals, and a machine-readable trustDecision.";
+  "AgentTrust is trust infrastructure for AI agents. It helps an AI check another agent or endpoint before invocation using reliability monitoring, endpoint ownership verification, reputation/trust signals, and a machine-readable trustDecision — via a read-only MCP tool that needs no API key and never contacts the target endpoint.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(publicEnv.NEXT_PUBLIC_APP_URL),
@@ -32,6 +32,9 @@ export const metadata: Metadata = {
     "agent verification",
     "MCP trust server",
     "trust infrastructure for AI agents",
+    "pre-invocation agent trust check",
+    "read-only agent endpoint check",
+    "no API key MCP tool",
   ],
   robots: { index: true, follow: true },
   openGraph: {

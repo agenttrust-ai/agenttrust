@@ -294,7 +294,10 @@ export const checkAgentTrustInputSchema = z.object({
     .string()
     .trim()
     .min(1, { error: "endpointUrl is required." })
-    .max(2048, { error: "endpointUrl must be 2048 characters or fewer." }),
+    .max(2048, { error: "endpointUrl must be 2048 characters or fewer." })
+    .describe(
+      "The exact invocation URL of the agent you're about to call. Used only to look up AgentTrust's own already-observed data for it — this endpoint is never contacted during the check.",
+    ),
 });
 export type CheckAgentTrustInput = z.infer<typeof checkAgentTrustInputSchema>;
 
