@@ -1,5 +1,12 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import type { Metadata } from "next";
+import { db } from "@/lib/db";
+import { checkAgentTrustInputSchema, mcpCheckAgentTrust } from "@/lib/mcp/tools";
+import {
+  TrustDecisionSummary,
+  type TrustCheckResult,
+} from "@/components/agents/trust-decision-summary";
 
 const TITLE = "Check AI Agent Trust Before Invocation | AgentTrust";
 const DESCRIPTION =
@@ -62,7 +69,51 @@ const EXAMPLE_MATCHED = `{
   }
 }`;
 
-export default function CheckAgentTrustPage() {
+/**
+ * Runs the exact same rate-limited, read-only check the `check_agent_trust`
+ * MCP tool runs — `mcpCheckAgentTrust` (src/lib/mcp/tools.ts) — from this
+ * page instead of over MCP transport, so a human visitor sees a real,
+ * live result rather than a faked one. No new lookup/rate-limit/trust
+ * logic is added here; only the incoming request's IP headers are forwarded
+ * on, the same way `checkAnonymousRateLimit` already expects them.
+ */
+async function runTrustCheck(
+  endpointUrl: string,
+): Promise<{ result?: TrustCheckResult; error?: string }> {
+  const parsed = checkAgentTrustInputSchema.safeParse({ endpointUrl });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid endpoint URL." };
+  }
+
+  const incomingHeaders = await headers();
+  const request = new Request("https://mcp.internal/check-agent-trust", {
+    headers: incomingHeaders,
+  });
+  const toolResult = await mcpCheckAgentTrust(db, request, parsed.data);
+
+  if (toolResult.isError) {
+    const error = toolResult.structuredContent?.error as
+      | { message?: string; retryAfterSeconds?: number }
+      | undefined;
+    const message = error?.message ?? "Something went wrong. Please try again.";
+    return {
+      error:
+        typeof error?.retryAfterSeconds === "number"
+          ? `${message} (retry in ${error.retryAfterSeconds}s)`
+          : message,
+    };
+  }
+
+  return { result: toolResult.structuredContent as TrustCheckResult };
+}
+
+export default async function CheckAgentTrustPage({
+  searchParams,
+}: PageProps<"/check-agent-trust">) {
+  const { endpointUrl } = await searchParams;
+  const query = typeof endpointUrl === "string" ? endpointUrl : undefined;
+  const check = query ? await runTrustCheck(query) : undefined;
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-6 py-16">
       <div>
@@ -80,6 +131,39 @@ export default function CheckAgentTrustPage() {
           during the check.
         </p>
       </div>
+
+      <form
+        action="/check-agent-trust"
+        method="GET"
+        className="flex flex-col gap-2 sm:flex-row"
+      >
+        <label htmlFor="endpointUrl" className="sr-only">
+          Agent endpoint URL
+        </label>
+        <input
+          id="endpointUrl"
+          name="endpointUrl"
+          type="url"
+          required
+          maxLength={2048}
+          defaultValue={query ?? ""}
+          placeholder="https://your-agent.example.com/invoke"
+          className="flex-1 rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-accent"
+        />
+        <button
+          type="submit"
+          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:opacity-90"
+        >
+          Check trust →
+        </button>
+      </form>
+
+      {check?.error && (
+        <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-400">
+          {check.error}
+        </p>
+      )}
+      {check?.result && <TrustDecisionSummary result={check.result} />}
 
       <Section title="How it works">
         <p>

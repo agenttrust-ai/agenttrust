@@ -60,10 +60,26 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Run on everything except static assets and image optimization files —
-     * those never need a session check, and excluding them keeps proxy off
-     * the hot path for every CSS/JS/image request.
+     * Run on everything except static assets, image optimization files, API
+     * routes, and static discovery files (robots.txt, sitemap.xml,
+     * .well-known/*, llms.txt).
+     *
+     * API routes (/api/*, including /api/mcp) never use this Supabase
+     * cookie session at all — they authenticate with a Bearer API key
+     * checked in-route (see src/lib/api/authenticate.ts and
+     * withMcpAuth/verifyToken in src/app/api/mcp/route.ts), and they render
+     * no UI that depends on knowing whether a browser session is logged in.
+     * Running getClaims() for them was pure overhead on every request,
+     * including the anonymous, rate-limited check_agent_trust MCP calls
+     * this project explicitly wants to be cheap to call. Static discovery
+     * files are plain files/metadata routes with no session-dependent
+     * rendering either.
+     *
+     * Every real page under RootLayout (/, /docs, /check-agent-trust,
+     * /login, /signup, /dashboard/*) stays matched, so the session-refresh
+     * behavior described above and AuthNav's login state keep working
+     * exactly as before.
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/|\\.well-known/|robots\\.txt$|sitemap\\.xml$|llms\\.txt$|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
