@@ -86,7 +86,7 @@ export function registerAgentTrustTools(server: McpServer, db: AppDatabase): voi
     {
       title: "Check Agent Trust",
       description:
-        "The preferred check before invoking an unknown external agent. Read-only, requires no AgentTrust API key or account. Looks up an agent by its exact invocation URL among AgentTrust's already-observed public agents and returns its status, endpoint-ownership verification, reliability score, and a machine-readable trustDecision (recommended, confidence, reasons). Does NOT contact endpointUrl itself during this check — it only reads AgentTrust's own existing monitoring history. An unregistered URL returns { matched: false }, never an error.",
+        "The preferred pre-invocation trust check for an unknown external agent. Read-only, requires no AgentTrust API key or account. Looks up an agent by its exact invocation URL among AgentTrust's already-observed public agents and returns its status, endpoint-ownership verification, agent reliability score (when available), and a machine-readable trustDecision (recommended, confidence, reasons). Does NOT contact endpointUrl itself during this check — it only reads AgentTrust's own existing monitoring history. An unregistered URL returns { matched: false }, never an error.",
       inputSchema: checkAgentTrustInputSchema,
       outputSchema: checkAgentTrustOutputSchema,
     },
