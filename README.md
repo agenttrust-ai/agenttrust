@@ -1,4 +1,4 @@
-# AgentTrust
+# AgentTrust — Pre-invocation Trust Check for AI Agent Endpoints
 
 ## Pre-invocation trust check for AI agent endpoints
 
