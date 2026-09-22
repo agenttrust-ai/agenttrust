@@ -79,6 +79,12 @@ export default function Home() {
         >
           API docs →
         </Link>
+        <Link
+          href="/check-agent-trust"
+          className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-surface"
+        >
+          How trust checks work →
+        </Link>
       </div>
     </div>
   );

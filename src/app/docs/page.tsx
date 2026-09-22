@@ -455,7 +455,11 @@ Authorization: Bearer at_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}</Code>
           </code>{" "}
           for a known public+active agent. Anonymous calls are rate-limited
           per caller IP; a <code>429</code> carries{" "}
-          <code>retryAfterSeconds</code>.
+          <code>retryAfterSeconds</code>. See{" "}
+          <a href="/check-agent-trust" className="text-accent hover:underline">
+            Check an AI Agent Before You Invoke It
+          </a>{" "}
+          for a plain-language walkthrough of this check.
         </p>
         <p>Tools requiring an API key (each backed by the exact same handler as its REST equivalent):</p>
         <ul className="ml-5 list-disc space-y-1">

@@ -12,6 +12,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return [
     { url: base, changeFrequency: "monthly", priority: 1 },
     { url: `${base}/docs`, changeFrequency: "weekly", priority: 0.9 },
+    { url: `${base}/check-agent-trust`, changeFrequency: "monthly", priority: 0.8 },
     { url: `${base}/signup`, changeFrequency: "yearly", priority: 0.5 },
     { url: `${base}/login`, changeFrequency: "yearly", priority: 0.3 },
   ];
