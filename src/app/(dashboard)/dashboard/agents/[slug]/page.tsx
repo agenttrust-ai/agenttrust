@@ -84,9 +84,9 @@ export default async function AgentDetailPage({
           <h2 className="text-sm font-medium">This agent is still a draft</h2>
           <p className="mt-1 text-sm text-muted">
             Draft agents aren&apos;t on their public profile and aren&apos;t
-            checked by monitoring yet. Activate it to make it publicly
-            visible and start pull-based health checks and heartbeats
-            counting toward its trust score.
+            checked by monitoring yet. Activate it to make it publicly visible
+            and start pull-based health checks and heartbeats counting toward
+            its trust score.
           </p>
           <form action={boundActivate} className="mt-3">
             <button
@@ -96,6 +96,23 @@ export default async function AgentDetailPage({
               Activate agent
             </button>
           </form>
+        </div>
+      )}
+
+      {!isDraft && !agent.ownershipVerifiedAt && (
+        <div className="max-w-xl rounded-lg border border-border bg-surface p-4">
+          <h2 className="text-sm font-medium">
+            Next step (optional): verify endpoint ownership
+          </h2>
+          <p className="mt-1 text-sm text-muted">
+            This agent is active and being monitored. Proving you control its
+            endpoint raises the confidence of the trustDecision callers see —
+            it&apos;s optional and never required for{" "}
+            <code className="rounded bg-background px-1 py-0.5 font-mono text-xs text-foreground">
+              recommended
+            </code>
+            . See the verification panel below.
+          </p>
         </div>
       )}
 
@@ -129,12 +146,14 @@ export default async function AgentDetailPage({
             </dd>
           </div>
         </dl>
-        {latest && !latest.success && (latest.statusCode === 401 || latest.statusCode === 403) && (
-          <p className="mt-3 text-sm text-red-600">
-            Authentication failed (HTTP {latest.statusCode}) — check the
-            credential and header name configured below.
-          </p>
-        )}
+        {latest &&
+          !latest.success &&
+          (latest.statusCode === 401 || latest.statusCode === 403) && (
+            <p className="mt-3 text-sm text-red-600">
+              Authentication failed (HTTP {latest.statusCode}) — check the
+              credential and header name configured below.
+            </p>
+          )}
         {latest &&
           !latest.success &&
           latest.statusCode !== 401 &&
@@ -161,31 +180,40 @@ export default async function AgentDetailPage({
             <dl className="mt-3 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
               <div>
                 <dt className="text-xs text-muted">Uptime</dt>
-                <dd className="mt-0.5">{latestScore.uptimeSubscore.toFixed(0)}</dd>
+                <dd className="mt-0.5">
+                  {latestScore.uptimeSubscore.toFixed(0)}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs text-muted">Latency</dt>
-                <dd className="mt-0.5">{latestScore.latencySubscore.toFixed(0)}</dd>
+                <dd className="mt-0.5">
+                  {latestScore.latencySubscore.toFixed(0)}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs text-muted">Consistency</dt>
-                <dd className="mt-0.5">{latestScore.consistencySubscore.toFixed(0)}</dd>
+                <dd className="mt-0.5">
+                  {latestScore.consistencySubscore.toFixed(0)}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs text-muted">Incidents</dt>
-                <dd className="mt-0.5">{latestScore.incidentSubscore.toFixed(0)}</dd>
+                <dd className="mt-0.5">
+                  {latestScore.incidentSubscore.toFixed(0)}
+                </dd>
               </div>
             </dl>
             <p className="mt-3 text-xs text-muted">
-              Computed {new Date(latestScore.computedAt).toLocaleString()} from checks
-              between {new Date(latestScore.windowStart).toLocaleDateString()} and{" "}
+              Computed {new Date(latestScore.computedAt).toLocaleString()} from
+              checks between{" "}
+              {new Date(latestScore.windowStart).toLocaleDateString()} and{" "}
               {new Date(latestScore.windowEnd).toLocaleDateString()}.
             </p>
           </>
         ) : (
           <p className="mt-3 text-sm text-muted">
-            Not enough monitoring history yet — a score appears once enough checks
-            have accumulated.
+            Not enough monitoring history yet — a score appears once enough
+            checks have accumulated.
           </p>
         )}
       </div>

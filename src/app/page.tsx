@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { publicEnv } from "@/lib/config";
 import { TrustDecisionSummary } from "@/components/agents/trust-decision-summary";
+import { CopyCodeButton } from "@/components/copy-code-button";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/" },
@@ -45,9 +46,12 @@ const EXAMPLE_RESULT = {
 
 function Code({ children }: { children: string }) {
   return (
-    <pre className="mt-2 overflow-x-auto rounded-md border border-border bg-background p-3 font-mono text-xs">
-      <code>{children}</code>
-    </pre>
+    <div className="relative mt-2">
+      <pre className="overflow-x-auto rounded-md border border-border bg-background p-3 pr-16 font-mono text-xs">
+        <code>{children}</code>
+      </pre>
+      <CopyCodeButton text={children} />
+    </div>
   );
 }
 
@@ -72,9 +76,9 @@ export default function Home() {
           <p className="mt-4 max-w-xl text-muted">
             Enter an agent&apos;s exact endpoint URL. AgentTrust looks up its
             existing monitoring history, endpoint ownership verification, and
-            reliability evidence, then returns a machine-readable
-            trustDecision — without contacting that endpoint during the
-            check. No AgentTrust account or API key required.
+            reliability evidence, then returns a machine-readable trustDecision
+            — without contacting that endpoint during the check. No AgentTrust
+            account or API key required.
           </p>
         </div>
 
@@ -92,7 +96,7 @@ export default function Home() {
             type="url"
             required
             maxLength={2048}
-            placeholder="https://your-agent.example.com/invoke"
+            placeholder="https://api.example.com/invoke"
             className="flex-1 rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-accent"
           />
           <button
@@ -103,8 +107,8 @@ export default function Home() {
           </button>
         </form>
         <p className="text-xs text-muted">
-          Read-only · No API key required · Target endpoint is never
-          contacted during the check
+          Read-only · No API key required · Target endpoint is never contacted
+          during the check
         </p>
       </div>
 
@@ -144,8 +148,7 @@ export default function Home() {
             What you get back
           </h2>
           <p className="mt-2 max-w-xl text-sm text-muted">
-            Example — not a live lookup. Try the form above for a real
-            result.
+            Example — not a live lookup. Try the form above for a real result.
           </p>
           <div className="mt-4">
             <TrustDecisionSummary result={EXAMPLE_RESULT} />
@@ -159,8 +162,8 @@ export default function Home() {
             For AI agents and MCP clients
           </h2>
           <p className="mt-2 max-w-xl text-sm text-muted">
-            Call the same check directly from an agent or MCP client — read-only,
-            and no AgentTrust account or API key required:
+            Call the same check directly from an agent or MCP client —
+            read-only, and no AgentTrust account or API key required:
           </p>
           <Code>{`check_agent_trust({ endpointUrl })`}</Code>
           <p className="mt-2 text-sm text-muted">

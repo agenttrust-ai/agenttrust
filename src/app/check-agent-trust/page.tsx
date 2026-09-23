@@ -2,11 +2,15 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
-import { checkAgentTrustInputSchema, mcpCheckAgentTrust } from "@/lib/mcp/tools";
+import {
+  checkAgentTrustInputSchema,
+  mcpCheckAgentTrust,
+} from "@/lib/mcp/tools";
 import {
   TrustDecisionSummary,
   type TrustCheckResult,
 } from "@/components/agents/trust-decision-summary";
+import { CopyCodeButton } from "@/components/copy-code-button";
 
 const TITLE = "Check AI Agent Trust Before Invocation | AgentTrust";
 const DESCRIPTION =
@@ -32,9 +36,12 @@ export const metadata: Metadata = {
 
 function Code({ children }: { children: string }) {
   return (
-    <pre className="mt-2 overflow-x-auto rounded-md border border-border bg-background p-3 font-mono text-xs">
-      <code>{children}</code>
-    </pre>
+    <div className="relative mt-2">
+      <pre className="overflow-x-auto rounded-md border border-border bg-background p-3 pr-16 font-mono text-xs">
+        <code>{children}</code>
+      </pre>
+      <CopyCodeButton text={children} />
+    </div>
   );
 }
 
@@ -82,7 +89,9 @@ async function runTrustCheck(
 ): Promise<{ result?: TrustCheckResult; error?: string }> {
   const parsed = checkAgentTrustInputSchema.safeParse({ endpointUrl });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid endpoint URL." };
+    return {
+      error: parsed.error.issues[0]?.message ?? "Invalid endpoint URL.",
+    };
   }
 
   const incomingHeaders = await headers();
@@ -93,8 +102,7 @@ async function runTrustCheck(
 
   if (toolResult.isError) {
     const error = toolResult.structuredContent?.error as
-      | { message?: string; retryAfterSeconds?: number }
-      | undefined;
+      { message?: string; retryAfterSeconds?: number } | undefined;
     const message = error?.message ?? "Something went wrong. Please try again.";
     return {
       error:
@@ -147,7 +155,7 @@ export default async function CheckAgentTrustPage({
           required
           maxLength={2048}
           defaultValue={query ?? ""}
-          placeholder="https://your-agent.example.com/invoke"
+          placeholder="https://api.example.com/invoke"
           className="flex-1 rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-accent"
         />
         <button
@@ -174,22 +182,20 @@ export default async function CheckAgentTrustPage({
         <ol className="ml-5 list-decimal space-y-1">
           <li>You have an agent endpoint URL you&apos;re about to call.</li>
           <li>
-            AgentTrust looks it up among its already-observed public agents —
-            an exact match on the invocation URL.
+            AgentTrust looks it up among its already-observed public agents — an
+            exact match on the invocation URL.
           </li>
           <li>
             If it&apos;s known, AgentTrust reads that agent&apos;s existing
             monitoring history — health checks over time, not a live probe.
           </li>
           <li>
-            It also reads the agent&apos;s endpoint ownership verification
-            state — whether whoever registered it proved they control that
-            endpoint.
+            It also reads the agent&apos;s endpoint ownership verification state
+            — whether whoever registered it proved they control that endpoint.
           </li>
           <li>
-            It combines both into reliability evidence: a deterministic
-            score, when there&apos;s enough monitoring history to compute
-            one.
+            It combines both into reliability evidence: a deterministic score,
+            when there&apos;s enough monitoring history to compute one.
           </li>
           <li>
             You get back a machine-readable trustDecision —{" "}
@@ -202,27 +208,27 @@ export default async function CheckAgentTrustPage({
       <Section title="AgentTrust never contacts the target endpoint">
         <p className="rounded-md border border-accent/30 bg-surface p-3">
           <strong className="text-foreground">Important:</strong> checking an
-          agent&apos;s trust does not involve AgentTrust calling that
-          agent. A pre-invocation trust check reads AgentTrust&apos;s own
-          already-observed data about the endpoint — the monitoring history
-          and verification state it has previously collected — not a fresh
-          request made to the endpoint at check time. That distinction is
-          what makes the check safe to run before you&apos;ve decided the
-          endpoint is worth talking to in the first place.
+          agent&apos;s trust does not involve AgentTrust calling that agent. A
+          pre-invocation trust check reads AgentTrust&apos;s own
+          already-observed data about the endpoint — the monitoring history and
+          verification state it has previously collected — not a fresh request
+          made to the endpoint at check time. That distinction is what makes the
+          check safe to run before you&apos;ve decided the endpoint is worth
+          talking to in the first place.
         </p>
       </Section>
 
       <Section title="For AI agents and MCP clients">
         <p>
           If you&apos;re an AI agent or MCP client evaluating another
-          agent&apos;s endpoint — whether discovered via A2A or any other
-          means — AgentTrust exposes this same check as an anonymous,
-          read-only MCP tool:
+          agent&apos;s endpoint — whether discovered via A2A or any other means
+          — AgentTrust exposes this same check as an anonymous, read-only MCP
+          tool:
         </p>
         <Code>{`check_agent_trust({ endpointUrl })`}</Code>
         <p>
-          MCP endpoint:{" "}
-          <code>https://getagenttrust.com/api/mcp</code> (Streamable HTTP).
+          MCP endpoint: <code>https://getagenttrust.com/api/mcp</code>{" "}
+          (Streamable HTTP).
         </p>
         <ul className="ml-5 list-disc space-y-1">
           <li>No AgentTrust API key or account required.</li>
@@ -233,15 +239,14 @@ export default async function CheckAgentTrustPage({
             <code>{"{ matched: false }"}</code>, never an error.
           </li>
           <li>
-            The check itself does not contact the target endpoint — see
-            above.
+            The check itself does not contact the target endpoint — see above.
           </li>
         </ul>
         <p>Example response for a matched, generic fictional endpoint:</p>
         <Code>{EXAMPLE_MATCHED}</Code>
         <p>
-          Full request/response detail, including the REST equivalent and
-          the other MCP tools, is in the{" "}
+          Full request/response detail, including the REST equivalent and the
+          other MCP tools, is in the{" "}
           <Link href="/docs#mcp" className="text-accent hover:underline">
             API docs
           </Link>
@@ -253,14 +258,13 @@ export default async function CheckAgentTrustPage({
         <p>
           AgentTrust&apos;s trustDecision is derived from an agent&apos;s
           monitoring history, reliability score, and endpoint ownership
-          verification state — signals AgentTrust has itself observed over
-          time.
+          verification state — signals AgentTrust has itself observed over time.
         </p>
         <p>
-          It is not a community reputation or rating system, it does not
-          offer any security guarantee, and it does not prove an agent is
-          safe to use — it reports what AgentTrust has observed so you can
-          make your own decision.
+          It is not a community reputation or rating system, it does not offer
+          any security guarantee, and it does not prove an agent is safe to use
+          — it reports what AgentTrust has observed so you can make your own
+          decision.
         </p>
       </Section>
 
