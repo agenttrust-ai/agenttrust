@@ -9,6 +9,7 @@ import {
   getRecentChecksForStatus,
   listRecentChecksForOwnedAgent,
   recordHealthCheck,
+  releaseAgentClaims,
   setAgentStatus,
 } from "./health-checks";
 import type { AgentInput } from "@/lib/validation/agent";
@@ -322,5 +323,55 @@ describe("getLatestChecksForAgents — RLS-sensitive access", () => {
 
     const latest = await getLatestChecksForAgents(db, userA, [agentB.id]);
     expect(latest.size).toBe(1);
+  });
+});
+
+describe("claimDueAgents — dueAsOf cutoff", () => {
+  it("defaults to the database's now(), exactly as before", async () => {
+    const agent = await createAgent(db, userA, baseInput);
+    await activateAgent(agent.id, new Date(Date.now() - 60_000));
+    const claimed = await claimDueAgents(db, 10);
+    expect(claimed.map((a) => a.id)).toEqual([agent.id]);
+  });
+
+  it("skips an agent that only became due after the cutoff, even though it's due by now()", async () => {
+    const agent = await createAgent(db, userA, baseInput);
+    await activateAgent(agent.id, new Date(Date.now() - 30_000));
+    const claimed = await claimDueAgents(db, 10, {
+      dueAsOf: new Date(Date.now() - 60_000),
+    });
+    expect(claimed).toHaveLength(0);
+  });
+
+  it("still claims never-checked agents (null next_check_at) under any cutoff", async () => {
+    const agent = await createAgent(db, userA, baseInput);
+    await activateAgent(agent.id, null);
+    const claimed = await claimDueAgents(db, 10, {
+      dueAsOf: new Date(Date.now() - 60_000),
+    });
+    expect(claimed.map((a) => a.id)).toEqual([agent.id]);
+  });
+});
+
+describe("releaseAgentClaims", () => {
+  it("makes a claimed-but-unchecked agent due again without writing a check row", async () => {
+    const agent = await createAgent(db, userA, baseInput);
+    await activateAgent(agent.id, null);
+    await claimDueAgents(db, 10);
+    expect(await claimDueAgents(db, 10)).toHaveLength(0);
+
+    await releaseAgentClaims(db, [agent.id]);
+
+    const reclaimed = await claimDueAgents(db, 10);
+    expect(reclaimed.map((a) => a.id)).toEqual([agent.id]);
+    const checks = await client.query<{ n: number }>(
+      `select count(*)::int as n from public.health_checks where agent_id = $1`,
+      [agent.id],
+    );
+    expect(checks.rows[0].n).toBe(0);
+  });
+
+  it("is a no-op for an empty list", async () => {
+    await expect(releaseAgentClaims(db, [])).resolves.toBeUndefined();
   });
 });

@@ -54,11 +54,19 @@ export type ClaimedAgent = {
  * Runs directly against `db` (no `withUserContext`) — a trusted,
  * no-end-user server context, the same service-role pattern the
  * architecture reserves for cron jobs.
+ *
+ * `dueAsOf` (default: the database's `now()`) is the cutoff for "due". A
+ * cron run that claims in several chunks passes its own start time, so an
+ * agent it already checked earlier in the same run — whose
+ * `next_check_at` was just pushed past that start — can never be claimed a
+ * second time before the run ends, whatever its interval.
  */
 export async function claimDueAgents(
   db: AppDatabase,
   limit: number,
+  options: { dueAsOf?: Date } = {},
 ): Promise<ClaimedAgent[]> {
+  const dueCutoff = options.dueAsOf ?? sql`now()`;
   return withDbErrorNormalization(() =>
     db.transaction(async (tx) => {
       const due = await tx
@@ -80,7 +88,7 @@ export async function claimDueAgents(
             // even reachable by design (e.g. behind a firewall, polling out
             // instead of accepting inbound calls), actively wrong.
             eq(agents.monitoringMode, "pull"),
-            or(isNull(agents.nextCheckAt), lte(agents.nextCheckAt, sql`now()`)),
+            or(isNull(agents.nextCheckAt), lte(agents.nextCheckAt, dueCutoff)),
           ),
         )
         .orderBy(sql`${agents.nextCheckAt} nulls first`)
@@ -103,6 +111,29 @@ export async function claimDueAgents(
 
       return due;
     }),
+  );
+}
+
+/**
+ * Hands back agents a cron run claimed but never got to check before its
+ * time budget ran out. Claiming pushed their `next_check_at` forward; left
+ * that way, they would sort *behind* everything that was actually checked
+ * this run and could keep missing out whenever runs are budget-limited.
+ * Resetting to `now()` makes them due again immediately, ahead of the
+ * agents this run did check, while agents that have waited longer still
+ * come first (oldest-due-first order is unchanged). No check result is
+ * written or removed — this only undoes the claim.
+ */
+export async function releaseAgentClaims(
+  db: AppDatabase,
+  agentIds: string[],
+): Promise<void> {
+  if (agentIds.length === 0) return;
+  await withDbErrorNormalization(() =>
+    db
+      .update(agents)
+      .set({ nextCheckAt: sql`now()` })
+      .where(inArray(agents.id, agentIds)),
   );
 }
 

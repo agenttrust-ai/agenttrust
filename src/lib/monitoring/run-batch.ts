@@ -4,6 +4,7 @@ import {
   claimDueAgents,
   getRecentChecksForStatus,
   recordHealthCheck,
+  releaseAgentClaims,
   setAgentStatus,
   type ClaimedAgent,
 } from "@/lib/db/queries/health-checks";
@@ -55,84 +56,235 @@ function resolveAuthHeader(
   }
 }
 
+/**
+ * Most agents one cron run will check. Sized for the ~500-agents/day
+ * target; bounds outbound request volume and check-row growth per run.
+ */
+export const HEALTH_CHECK_MAX_AGENTS_PER_RUN = 500;
+
+/**
+ * Checks in flight at once — the same peak parallelism the original
+ * single batch of 20 already ran in production, so outbound connections
+ * and database pressure never exceed what's already proven.
+ */
+export const HEALTH_CHECK_CONCURRENCY = 20;
+
+/**
+ * Agents claimed per claim transaction. Equal to the concurrency, so when
+ * the time budget stops a run at most this many are claimed-but-unstarted
+ * (and those are released again — see `releaseAgentClaims`).
+ */
+export const HEALTH_CHECK_CLAIM_CHUNK_SIZE = 20;
+
+/**
+ * Stop *starting* new checks this long after the run begins. The route's
+ * hard limit is 300s (`maxDuration`); one agent's worst case is ~31.2s (3
+ * attempts x the 10s per-attempt abort timer in safe-fetch.ts, plus 0.3s +
+ * 0.9s retry backoff) plus a few DB writes, so the last check started at
+ * 240s ends by ~276s — leaving ~24s for cold start, the claim transaction,
+ * releasing leftover claims, and the response.
+ */
+export const HEALTH_CHECK_TIME_BUDGET_MS = 240_000;
+
+export type BatchStopReason = "drained" | "max_agents" | "time_budget";
+
 export type BatchSummary = {
   claimed: number;
   succeeded: number;
   failed: number;
   statusChanges: number;
+  /** Claimed but not checked before the time budget ran out — released back to the queue. */
+  deferred: number;
+  stoppedReason: BatchStopReason;
+  elapsedMs: number;
+};
+
+export type RunHealthCheckOptions = {
+  concurrency?: number;
+  chunkSize?: number;
+  timeBudgetMs?: number;
+  /** Injectable clock (ms since epoch) — tests only. */
+  now?: () => number;
 };
 
 /**
- * One cron invocation's worth of work: claim due agents, check each one,
- * record the result, re-derive status. Each agent is wrapped in its own
- * `Promise.allSettled` slot — one endpoint hanging, erroring, or timing out
- * must never take the rest of the batch down with it.
+ * One claimed agent's check, unchanged from the original single-batch
+ * runner: probe, record the result, re-derive status, then a best-effort
+ * reliability score. Throws only on an unexpected failure, which the
+ * caller counts as `failed` without stopping the run.
+ */
+async function checkClaimedAgent(
+  db: AppDatabase,
+  agent: ClaimedAgent,
+): Promise<{ success: boolean; statusChanged: boolean }> {
+  // Captured once and reused for both the check row and the score
+  // window's end — letting each instead use its own "now" (the DB's
+  // `now()` for the row, a fresh `new Date()` for the window) would tie
+  // correctness to the app server's clock never running even slightly
+  // behind the database's, which isn't guaranteed once they're on
+  // different hosts.
+  const now = new Date();
+  const resolution = resolveAuthHeader(agent);
+  const result = resolution.ok
+    ? await checkAgentHealth(agent.endpointUrl, resolution.authHeader)
+    : {
+        status: "unknown_error" as CheckStatus,
+        success: false,
+        httpStatus: null,
+        latencyMs: 0,
+        errorCode: "CREDENTIAL_DECRYPT_FAILED",
+        errorMessage: "Couldn't decrypt the stored credential for this agent.",
+        attempts: 0,
+      };
+  await recordHealthCheck(db, agent.id, result, "pull", now);
+
+  const recentChecks = await getRecentChecksForStatus(db, agent.id);
+  const nextStatus = deriveAgentStatus(agent.currentStatus, recentChecks);
+  const statusChanged = nextStatus !== agent.currentStatus;
+  if (statusChanged) {
+    await setAgentStatus(db, agent.id, nextStatus);
+  }
+
+  // Best-effort: a scoring failure must never fail the health check
+  // itself, which is the part callers actually depend on.
+  try {
+    await computeAndStoreReliabilityScore(db, agent.id, now);
+  } catch (error) {
+    console.error("Reliability score computation failed:", error);
+  }
+
+  return { success: result.success, statusChanged };
+}
+
+/**
+ * One cron invocation's worth of work, processed as a bounded worker pool
+ * instead of one all-at-once batch:
+ *
+ *   - Claims due agents in small chunks, only as workers need more, using
+ *     the same `claimDueAgents` (FOR UPDATE SKIP LOCKED) as before.
+ *   - Never more than `concurrency` checks in flight; a slow or dead
+ *     endpoint only ties up one slot, not the whole run.
+ *   - Stops starting new checks once `timeBudgetMs` has elapsed; checks
+ *     already in flight finish normally. Anything claimed but not started
+ *     is released so the next run picks it up first.
+ *   - At most `maxAgents` per run, and never the same agent twice in one
+ *     run (claims use the run's start time as the "due" cutoff).
+ *
+ * One agent's unexpected failure never stops the others. A failure to
+ * claim still fails the run, as before — but only after in-flight checks
+ * have finished and been recorded.
  */
 export async function runHealthCheckBatch(
   db: AppDatabase,
-  batchSize: number,
+  maxAgents: number,
+  options: RunHealthCheckOptions = {},
 ): Promise<BatchSummary> {
-  const claimed = await claimDueAgents(db, batchSize);
+  const concurrency = options.concurrency ?? HEALTH_CHECK_CONCURRENCY;
+  const chunkSize = options.chunkSize ?? HEALTH_CHECK_CLAIM_CHUNK_SIZE;
+  const timeBudgetMs = options.timeBudgetMs ?? HEALTH_CHECK_TIME_BUDGET_MS;
+  const clock = options.now ?? Date.now;
 
-  const results = await Promise.allSettled(
-    claimed.map(async (agent) => {
-      // Captured once and reused for both the check row and the score
-      // window's end — letting each instead use its own "now" (the DB's
-      // `now()` for the row, a fresh `new Date()` for the window) would tie
-      // correctness to the app server's clock never running even slightly
-      // behind the database's, which isn't guaranteed once they're on
-      // different hosts.
-      const now = new Date();
-      const resolution = resolveAuthHeader(agent);
-      const result = resolution.ok
-        ? await checkAgentHealth(agent.endpointUrl, resolution.authHeader)
-        : {
-            status: "unknown_error" as CheckStatus,
-            success: false,
-            httpStatus: null,
-            latencyMs: 0,
-            errorCode: "CREDENTIAL_DECRYPT_FAILED",
-            errorMessage: "Couldn't decrypt the stored credential for this agent.",
-            attempts: 0,
-          };
-      await recordHealthCheck(db, agent.id, result, "pull", now);
+  const startedAt = clock();
+  const dueAsOf = new Date(startedAt);
+  const budgetExhausted = () => clock() - startedAt >= timeBudgetMs;
 
-      const recentChecks = await getRecentChecksForStatus(db, agent.id);
-      const nextStatus = deriveAgentStatus(agent.currentStatus, recentChecks);
-      const statusChanged = nextStatus !== agent.currentStatus;
-      if (statusChanged) {
-        await setAgentStatus(db, agent.id, nextStatus);
-      }
-
-      // Best-effort: a scoring failure must never fail the health check
-      // itself, which is the part callers actually depend on.
-      try {
-        await computeAndStoreReliabilityScore(db, agent.id, now);
-      } catch (error) {
-        console.error("Reliability score computation failed:", error);
-      }
-
-      return { success: result.success, statusChanged };
-    }),
-  );
+  const queue: ClaimedAgent[] = [];
+  let claimed = 0;
+  let nothingLeftToClaim = false;
+  let claimError: unknown = null;
+  let claimInFlight: Promise<void> | null = null;
+  let stoppedByBudget = false;
 
   let succeeded = 0;
   let failed = 0;
   let statusChanges = 0;
 
-  for (const settled of results) {
-    if (settled.status === "fulfilled") {
-      if (settled.value.success) succeeded++;
-      else failed++;
-      if (settled.value.statusChanged) statusChanges++;
-    } else {
-      failed++;
-      console.error(
-        "Health check batch item failed unexpectedly:",
-        settled.reason,
-      );
+  async function claimChunk(): Promise<void> {
+    const remaining = maxAgents - claimed;
+    if (remaining <= 0) {
+      nothingLeftToClaim = true;
+      return;
+    }
+    const requested = Math.min(chunkSize, remaining);
+    try {
+      const chunk = await claimDueAgents(db, requested, { dueAsOf });
+      claimed += chunk.length;
+      queue.push(...chunk);
+      if (chunk.length < requested) nothingLeftToClaim = true;
+    } catch (error) {
+      claimError = error;
+      nothingLeftToClaim = true;
     }
   }
 
-  return { claimed: claimed.length, succeeded, failed, statusChanges };
+  // Only one claim transaction at a time; workers that run dry while a
+  // claim is already in progress just wait for it.
+  function claimMore(): Promise<void> {
+    if (!claimInFlight) {
+      claimInFlight = claimChunk().finally(() => {
+        claimInFlight = null;
+      });
+    }
+    return claimInFlight;
+  }
+
+  async function worker(): Promise<void> {
+    for (;;) {
+      if (queue.length === 0 && nothingLeftToClaim) return;
+      // Only reached with work still queued or claimable, so a stop here
+      // really is the budget — never a run that had simply finished.
+      if (budgetExhausted()) {
+        stoppedByBudget = true;
+        return;
+      }
+      const agent = queue.shift();
+      if (!agent) {
+        await claimMore();
+        continue;
+      }
+      try {
+        const outcome = await checkClaimedAgent(db, agent);
+        if (outcome.success) succeeded++;
+        else failed++;
+        if (outcome.statusChanged) statusChanges++;
+      } catch (error) {
+        failed++;
+        console.error("Health check batch item failed unexpectedly:", error);
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
+
+  const leftover = queue.splice(0);
+  if (leftover.length > 0) {
+    try {
+      await releaseAgentClaims(
+        db,
+        leftover.map((agent) => agent.id),
+      );
+    } catch (error) {
+      // Not fatal: claimed agents become due again once their interval
+      // passes anyway — releasing only restores their queue position.
+      console.error("Failed to release unstarted health-check claims:", error);
+    }
+  }
+
+  if (claimError) throw claimError;
+
+  const stoppedReason: BatchStopReason = stoppedByBudget
+    ? "time_budget"
+    : claimed >= maxAgents
+      ? "max_agents"
+      : "drained";
+
+  return {
+    claimed,
+    succeeded,
+    failed,
+    statusChanges,
+    deferred: leftover.length,
+    stoppedReason,
+    elapsedMs: clock() - startedAt,
+  };
 }

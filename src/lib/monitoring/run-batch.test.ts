@@ -187,3 +187,149 @@ describe("runHealthCheckBatch — authenticated monitoring", () => {
     expect(rows.rows[0]).toEqual({ error_code: "CREDENTIAL_DECRYPT_FAILED", success: false });
   });
 });
+
+describe("runHealthCheckBatch — chunked, concurrency-limited, time-budgeted runs", () => {
+  async function createActivePullAgents(count: number): Promise<string[]> {
+    const ids: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const agent = await createAgent(db, userA, {
+        ...baseInput,
+        name: `Bot ${i}`,
+        endpointUrl: `https://agent-${i}.acme.io/v1/invoke`,
+        authType: "none",
+        authCredential: undefined,
+      });
+      await activate(agent.id);
+      ids.push(agent.id);
+    }
+    return ids;
+  }
+
+  async function checkCountsByAgent(): Promise<Map<string, number>> {
+    const rows = await client.query<{ agent_id: string; n: number }>(
+      `select agent_id, count(*)::int as n from public.health_checks group by agent_id`,
+    );
+    return new Map(rows.rows.map((r) => [r.agent_id, r.n]));
+  }
+
+  it("processes more agents than one chunk, in several claims, never exceeding the concurrency limit", async () => {
+    const ids = await createActivePullAgents(8);
+    let inFlight = 0;
+    let maxInFlight = 0;
+    mockedCheckAgentHealth.mockImplementation(async () => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      inFlight--;
+      return successResult();
+    });
+
+    const summary = await runHealthCheckBatch(db, 100, { concurrency: 3, chunkSize: 3 });
+
+    expect(summary.claimed).toBe(8);
+    expect(summary.succeeded).toBe(8);
+    expect(summary.failed).toBe(0);
+    expect(summary.deferred).toBe(0);
+    expect(summary.stoppedReason).toBe("drained");
+    expect(maxInFlight).toBe(3);
+    const counts = await checkCountsByAgent();
+    for (const id of ids) expect(counts.get(id)).toBe(1);
+  });
+
+  it("stops at the per-run agent cap and leaves the rest untouched for the next run", async () => {
+    const ids = await createActivePullAgents(5);
+    mockedCheckAgentHealth.mockResolvedValue(successResult());
+
+    const summary = await runHealthCheckBatch(db, 3, { concurrency: 2, chunkSize: 2 });
+
+    expect(summary.claimed).toBe(3);
+    expect(summary.succeeded).toBe(3);
+    expect(summary.stoppedReason).toBe("max_agents");
+    const untouched = await client.query<{ n: number }>(
+      `select count(*)::int as n from public.agents where id = any($1) and next_check_at is null`,
+      [ids],
+    );
+    expect(untouched.rows[0].n).toBe(2);
+  });
+
+  it("stops starting new checks once the time budget is spent, and releases claimed-but-unstarted agents", async () => {
+    const ids = await createActivePullAgents(5);
+    let fakeNow = Date.now();
+    mockedCheckAgentHealth.mockImplementation(async () => {
+      fakeNow += 100_000; // each check "takes" 100s on the injected clock
+      return successResult();
+    });
+
+    const summary = await runHealthCheckBatch(db, 100, {
+      concurrency: 1,
+      chunkSize: 2,
+      timeBudgetMs: 250_000,
+      now: () => fakeNow,
+    });
+
+    // claim [a,b] -> check a (100s), check b (200s) -> claim [c,d] ->
+    // check c (300s) -> budget spent: d is released, e was never claimed.
+    expect(summary.stoppedReason).toBe("time_budget");
+    expect(summary.claimed).toBe(4);
+    expect(summary.succeeded).toBe(3);
+    expect(summary.deferred).toBe(1);
+
+    const counts = await checkCountsByAgent();
+    expect(counts.size).toBe(3);
+
+    const unchecked = ids.filter((id) => !counts.has(id));
+    expect(unchecked).toHaveLength(2);
+    const state = await client.query<{ never_claimed: number; released_and_due: number }>(
+      `select count(*) filter (where next_check_at is null)::int as never_claimed,
+              count(*) filter (where next_check_at is not null and next_check_at <= now())::int as released_and_due
+       from public.agents where id = any($1)`,
+      [unchecked],
+    );
+    expect(state.rows[0].never_claimed).toBe(1);
+    expect(state.rows[0].released_and_due).toBe(1);
+  });
+
+  it("never checks the same agent twice in one run, even if it becomes due again mid-run", async () => {
+    await createActivePullAgents(2);
+    const runStartedAt = Date.now() - 60_000;
+    const calls: string[] = [];
+    mockedCheckAgentHealth.mockImplementation(async (url: string) => {
+      calls.push(url);
+      if (calls.length === 1) {
+        // Simulate this agent's interval elapsing mid-run: due by now(),
+        // but only since after the run started.
+        await client.query(
+          `update public.agents set next_check_at = now() - interval '30 seconds' where endpoint_url = $1`,
+          [url],
+        );
+      }
+      return successResult();
+    });
+
+    const summary = await runHealthCheckBatch(db, 100, {
+      concurrency: 1,
+      chunkSize: 1,
+      now: () => runStartedAt,
+    });
+
+    expect(calls).toHaveLength(2);
+    expect(new Set(calls).size).toBe(2);
+    expect(summary.claimed).toBe(2);
+    expect(summary.stoppedReason).toBe("drained");
+  });
+
+  it("one agent failing unexpectedly doesn't stop the rest of the run", async () => {
+    await createActivePullAgents(3);
+    mockedCheckAgentHealth.mockImplementation(async (url: string) => {
+      if (url.includes("agent-1.")) throw new Error("boom");
+      return successResult();
+    });
+
+    const summary = await runHealthCheckBatch(db, 100, { concurrency: 2, chunkSize: 2 });
+
+    expect(summary.claimed).toBe(3);
+    expect(summary.succeeded).toBe(2);
+    expect(summary.failed).toBe(1);
+    expect(summary.stoppedReason).toBe("drained");
+  });
+});

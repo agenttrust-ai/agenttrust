@@ -1,11 +1,17 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/monitoring/run-batch", () => ({
-  runHealthCheckBatch: vi.fn(),
-}));
+vi.mock("@/lib/monitoring/run-batch", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/monitoring/run-batch")>(
+    "@/lib/monitoring/run-batch",
+  );
+  return { ...actual, runHealthCheckBatch: vi.fn() };
+});
 
-import { runHealthCheckBatch } from "@/lib/monitoring/run-batch";
+import {
+  HEALTH_CHECK_MAX_AGENTS_PER_RUN,
+  runHealthCheckBatch,
+} from "@/lib/monitoring/run-batch";
 import { env } from "@/lib/config.server";
 import { GET } from "./route";
 
@@ -26,6 +32,9 @@ beforeEach(() => {
     succeeded: 0,
     failed: 0,
     statusChanges: 0,
+    deferred: 0,
+    stoppedReason: "drained",
+    elapsedMs: 0,
   });
 });
 
@@ -34,6 +43,12 @@ describe("GET /api/internal/cron/run-health-checks — authentication", () => {
     const res = await GET(requestWith(`Bearer ${env.CRON_SECRET}`));
     expect(res.status).toBe(200);
     expect(mockedRunHealthCheckBatch).toHaveBeenCalledOnce();
+  });
+
+  it("runs up to the per-run agent cap (500)", async () => {
+    await GET(requestWith(`Bearer ${env.CRON_SECRET}`));
+    expect(HEALTH_CHECK_MAX_AGENTS_PER_RUN).toBe(500);
+    expect(mockedRunHealthCheckBatch).toHaveBeenCalledWith(expect.anything(), 500);
   });
 
   it("rejects a missing Authorization header, without running the batch", async () => {

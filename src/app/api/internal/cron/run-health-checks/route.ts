@@ -3,12 +3,18 @@ import type { NextRequest } from "next/server";
 import { timingSafeEqual, createHash } from "node:crypto";
 import { env } from "@/lib/config.server";
 import { db } from "@/lib/db";
-import { runHealthCheckBatch } from "@/lib/monitoring/run-batch";
+import {
+  HEALTH_CHECK_MAX_AGENTS_PER_RUN,
+  runHealthCheckBatch,
+} from "@/lib/monitoring/run-batch";
 
 // Never statically rendered/cached — this is invoked by Vercel Cron, not a browser.
 export const dynamic = "force-dynamic";
 
-const BATCH_SIZE = 20;
+// Pinned to the project's verified 300s function limit. The batch runner
+// stops starting new checks at 240s (HEALTH_CHECK_TIME_BUDGET_MS) so it
+// always finishes well inside this.
+export const maxDuration = 300;
 
 /**
  * Constant-time comparison for the cron bearer token — a plain `!==` leaks
@@ -38,7 +44,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const summary = await runHealthCheckBatch(db, BATCH_SIZE);
+    const summary = await runHealthCheckBatch(
+      db,
+      HEALTH_CHECK_MAX_AGENTS_PER_RUN,
+    );
     return NextResponse.json({ ok: true, ...summary });
   } catch (error) {
     console.error("Health check cron run failed:", error);
