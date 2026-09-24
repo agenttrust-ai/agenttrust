@@ -3,6 +3,10 @@
     {
       "path": "/api/internal/cron/run-health-checks",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/internal/cron/discover-mcp-agents",
+      "schedule": "30 3 * * *"
     }
   ]
 }
