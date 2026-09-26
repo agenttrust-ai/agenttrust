@@ -6,6 +6,62 @@ entry above the previous one, not by editing history.
 
 ---
 
+## FUNCTION REGION MOVE iad1 → sin1 (MONITORING-ORIGIN CHANGE) — 2026-09-26
+
+**What changed.** `vercel.json` now sets `"regions": ["sin1"]`, so every
+Vercel Function — pages, the Public API, `/api/mcp`, and both cron jobs —
+runs in Singapore (`sin1`, AWS ap-southeast-1), the same region as the
+Supabase production database. Previously everything ran in the default
+`iad1` (Washington, D.C.). The Hobby plan allows exactly one function
+region, so the API cannot move without monitoring moving too.
+
+**Why.** A 2026-09-26 read-only latency audit found `check_agent_trust`
+making ~14 sequential database round trips from `iad1` to Singapore
+(~250 ms each): median ~3.8 s end to end, of which under 10 ms was actual
+database execution.
+
+**Effective:** from the first production deployment of the commit that adds
+this entry (its Vercel/GitHub production deployment timestamp is the exact
+cut-over), deployed outside the cron windows (monitoring fires ~00:44 UTC,
+discovery ~04:25 UTC).
+
+**Methodology change — monitoring origin.** Health checks, ownership
+verification fetches, and registry discovery fetches now originate from
+Singapore instead of Washington, D.C. A health check's `latencyMs` covers
+DNS + TCP + TLS + request on a fresh connection, so it depends on the
+distance between the prober and the agent's endpoint.
+- **`health_checks` rows do not record a monitoring origin.** Rows before
+  the cut-over were probed from `iad1`, rows after it from `sin1`; the only
+  way to tell them apart is `checked_at` relative to the cut-over.
+- **For ~7 days after the move (`SCORE_WINDOW_DAYS`), reliability-score
+  windows contain a mix of `iad1` and `sin1` latency samples.** After that,
+  every window is `sin1`-only.
+- The scoring formula is unchanged (`formula_version` stays `v1`); only the
+  vantage point of the latency input changed. Success/failure, status
+  derivation, timeouts (5 s connect / 10 s total), retries, cron schedules,
+  rate limits, and every API/MCP contract are unchanged.
+
+**Expected impact (modeled before the move from 2026-09-26 production
+data, not measured from `sin1`).** Latency only affects the score when an
+agent's 7-day average exceeds 500 ms (then −1 point per ~225 ms, at most
+20 points). Estimated per-agent change for the 19 scored agents: about +0.1
+to −2.4 points; no agent crosses the 50 (recommended) or 90 thresholds.
+Asia-hosted endpoints improve; endpoints served directly from US/EU origins
+worsen most; edge-hosted endpoints (Cloudflare, Vercel, Google front end)
+change little. Timeout headroom is large (slowest successful check in the
+prior 7 days: 1,394 ms).
+
+**Rollback.** Remove `"regions"` from `vercel.json` (or set it to
+`["iad1"]`) and redeploy. No data migration either way; rows written while
+in `sin1` stay as they are, also without origin metadata — record the
+rollback time here as a new entry.
+
+**Status of the entry below:** migration 0008 was applied to production and
+backfilled on 2026-09-26 (72/72 rows), and `36dbae4` (indexed endpoint
+lookup) was deployed and reconciled the same day.
+
+---
+
 ## ENDPOINT LOOKUP INDEX — MIGRATION 0008 PENDING — 2026-09-26
 
 **State: implemented and tested locally; migration NOT yet applied to
