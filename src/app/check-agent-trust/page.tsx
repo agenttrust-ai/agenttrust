@@ -10,7 +10,7 @@ import {
   TrustDecisionSummary,
   type TrustCheckResult,
 } from "@/components/agents/trust-decision-summary";
-import { CopyCodeButton } from "@/components/copy-code-button";
+import { CodeBlock as Code } from "@/components/dev/code-block";
 
 const TITLE = "Check AI Agent Trust Before Invocation | AgentTrust";
 const DESCRIPTION =
@@ -33,17 +33,6 @@ export const metadata: Metadata = {
     description: DESCRIPTION,
   },
 };
-
-function Code({ children }: { children: string }) {
-  return (
-    <div className="relative mt-2">
-      <pre className="overflow-x-auto rounded-md border border-border bg-background p-3 pr-16 font-mono text-xs">
-        <code>{children}</code>
-      </pre>
-      <CopyCodeButton text={children} />
-    </div>
-  );
-}
 
 function Section({
   title,

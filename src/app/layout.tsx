@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Suspense } from "react";
-import Link from "next/link";
 import "./globals.css";
-import { AuthNav } from "@/components/auth-nav";
+import { SiteHeader } from "@/components/shell/site-header";
+import { SiteFooter } from "@/components/shell/site-footer";
 import { publicEnv } from "@/lib/config";
 
 const geistSans = Geist({
@@ -57,23 +56,18 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-background text-foreground">
-        <header className="border-b border-border">
-          <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-            <Link href="/" className="font-semibold tracking-tight">
-              AgentTrust
-            </Link>
-            <nav className="flex items-center gap-5 text-sm text-muted">
-              <Link href="/docs" className="hover:text-foreground">
-                Docs
-              </Link>
-              <Suspense fallback={null}>
-                <AuthNav />
-              </Suspense>
-            </nav>
-          </div>
-        </header>
-        <main className="flex flex-1 flex-col">{children}</main>
+      <body className="flex min-h-full flex-col bg-background text-foreground">
+        <a
+          href="#main"
+          className="sr-only rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-foreground focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50"
+        >
+          Skip to content
+        </a>
+        <SiteHeader />
+        <main id="main" tabIndex={-1} className="flex flex-1 flex-col outline-none">
+          {children}
+        </main>
+        <SiteFooter />
       </body>
     </html>
   );

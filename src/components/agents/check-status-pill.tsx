@@ -1,3 +1,5 @@
+import { StatusChip } from "@/components/ui/status-chip";
+
 const LABEL: Record<string, string> = {
   success: "Success",
   http_error: "HTTP error",
@@ -9,19 +11,11 @@ const LABEL: Record<string, string> = {
   unknown_error: "Unknown error",
 };
 
-const CLASS: Record<string, string> = {
-  success: "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-400",
-};
-const DEFAULT_CLASS =
-  "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400";
-
 /** Renders a single health_checks.status value — the technical category one check fell into. */
 export function CheckStatusPill({ status }: { status: string }) {
   return (
-    <span
-      className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${CLASS[status] ?? DEFAULT_CLASS}`}
-    >
+    <StatusChip tone={status === "success" ? "positive" : "negative"}>
       {LABEL[status] ?? status}
-    </span>
+    </StatusChip>
   );
 }

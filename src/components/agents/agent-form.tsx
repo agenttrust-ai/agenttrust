@@ -12,6 +12,9 @@ import {
   type AgentCardModality,
 } from "@/lib/validation/agent-card";
 import type { AgentFormState } from "@/lib/agents/actions";
+import { buttonClass } from "@/components/ui/button";
+import { cx } from "@/components/ui/cx";
+import { FormError, inputBaseClass, inputClass } from "@/components/ui/text-field";
 
 const AUTH_TYPE_LABEL: Record<(typeof SUPPORTED_AGENT_AUTH_TYPES)[number], string> = {
   none: "None",
@@ -89,14 +92,15 @@ export function AgentForm({
         </label>
         <input
           id="name"
+          aria-invalid={state?.errors?.name ? true : undefined}
           name="name"
           required
           defaultValue={defaultValues?.name}
           placeholder="Support Bot"
-          className="rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent"
+          className={inputClass}
         />
         {state?.errors?.name && (
-          <p className="text-sm text-red-600">{state.errors.name[0]}</p>
+          <p className="text-sm text-negative">{state.errors.name[0]}</p>
         )}
       </div>
 
@@ -110,10 +114,11 @@ export function AgentForm({
           rows={3}
           defaultValue={defaultValues?.description}
           placeholder="What this agent does, and who it's for."
-          className="rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent"
+          aria-invalid={state?.errors?.description ? true : undefined}
+          className={cx(inputBaseClass, "py-2")}
         />
         {state?.errors?.description && (
-          <p className="text-sm text-red-600">{state.errors.description[0]}</p>
+          <p className="text-sm text-negative">{state.errors.description[0]}</p>
         )}
       </div>
 
@@ -123,18 +128,19 @@ export function AgentForm({
         </label>
         <input
           id="endpointUrl"
+          aria-invalid={state?.errors?.endpointUrl ? true : undefined}
           name="endpointUrl"
           required
           defaultValue={defaultValues?.endpointUrl}
           placeholder="https://agent.example.com/v1/invoke"
-          className="rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-accent"
+          className={cx(inputClass, "font-mono")}
         />
         <p className="text-xs text-muted">
           Must be HTTPS and publicly reachable — not a localhost, private, or
           internal address.
         </p>
         {state?.errors?.endpointUrl && (
-          <p className="text-sm text-red-600">{state.errors.endpointUrl[0]}</p>
+          <p className="text-sm text-negative">{state.errors.endpointUrl[0]}</p>
         )}
       </div>
 
@@ -145,13 +151,14 @@ export function AgentForm({
           </label>
           <input
             id="version"
+            aria-invalid={state?.errors?.version ? true : undefined}
             name="version"
             defaultValue={defaultValues?.version}
             placeholder="1.0.0"
-            className="rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent"
+            className={inputClass}
           />
           {state?.errors?.version && (
-            <p className="text-sm text-red-600">{state.errors.version[0]}</p>
+            <p className="text-sm text-negative">{state.errors.version[0]}</p>
           )}
         </div>
 
@@ -161,11 +168,12 @@ export function AgentForm({
           </label>
           <select
             id="authType"
+            aria-invalid={state?.errors?.authType ? true : undefined}
             name="authType"
             required
             value={authType}
             onChange={(e) => setAuthType(e.target.value)}
-            className="rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent"
+            className={inputClass}
           >
             {SUPPORTED_AGENT_AUTH_TYPES.map((type) => (
               <option key={type} value={type}>
@@ -178,7 +186,7 @@ export function AgentForm({
             health.
           </p>
           {state?.errors?.authType && (
-            <p className="text-sm text-red-600">{state.errors.authType[0]}</p>
+            <p className="text-sm text-negative">{state.errors.authType[0]}</p>
           )}
         </div>
       </div>
@@ -191,12 +199,13 @@ export function AgentForm({
             </label>
             <input
               id="authCredential"
+              aria-invalid={state?.errors?.authCredential ? true : undefined}
               name="authCredential"
               type="password"
               autoComplete="off"
               required={credentialRequired}
               placeholder={credentialRequired ? "Required" : "••••••••"}
-              className="rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-accent"
+              className={cx(inputClass, "font-mono")}
             />
             <p className="text-xs text-muted">
               {credentialRequired
@@ -204,7 +213,7 @@ export function AgentForm({
                 : "Leave blank to keep the credential already on file — enter a new value to replace it."}
             </p>
             {state?.errors?.authCredential && (
-              <p className="text-sm text-red-600">{state.errors.authCredential[0]}</p>
+              <p className="text-sm text-negative">{state.errors.authCredential[0]}</p>
             )}
           </div>
 
@@ -215,16 +224,17 @@ export function AgentForm({
               </label>
               <input
                 id="authHeaderName"
+                aria-invalid={state?.errors?.authHeaderName ? true : undefined}
                 name="authHeaderName"
                 defaultValue={defaultValues?.authHeaderName}
                 placeholder={DEFAULT_AUTH_HEADER_NAME}
-                className="rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-accent"
+                className={cx(inputClass, "font-mono")}
               />
               <p className="text-xs text-muted">
                 Defaults to {DEFAULT_AUTH_HEADER_NAME} if left blank.
               </p>
               {state?.errors?.authHeaderName && (
-                <p className="text-sm text-red-600">{state.errors.authHeaderName[0]}</p>
+                <p className="text-sm text-negative">{state.errors.authHeaderName[0]}</p>
               )}
             </div>
           )}
@@ -237,16 +247,17 @@ export function AgentForm({
         </label>
         <input
           id="capabilities"
+          aria-invalid={state?.errors?.capabilities ? true : undefined}
           name="capabilities"
           defaultValue={defaultValues?.capabilities?.join(", ")}
           placeholder="chat, ticket-triage, billing"
-          className="rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-accent"
+          className={cx(inputClass, "font-mono")}
         />
         <p className="text-xs text-muted">
           Comma-separated tags, lowercase with hyphens (e.g. ticket-triage).
         </p>
         {state?.errors?.capabilities && (
-          <p className="text-sm text-red-600">{state.errors.capabilities[0]}</p>
+          <p className="text-sm text-negative">{state.errors.capabilities[0]}</p>
         )}
       </div>
 
@@ -269,7 +280,7 @@ export function AgentForm({
               name="agentCardModalities"
               multiple
               defaultValue={defaultValues?.agentCardModalities}
-              className="h-28 rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent"
+              className={cx(inputBaseClass, "h-28 py-2")}
             >
               {AGENT_CARD_MODALITIES.map((modality) => (
                 <option key={modality} value={modality}>
@@ -281,7 +292,7 @@ export function AgentForm({
               Cmd/Ctrl-click to select more than one.
             </p>
             {state?.errors?.agentCard && (
-              <p className="text-sm text-red-600">{state.errors.agentCard[0]}</p>
+              <p className="text-sm text-negative">{state.errors.agentCard[0]}</p>
             )}
           </div>
 
@@ -293,7 +304,7 @@ export function AgentForm({
               id="agentCardInteractionType"
               name="agentCardInteractionType"
               defaultValue={defaultValues?.agentCardInteractionType ?? ""}
-              className="rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent"
+              className={inputClass}
             >
               <option value="">Not specified</option>
               {AGENT_CARD_INTERACTION_TYPES.map((type) => (
@@ -314,7 +325,7 @@ export function AgentForm({
             name="agentCardDocumentationUrl"
             defaultValue={defaultValues?.agentCardDocumentationUrl}
             placeholder="https://docs.example.com/my-agent"
-            className="rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-accent"
+            className={cx(inputClass, "font-mono")}
           />
           <p className="text-xs text-muted">
             A public https:// link to human-readable docs — never the
@@ -323,14 +334,12 @@ export function AgentForm({
         </div>
       </div>
 
-      {state?.message && (
-        <p className="text-sm text-red-600">{state.message}</p>
-      )}
+      {state?.message && <FormError>{state.message}</FormError>}
 
       <button
         type="submit"
         disabled={pending}
-        className="self-start rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:opacity-90 disabled:opacity-60"
+        className={buttonClass({ className: "self-start" })}
       >
         {pending ? "Saving…" : submitLabel}
       </button>

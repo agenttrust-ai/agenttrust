@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { CopyCodeButton } from "@/components/copy-code-button";
+import { CodeBlock as Code } from "@/components/dev/code-block";
 
 export const metadata: Metadata = {
   title: "API Reference — AgentTrust",
@@ -28,17 +28,6 @@ const DOCS_NAV_ITEMS = [
   { id: "errors", label: "Common errors" },
   { id: "not-built", label: "Not yet built" },
 ] as const;
-
-function Code({ children }: { children: string }) {
-  return (
-    <div className="relative mt-2">
-      <pre className="overflow-x-auto rounded-md border border-border bg-background p-3 pr-16 font-mono text-xs">
-        <code>{children}</code>
-      </pre>
-      <CopyCodeButton text={children} />
-    </div>
-  );
-}
 
 function Section({
   id,
@@ -103,7 +92,7 @@ export default function DocsPage() {
     <div className="mx-auto flex w-full max-w-5xl items-start gap-10 px-6 py-16">
       <nav
         aria-label="On this page"
-        className="sticky top-8 hidden w-48 shrink-0 flex-col gap-1 text-sm lg:flex"
+        className="sticky top-20 hidden w-48 shrink-0 flex-col gap-1 text-sm lg:flex"
       >
         {DOCS_NAV_ITEMS.map((item) => (
           <a

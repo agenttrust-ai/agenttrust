@@ -2,6 +2,8 @@
 
 import { useActionState, useState } from "react";
 import { createApiKeyAction } from "@/lib/api-keys/actions";
+import { buttonClass } from "@/components/ui/button";
+import { FormError, inputClass } from "@/components/ui/text-field";
 
 export function CreateApiKeyForm() {
   const [state, formAction, pending] = useActionState(
@@ -32,21 +34,24 @@ export function CreateApiKeyForm() {
           name="name"
           required
           placeholder="e.g. Local development"
-          className="rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent"
+          aria-invalid={state?.errors?.name ? true : undefined}
+          className={inputClass}
         />
         {state?.errors?.name && (
-          <p className="text-sm text-red-600">{state.errors.name[0]}</p>
+          <p className="text-sm text-negative">{state.errors.name[0]}</p>
         )}
       </div>
       <button
         type="submit"
         disabled={pending}
-        className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:opacity-90 disabled:opacity-60"
+        className={buttonClass({ className: "h-10" })}
       >
         {pending ? "Creating…" : "Create key"}
       </button>
       {state?.message && (
-        <p className="text-sm text-red-600 sm:basis-full">{state.message}</p>
+        <div className="sm:basis-full">
+          <FormError>{state.message}</FormError>
+        </div>
       )}
     </form>
   );

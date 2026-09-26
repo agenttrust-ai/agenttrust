@@ -1,14 +1,94 @@
 @import "tailwindcss";
 
+/*
+ * AgentTrust design tokens — "Instrument".
+ *
+ * Graphite surfaces with a single restrained brand accent. Status color is
+ * never the brand color: positive/negative/caution/neutral/info each have
+ * their own text, surface and border token, and every status in the UI is
+ * also carried by an icon and a text label (see components/ui/status-chip).
+ *
+ * Existing token names (background, surface, surface-2, foreground, muted,
+ * border, accent, accent-foreground) are kept so every page picks up the
+ * system without per-page edits.
+ */
 :root {
-  --background: #f6f7f9;
+  color-scheme: light;
+
+  /* Surfaces: page → raised panel → inset/hover */
+  --background: #f7f8fa;
   --surface: #ffffff;
-  --surface-2: #eef1f4;
-  --foreground: #131a22;
-  --muted: #55606b;
-  --border: #dde2e7;
-  --accent: #0f6e62;
+  --surface-2: #f0f2f5;
+
+  /* Text */
+  --foreground: #0e1318;
+  --muted: #5b6570;
+  --subtle: #8a939c; /* placeholders and decorative marks only */
+
+  /* Lines */
+  --border: #e2e5e9;
+  --border-strong: #cdd2d8;
+
+  /* Brand accent — links, primary actions, focus */
+  --accent: #2456d6;
+  --accent-hover: #1d49bd;
   --accent-foreground: #ffffff;
+  --ring: #2456d6;
+
+  /* Semantic status */
+  --positive: #177245;
+  --positive-surface: #ecf6f0;
+  --positive-border: #bfe0cc;
+  --negative: #b42323;
+  --negative-surface: #fdf1f1;
+  --negative-border: #f2c8c8;
+  --caution: #8a5a00;
+  --caution-surface: #fdf6e3;
+  --caution-border: #ecd8a6;
+  --neutral: #5b6570;
+  --neutral-surface: #f0f2f5;
+  --neutral-border: #dfe3e8;
+  --info: #2456d6;
+  --info-surface: #eef3fd;
+  --info-border: #c8d6f6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --background: #0a0c0f;
+    --surface: #111418;
+    --surface-2: #181c21;
+
+    --foreground: #e7ebef;
+    --muted: #9aa3ad;
+    --subtle: #69727c;
+
+    --border: #22282e;
+    --border-strong: #313840;
+
+    --accent: #7aa2ff;
+    --accent-hover: #97b6ff;
+    --accent-foreground: #0a0c0f;
+    --ring: #7aa2ff;
+
+    --positive: #52cc8a;
+    --positive-surface: #0e2419;
+    --positive-border: #1e4a33;
+    --negative: #ff8080;
+    --negative-surface: #2b1315;
+    --negative-border: #5a2327;
+    --caution: #f2b852;
+    --caution-surface: #2a1f0b;
+    --caution-border: #574014;
+    --neutral: #9aa3ad;
+    --neutral-surface: #161b20;
+    --neutral-border: #2a323a;
+    --info: #8fb0ff;
+    --info-surface: #111c36;
+    --info-border: #25407a;
+  }
 }
 
 @theme inline {
@@ -17,28 +97,108 @@
   --color-surface-2: var(--surface-2);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
   --color-accent-foreground: var(--accent-foreground);
+  --color-ring: var(--ring);
+
+  --color-positive: var(--positive);
+  --color-positive-surface: var(--positive-surface);
+  --color-positive-border: var(--positive-border);
+  --color-negative: var(--negative);
+  --color-negative-surface: var(--negative-surface);
+  --color-negative-border: var(--negative-border);
+  --color-caution: var(--caution);
+  --color-caution-surface: var(--caution-surface);
+  --color-caution-border: var(--caution-border);
+  --color-neutral: var(--neutral);
+  --color-neutral-surface: var(--neutral-surface);
+  --color-neutral-border: var(--neutral-border);
+  --color-info: var(--info);
+  --color-info-surface: var(--info-surface);
+  --color-info-border: var(--info-border);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0b1013;
-    --surface: #121920;
-    --surface-2: #1a232b;
-    --foreground: #e7ecef;
-    --muted: #9aa7b0;
-    --border: #263039;
-    --accent: #3fb79e;
-    --accent-foreground: #0b1013;
+@theme {
+  /* Page widths: app shell, and long-form reading/forms */
+  --container-shell: 72rem;
+  --container-reading: 45rem;
+
+  /* Type scale — deliberately compact; no marketing-size hero type */
+  --text-display: 2.25rem;
+  --text-display--line-height: 1.1;
+  --text-display--letter-spacing: -0.025em;
+  --text-display--font-weight: 600;
+  --text-title: 1.5rem;
+  --text-title--line-height: 1.2;
+  --text-title--letter-spacing: -0.02em;
+  --text-title--font-weight: 600;
+  --text-heading: 1.125rem;
+  --text-heading--line-height: 1.35;
+  --text-heading--letter-spacing: -0.01em;
+  --text-heading--font-weight: 600;
+
+  /* Depth: surfaces do the work; one shadow for floating overlays only */
+  --shadow-overlay: 0 12px 32px -16px rgb(0 0 0 / 0.35);
+}
+
+/* Small uppercase mono label above a heading or group. */
+@utility eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+@layer base {
+  html {
+    /* Anchored sections clear the sticky site header. */
+    scroll-padding-top: 4.5rem;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans), system-ui, sans-serif;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--accent) 28%, transparent);
+  }
+
+  /* One visible keyboard focus treatment for every interactive element.
+   * Components that draw their own focus ring (inputs) override this. */
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  code,
+  kbd,
+  samp,
+  pre {
+    font-variant-ligatures: none;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
