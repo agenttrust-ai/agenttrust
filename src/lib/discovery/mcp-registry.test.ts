@@ -55,7 +55,7 @@ describe("fetchMcpRegistryServers", () => {
       }),
     );
 
-    const entries = await fetchMcpRegistryServers(50);
+    const { entries } = await fetchMcpRegistryServers(50);
 
     expect(entries).toHaveLength(1);
     expect(entries[0]!.server.name).toBe("io.github.example/agent");
@@ -82,7 +82,7 @@ describe("fetchMcpRegistryServers", () => {
         servers: [{ server: { name: "io.github.example/no-meta", version: "1.0.0" } }],
       }),
     );
-    const entries = await fetchMcpRegistryServers(50);
+    const { entries } = await fetchMcpRegistryServers(50);
     expect(entries).toHaveLength(1);
     expect(entries[0]!.status).toBe("unknown");
   });
@@ -98,7 +98,7 @@ describe("fetchMcpRegistryServers", () => {
         ],
       }),
     );
-    const entries = await fetchMcpRegistryServers(50);
+    const { entries } = await fetchMcpRegistryServers(50);
     expect(entries).toHaveLength(1);
     expect(entries[0]!.server.name).toBe("io.github.example/valid");
   });
@@ -123,5 +123,56 @@ describe("fetchMcpRegistryServers", () => {
   it("throws McpRegistryFetchError on a network error", async () => {
     fetchMock.mockRejectedValue(new TypeError("network down"));
     await expect(fetchMcpRegistryServers(50)).rejects.toBeInstanceOf(McpRegistryFetchError);
+  });
+});
+
+describe("fetchMcpRegistryServers — pagination", () => {
+  it("returns the registry's nextCursor when there are more pages", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        servers: [registryEntry({ name: "io.github.example/a" })],
+        metadata: { nextCursor: "io.github.example/a:1.0.0", count: 1 },
+      }),
+    );
+    const page = await fetchMcpRegistryServers(50);
+    expect(page.nextCursor).toBe("io.github.example/a:1.0.0");
+  });
+
+  it("returns nextCursor null on the last page (no nextCursor in metadata)", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ servers: [registryEntry({})], metadata: { count: 1 } }),
+    );
+    const page = await fetchMcpRegistryServers(50);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it("treats a missing, empty, or non-string nextCursor as the last page", async () => {
+    for (const metadata of [undefined, { nextCursor: "" }, { nextCursor: 42 }]) {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ servers: [], metadata }));
+      const page = await fetchMcpRegistryServers(50);
+      expect(page.nextCursor).toBeNull();
+    }
+  });
+
+  it("sends the given cursor, URL-encoded, and no cursor when none is given", async () => {
+    // A fresh Response per call — a body can only be read once.
+    fetchMock.mockImplementation(async () => jsonResponse({ servers: [] }));
+
+    await fetchMcpRegistryServers(50, "io.github.example/a b:1.0.0");
+    const withCursor = new URL(String(fetchMock.mock.calls[0]![0]));
+    expect(withCursor.searchParams.get("cursor")).toBe("io.github.example/a b:1.0.0");
+    expect(withCursor.searchParams.get("limit")).toBe("50");
+    expect(withCursor.searchParams.get("version")).toBe("latest");
+
+    await fetchMcpRegistryServers(50);
+    const withoutCursor = new URL(String(fetchMock.mock.calls[1]![0]));
+    expect(withoutCursor.searchParams.has("cursor")).toBe(false);
+  });
+
+  it("carries the HTTP status on a non-2xx error", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: "bad cursor" }, { status: 422 }));
+    const error = await fetchMcpRegistryServers(50, "x").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(McpRegistryFetchError);
+    expect((error as McpRegistryFetchError).status).toBe(422);
   });
 });

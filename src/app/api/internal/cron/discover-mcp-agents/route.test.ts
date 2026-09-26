@@ -33,6 +33,9 @@ beforeEach(() => {
     duplicatesSkipped: [],
     cappedBeforeInsert: [],
     errors: [],
+    pagesRead: 0,
+    stoppedReason: "end_of_registry",
+    progressSaved: true,
   });
 });
 
@@ -86,6 +89,9 @@ describe("GET /api/internal/cron/discover-mcp-agents — response shape", () => 
       duplicatesSkipped: [],
       cappedBeforeInsert: [],
       errors: [],
+      pagesRead: 2,
+      stoppedReason: "page_budget",
+      progressSaved: true,
     });
 
     const res = await GET(requestWith(`Bearer ${env.CRON_SECRET}`));
@@ -100,6 +106,9 @@ describe("GET /api/internal/cron/discover-mcp-agents — response shape", () => 
       duplicatesSkippedCount: 0,
       cappedBeforeInsertCount: 0,
       errorCount: 0,
+      pagesRead: 2,
+      stoppedReason: "page_budget",
+      progressSaved: true,
     });
     const raw = JSON.stringify(body);
     expect(raw).not.toContain("should-not-appear");

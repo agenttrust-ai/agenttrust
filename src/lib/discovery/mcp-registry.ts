@@ -34,19 +34,34 @@ export class McpRegistryFetchError extends Error {
   constructor(
     message: string,
     readonly cause?: unknown,
+    /** The HTTP status, when the registry answered with a non-2xx response. */
+    readonly status?: number,
   ) {
     super(message);
     this.name = "McpRegistryFetchError";
   }
 }
 
+export type McpRegistryPage = {
+  entries: McpRegistryEntry[];
+  /**
+   * The registry's own `metadata.nextCursor` — pass it back as `cursor` to
+   * read the following page. `null` means this was the last page.
+   */
+  nextCursor: string | null;
+};
+
 /**
- * One bounded, unauthenticated read of the official MCP Registry's public
- * server list — never more than `limit` servers, never a second request,
- * no crawling of individual server pages or their repositories.
- * `version=latest` asks the registry itself to return only each server's
- * current published version (confirmed live: the response's own
- * `_meta.isLatest` is `true` for every row when this param is set).
+ * One bounded, unauthenticated read of one page of the official MCP
+ * Registry's public server list — never more than `limit` servers, one
+ * request per call, no crawling of individual server pages or their
+ * repositories. `version=latest` asks the registry itself to return only
+ * each server's current published version (confirmed live: the response's
+ * own `_meta.isLatest` is `true` for every row when this param is set).
+ *
+ * `cursor` is opaque: only ever a value this registry previously returned
+ * as `metadata.nextCursor` (keyset pagination — confirmed live), never
+ * constructed here.
  *
  * Fails closed: a network error, a non-2xx response, or an unexpected body
  * shape all throw `McpRegistryFetchError` rather than returning a partial
@@ -55,8 +70,11 @@ export class McpRegistryFetchError extends Error {
  */
 export async function fetchMcpRegistryServers(
   limit: number,
-): Promise<McpRegistryEntry[]> {
-  const url = `${MCP_REGISTRY_BASE_URL}/v0/servers?limit=${limit}&version=latest`;
+  cursor?: string,
+): Promise<McpRegistryPage> {
+  const params = new URLSearchParams({ limit: String(limit), version: "latest" });
+  if (cursor) params.set("cursor", cursor);
+  const url = `${MCP_REGISTRY_BASE_URL}/v0/servers?${params.toString()}`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
@@ -73,7 +91,11 @@ export async function fetchMcpRegistryServers(
   }
 
   if (!response.ok) {
-    throw new McpRegistryFetchError(`MCP Registry returned HTTP ${response.status}.`);
+    throw new McpRegistryFetchError(
+      `MCP Registry returned HTTP ${response.status}.`,
+      undefined,
+      response.status,
+    );
   }
 
   let body: unknown;
@@ -112,5 +134,13 @@ export async function fetchMcpRegistryServers(
 
     entries.push({ server: server as McpRegistryServer, status });
   }
-  return entries;
+
+  const rawNextCursor = (body as { metadata?: { nextCursor?: unknown } })
+    .metadata?.nextCursor;
+  const nextCursor =
+    typeof rawNextCursor === "string" && rawNextCursor.length > 0
+      ? rawNextCursor
+      : null;
+
+  return { entries, nextCursor };
 }

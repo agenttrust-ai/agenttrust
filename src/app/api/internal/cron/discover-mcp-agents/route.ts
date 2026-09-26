@@ -55,6 +55,9 @@ export async function GET(request: NextRequest) {
       duplicatesSkippedCount: summary.duplicatesSkipped.length,
       cappedBeforeInsertCount: summary.cappedBeforeInsert.length,
       errorCount: summary.errors.length,
+      pagesRead: summary.pagesRead,
+      stoppedReason: summary.stoppedReason,
+      progressSaved: summary.progressSaved,
     });
   } catch (error) {
     console.error("MCP agent discovery cron run failed:", error);
