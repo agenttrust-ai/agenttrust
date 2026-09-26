@@ -3,7 +3,10 @@ import { verifySession } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import { listAgentsForOwner } from "@/lib/db/queries/agents";
 import { getLatestChecksForAgents } from "@/lib/db/queries/health-checks";
-import { getLatestReliabilityScoresForAgents } from "@/lib/db/queries/reliability";
+import {
+  getLatestReliabilityScoresForAgents,
+  getReliabilityScoreStatusesForOwnedAgents,
+} from "@/lib/db/queries/reliability";
 import { getEffectiveAgentStatus } from "@/lib/monitoring/heartbeat-status";
 import { StatusPill } from "@/components/agents/status-pill";
 import { LastCheckSummary } from "@/components/agents/last-check-summary";
@@ -18,6 +21,11 @@ export default async function AgentsPage() {
     db,
     session.userId,
     agentIds,
+  );
+  const scoreStatuses = await getReliabilityScoreStatusesForOwnedAgents(
+    db,
+    session.userId,
+    new Map(agentIds.map((id) => [id, latestScores.get(id) ?? null])),
   );
 
   return (
@@ -80,6 +88,7 @@ export default async function AgentsPage() {
                   <td className="px-4 py-3">
                     <ReliabilityScoreBadge
                       score={latestScores.get(agent.id)?.score ?? null}
+                      status={scoreStatuses.get(agent.id)}
                     />
                   </td>
                   <td className="px-4 py-3 text-muted">

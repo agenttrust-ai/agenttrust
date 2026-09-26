@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { getPublicAgentBySlug } from "@/lib/db/queries/agents";
 import { getLatestCheckPublic } from "@/lib/db/queries/health-checks";
-import { getLatestReliabilityScorePublic } from "@/lib/db/queries/reliability";
+import { getReliabilityScoreStatePublic } from "@/lib/db/queries/reliability";
 import { getEffectiveAgentStatus } from "@/lib/monitoring/heartbeat-status";
 import { buildAgentCard } from "@/lib/validation/agent-card";
 import { CapabilityTags } from "@/components/agents/capability-tags";
@@ -28,7 +28,8 @@ export default async function PublicAgentProfilePage({
   }
 
   const latest = await getLatestCheckPublic(db, agent.id);
-  const latestScore = await getLatestReliabilityScorePublic(db, agent.id);
+  const scoreState = await getReliabilityScoreStatePublic(db, agent.id);
+  const latestScore = scoreState.score;
   const card = buildAgentCard(agent);
 
   return (
@@ -46,7 +47,10 @@ export default async function PublicAgentProfilePage({
         </div>
         <div className="flex flex-col items-end gap-1.5">
           <StatusPill status={getEffectiveAgentStatus(agent)} />
-          <ReliabilityScoreBadge score={latestScore?.score ?? null} />
+          <ReliabilityScoreBadge
+            score={latestScore?.score ?? null}
+            status={scoreState.status}
+          />
           {agent.ownershipVerifiedAt && (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-400">
               Endpoint verified
@@ -139,6 +143,13 @@ export default async function PublicAgentProfilePage({
                 {new Date(latestScore.windowStart).toLocaleDateString()} and{" "}
                 {new Date(latestScore.windowEnd).toLocaleDateString()}.
               </p>
+              {scoreState.status === "stale" && (
+                <p className="mt-2 text-xs text-muted">
+                  Out of date: not enough health checks in the last 7 days
+                  for this to count as current evidence. Shown for reference
+                  only.
+                </p>
+              )}
             </>
           ) : (
             <p className="mt-3 text-sm text-muted">

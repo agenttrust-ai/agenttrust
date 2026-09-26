@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeTrustDecision } from "./trust-decision";
+import { computeTrustDecision, STALE_SCORE_REASON } from "./trust-decision";
 
 describe("computeTrustDecision", () => {
   it("recommends a healthy, high-scoring, verified agent with high confidence and no reasons", () => {
@@ -85,5 +85,62 @@ describe("computeTrustDecision", () => {
   it("is deterministic — identical input always produces identical output", () => {
     const input = { status: "healthy" as const, score: 77, verified: false };
     expect(computeTrustDecision(input)).toEqual(computeTrustDecision(input));
+  });
+});
+
+describe("computeTrustDecision — score freshness", () => {
+  it("never recommends on a stale score, however high — and says so with the stale reason", () => {
+    const result = computeTrustDecision({
+      status: "healthy",
+      score: 97,
+      verified: true,
+      scoreStatus: "stale",
+    });
+    expect(result.recommended).toBe(false);
+    expect(result.confidence).toBe("insufficient_data");
+    expect(result.reasons).toEqual([STALE_SCORE_REASON]);
+  });
+
+  it("gives a stale low score only the stale reason, not a 'score is low' verdict on old data", () => {
+    const result = computeTrustDecision({
+      status: "healthy",
+      score: 20,
+      verified: false,
+      scoreStatus: "stale",
+    });
+    expect(result.recommended).toBe(false);
+    expect(result.reasons).toContain(STALE_SCORE_REASON);
+    expect(result.reasons.some((r) => r.startsWith("Reliability score is low"))).toBe(false);
+  });
+
+  it("keeps the stale reason distinct from the 'no score yet' reason", () => {
+    const none = computeTrustDecision({ status: "healthy", score: null, verified: true, scoreStatus: "none" });
+    expect(none.reasons).toContain("Not enough monitoring history yet to compute a reliability score.");
+    expect(none.reasons).not.toContain(STALE_SCORE_REASON);
+  });
+
+  it("treats an explicit 'fresh' score exactly like the pre-freshness behavior", () => {
+    for (const input of [
+      { status: "healthy" as const, score: 95, verified: true },
+      { status: "healthy" as const, score: 70, verified: false },
+      { status: "degraded" as const, score: 95, verified: true },
+      { status: "healthy" as const, score: 30, verified: true },
+    ]) {
+      expect(computeTrustDecision({ ...input, scoreStatus: "fresh" })).toEqual(
+        computeTrustDecision(input),
+      );
+    }
+  });
+
+  it("still reports an unhealthy status alongside a stale score", () => {
+    const result = computeTrustDecision({
+      status: "down",
+      score: 97,
+      verified: true,
+      scoreStatus: "stale",
+    });
+    expect(result.recommended).toBe(false);
+    expect(result.reasons).toContain('Current status is "down", not healthy.');
+    expect(result.reasons).toContain(STALE_SCORE_REASON);
   });
 });

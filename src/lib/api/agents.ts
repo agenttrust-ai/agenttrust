@@ -10,7 +10,7 @@ import {
 import { getLatestCheckPublic, recordHealthCheck } from "@/lib/db/queries/health-checks";
 import {
   computeAndStoreReliabilityScore,
-  getLatestReliabilityScorePublic,
+  getReliabilityScoreStatePublic,
 } from "@/lib/db/queries/reliability";
 import { getEffectiveAgentStatus } from "@/lib/monitoring/heartbeat-status";
 import { computeTrustDecision } from "@/lib/reliability/trust-decision";
@@ -69,22 +69,30 @@ function toPublicAgentJson(agent: Agent) {
  * produces — never a second, divergent implementation of this logic.
  */
 export async function toTrustEnrichedAgentJson(db: AppDatabase, agent: Agent) {
-  const [latestScore, latestCheck] = await Promise.all([
-    getLatestReliabilityScorePublic(db, agent.id),
+  const [scoreState, latestCheck] = await Promise.all([
+    getReliabilityScoreStatePublic(db, agent.id),
     getLatestCheckPublic(db, agent.id),
   ]);
-  const score = latestScore?.score ?? null;
+  const score = scoreState.score?.score ?? null;
   const status = getEffectiveAgentStatus(agent);
   const verified = agent.ownershipVerifiedAt !== null;
 
   return {
     ...toPublicAgentJson(agent),
+    // Kept as the latest stored value for backward compatibility, even when
+    // stale — `reliabilityScoreStatus` says whether it's current evidence.
     reliabilityScore: score,
-    reliabilityScoreComputedAt: latestScore?.computedAt ?? null,
+    reliabilityScoreStatus: scoreState.status,
+    reliabilityScoreComputedAt: scoreState.score?.computedAt ?? null,
     lastCheckedAt: latestCheck?.checkedAt ?? null,
     latencyMs: latestCheck?.latencyMs ?? null,
     httpStatus: latestCheck?.statusCode ?? null,
-    trustDecision: computeTrustDecision({ status, score, verified }),
+    trustDecision: computeTrustDecision({
+      status,
+      score,
+      verified,
+      scoreStatus: scoreState.status,
+    }),
   };
 }
 
@@ -154,7 +162,7 @@ export async function handleGetAgentHealth(
     // unlisted agent's health must be exactly as invisible as its profile.
     const agent = await getPublicAgentBySlug(db, slug);
     const latest = await getLatestCheckPublic(db, agent.id);
-    const latestScore = await getLatestReliabilityScorePublic(db, agent.id);
+    const scoreState = await getReliabilityScoreStatePublic(db, agent.id);
 
     return apiSuccess({
       agentId: agent.id,
@@ -164,8 +172,9 @@ export async function handleGetAgentHealth(
       latencyMs: latest?.latencyMs ?? null,
       httpStatus: latest?.statusCode ?? null,
       checkStatus: latest?.status ?? null,
-      reliabilityScore: latestScore?.score ?? null,
-      reliabilityScoreComputedAt: latestScore?.computedAt ?? null,
+      reliabilityScore: scoreState.score?.score ?? null,
+      reliabilityScoreStatus: scoreState.status,
+      reliabilityScoreComputedAt: scoreState.score?.computedAt ?? null,
     });
   });
 }

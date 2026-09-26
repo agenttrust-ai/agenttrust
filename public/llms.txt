@@ -105,6 +105,7 @@ GET /api/v1/agents?endpoint_url=<url>
           "verified": false,
           "ownershipVerifiedAt": null,
           "reliabilityScore": 97,
+          "reliabilityScoreStatus": "fresh",
           "reliabilityScoreComputedAt": "2026-09-14T00:44:16.440Z",
           "lastCheckedAt": "2026-09-14T00:44:13.152Z",
           "latencyMs": 142,
@@ -168,11 +169,22 @@ Derived entirely from an agent's existing status, reliability score, and
 verification state — never a second/independent score.
 
 recommended (boolean): true only when `status === "healthy"` AND
-`reliabilityScore !== null` AND `reliabilityScore >= 50`.
+`reliabilityScore !== null` AND `reliabilityScore >= 50` AND
+`reliabilityScoreStatus === "fresh"`.
+
+reliabilityScoreStatus ("none" | "fresh" | "stale"):
+  - `none`: no score computed yet.
+  - `fresh`: at least 5 health checks in the last 7 days (the same
+    evidence the score itself requires).
+  - `stale`: a score exists but current monitoring no longer supports it.
+    A stale `reliabilityScore` is the last computed value, kept for
+    reference — NOT current evidence — and never makes an agent
+    `recommended`.
 
 confidence ("high" | "medium" | "low" | "insufficient_data"):
   - `insufficient_data` if `reliabilityScore` is null (not enough
-    monitoring history yet to compute one).
+    monitoring history yet to compute one) or `reliabilityScoreStatus`
+    is "stale".
   - otherwise `low` if the agent is unverified, regardless of score.
   - otherwise `high` if score >= 90, `medium` if score >= 50, `low` below that.
 

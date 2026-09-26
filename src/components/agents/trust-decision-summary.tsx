@@ -1,5 +1,6 @@
 import { StatusPill } from "./status-pill";
 import { ReliabilityScoreBadge } from "./reliability-score";
+import type { ReliabilityScoreStatus } from "@/lib/reliability/freshness";
 
 export type TrustCheckResult = {
   matched: boolean;
@@ -8,6 +9,7 @@ export type TrustCheckResult = {
   status?: string;
   verified?: boolean;
   reliabilityScore?: number | null;
+  reliabilityScoreStatus?: ReliabilityScoreStatus;
   trustDecision?: {
     recommended: boolean;
     confidence: "high" | "medium" | "low" | "insufficient_data";
@@ -65,8 +67,15 @@ export function TrustDecisionSummary({ result }: { result: TrustCheckResult }) {
     );
   }
 
-  const { name, slug, status, verified, reliabilityScore, trustDecision } =
-    result;
+  const {
+    name,
+    slug,
+    status,
+    verified,
+    reliabilityScore,
+    reliabilityScoreStatus,
+    trustDecision,
+  } = result;
   const verdict = trustDecision ? getVerdict(trustDecision) : null;
 
   return (
@@ -94,7 +103,10 @@ export function TrustDecisionSummary({ result }: { result: TrustCheckResult }) {
           >
             {verified ? "Endpoint verified" : "Endpoint not verified"}
           </span>
-          <ReliabilityScoreBadge score={reliabilityScore ?? null} />
+          <ReliabilityScoreBadge
+            score={reliabilityScore ?? null}
+            status={reliabilityScoreStatus}
+          />
         </div>
       </div>
       {trustDecision && (

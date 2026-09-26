@@ -6,12 +6,16 @@ import { createAgent } from "@/lib/db/queries/agents";
 import { recordHealthCheck } from "@/lib/db/queries/health-checks";
 import { createApiKey, revokeApiKey } from "@/lib/db/queries/api-keys";
 import { MIN_SAMPLES_FOR_SCORE } from "@/lib/reliability/scoring";
+import { STALE_SCORE_REASON } from "@/lib/reliability/trust-decision";
 import type { AgentInput } from "@/lib/validation/agent";
 import { DEFAULT_RATE_LIMIT_PER_WINDOW } from "@/lib/rate-limit/config";
 import {
   checkAgentTrustInputSchema,
+  checkAgentTrustOutputSchema,
   getAgentHealthInputSchema,
+  getAgentHealthOutputSchema,
   getAgentInputSchema,
+  getAgentOutputSchema,
   listAgentsInputSchema,
   mcpCheckAgentTrust,
   mcpGetAgent,
@@ -557,13 +561,23 @@ describe("mcpCheckAgentTrust", () => {
     });
     const data = structured(result);
     expect(Object.keys(data).sort()).toEqual(
-      ["matched", "name", "reliabilityScore", "slug", "status", "trustDecision", "verified"].sort(),
+      [
+        "matched",
+        "name",
+        "reliabilityScore",
+        "reliabilityScoreStatus",
+        "slug",
+        "status",
+        "trustDecision",
+        "verified",
+      ].sort(),
     );
     expect(data.slug).toBe(agent.slug);
     expect(data.name).toBe("Anon Trust Bot");
     expect(data.status).toBe("healthy");
     expect(data.verified).toBe(false);
     expect(typeof data.reliabilityScore).toBe("number");
+    expect(data.reliabilityScoreStatus).toBe("fresh");
     expect(data.trustDecision).toMatchObject({ recommended: true, confidence: "low" });
   });
 
@@ -764,5 +778,97 @@ describe("deterministic MCP error shape", () => {
     const allText = JSON.stringify(results);
     expect(allText).not.toContain(rawKey);
     expect(allText).not.toContain("at_live_");
+  });
+});
+
+describe("reliability score freshness in MCP tool output", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const HOUR = 60 * 60 * 1000;
+
+  function requestFromIp(ip: string): Request {
+    return new Request("https://getagenttrust.com/api/mcp", {
+      headers: { "x-vercel-forwarded-for": ip },
+    });
+  }
+
+  async function checkAt(agentId: string, when: Date) {
+    await recordHealthCheck(
+      db,
+      agentId,
+      { status: "success", success: true, latencyMs: 100, httpStatus: 200, errorCode: null, errorMessage: null },
+      "pull",
+      when,
+    );
+  }
+
+  /** A healthy public agent whose only score was computed 9 days ago from checks that have all aged out. */
+  async function staleScoredAgent(endpointUrl: string) {
+    const agent = await createAgent(db, userA, { ...baseInput, name: "Stale Mcp Bot", endpointUrl });
+    await activate(agent.id);
+    const scoredAt = new Date(Date.now() - 9 * DAY);
+    for (let i = 0; i < MIN_SAMPLES_FOR_SCORE; i++) await checkAt(agent.id, new Date(scoredAt.getTime() - i * HOUR));
+    const { computeAndStoreReliabilityScore } = await import("@/lib/db/queries/reliability");
+    await computeAndStoreReliabilityScore(db, agent.id, scoredAt);
+    await client.query(`update public.agents set current_status = 'healthy' where id = $1`, [agent.id]);
+    const [row] = (
+      await client.query<{ score: string }>(`select score from public.reliability_scores where agent_id = $1`, [agent.id])
+    ).rows;
+    return { agent, historicalScore: Number(row!.score) };
+  }
+
+  it("check_agent_trust: stale score keeps its historical value, is marked stale, and is never recommended", async () => {
+    const url = "https://stale-mcp-trust.example.com/invoke";
+    const { historicalScore } = await staleScoredAgent(url);
+
+    const result = await mcpCheckAgentTrust(db, requestFromIp("203.0.113.231"), { endpointUrl: url });
+    const data = structured(result);
+
+    expect(data.matched).toBe(true);
+    expect(data.reliabilityScore).toBe(historicalScore);
+    expect(data.reliabilityScoreStatus).toBe("stale");
+    expect(data.trustDecision).toEqual({
+      recommended: false,
+      confidence: "insufficient_data",
+      reasons: expect.arrayContaining([STALE_SCORE_REASON]),
+    });
+    expect(checkAgentTrustOutputSchema.safeParse(data).success).toBe(true);
+  });
+
+  it("check_agent_trust: matched:false output is unchanged (no score fields)", async () => {
+    const result = await mcpCheckAgentTrust(db, requestFromIp("203.0.113.232"), {
+      endpointUrl: "https://nothing-registered-here.example.com/invoke",
+    });
+    expect(structured(result)).toEqual({ matched: false });
+  });
+
+  it("get_agent: stale score keeps its historical value, is marked stale, and is never recommended", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const { agent, historicalScore } = await staleScoredAgent("https://stale-mcp-get.example.com/invoke");
+
+    const result = await mcpGetAgent(db, rawKey, { slug: agent.slug });
+    const data = structured(result);
+
+    expect(data.reliabilityScore).toBe(historicalScore);
+    expect(data.reliabilityScoreStatus).toBe("stale");
+    expect((data.trustDecision as { recommended: boolean }).recommended).toBe(false);
+    expect(getAgentOutputSchema.safeParse(data).success).toBe(true);
+  });
+
+  it("get_agent_health: stale score keeps its historical value and is marked stale", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const { agent, historicalScore } = await staleScoredAgent("https://stale-mcp-health.example.com/invoke");
+
+    const result = await mcpGetAgentHealth(db, rawKey, { slug: agent.slug });
+    const data = structured(result);
+
+    expect(data.reliabilityScore).toBe(historicalScore);
+    expect(data.reliabilityScoreStatus).toBe("stale");
+    expect(getAgentHealthOutputSchema.safeParse(data).success).toBe(true);
+  });
+
+  it("output schemas reject an unknown freshness value", () => {
+    expect(
+      checkAgentTrustOutputSchema.safeParse({ matched: true, reliabilityScoreStatus: "expired" }).success,
+    ).toBe(false);
   });
 });

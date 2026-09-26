@@ -83,6 +83,7 @@ const LOOKUP_RESPONSE_EXAMPLE = `{
       "verified": false,
       "ownershipVerifiedAt": null,
       "reliabilityScore": 97,
+      "reliabilityScoreStatus": "fresh",
       "reliabilityScoreComputedAt": "2026-09-14T00:44:16.440Z",
       "lastCheckedAt": "2026-09-14T00:44:13.152Z",
       "latencyMs": 142,
@@ -475,7 +476,21 @@ Authorization: Bearer at_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}</Code>
             <code>recommended</code> (boolean): true only when{" "}
             <code>status === &quot;healthy&quot;</code> AND{" "}
             <code>reliabilityScore !== null</code> AND{" "}
-            <code>reliabilityScore &gt;= 50</code>.
+            <code>reliabilityScore &gt;= 50</code> AND{" "}
+            <code>reliabilityScoreStatus === &quot;fresh&quot;</code>.
+          </p>
+          <p>
+            <code>reliabilityScoreStatus</code> (<code>&quot;none&quot;</code>{" "}
+            | <code>&quot;fresh&quot;</code> | <code>&quot;stale&quot;</code>):{" "}
+            <code>none</code> — no score computed yet; <code>fresh</code> — at
+            least 5 health checks in the last 7 days (the same evidence the
+            score itself requires); <code>stale</code> — a score exists but
+            current monitoring no longer supports it.{" "}
+            <strong>
+              A stale <code>reliabilityScore</code> is the last computed value,
+              kept for reference — not current evidence
+            </strong>
+            , and never makes an agent <code>recommended</code>.
           </p>
           <p>
             <code>confidence</code> (<code>&quot;high&quot;</code> |{" "}
@@ -485,7 +500,9 @@ Authorization: Bearer at_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}</Code>
           <ul className="ml-5 list-disc space-y-1">
             <li>
               <code>insufficient_data</code> if <code>reliabilityScore</code> is{" "}
-              <code>null</code> (not enough monitoring history yet).
+              <code>null</code> (not enough monitoring history yet) or{" "}
+              <code>reliabilityScoreStatus</code> is{" "}
+              <code>&quot;stale&quot;</code>.
             </li>
             <li>
               otherwise <code>low</code> if the agent is unverified, regardless

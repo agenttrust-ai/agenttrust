@@ -17,6 +17,8 @@ import {
   HEARTBEAT_DOWN_AFTER_MISSED_INTERVALS,
 } from "@/lib/monitoring/heartbeat-status";
 import { MIN_SAMPLES_FOR_SCORE } from "@/lib/reliability/scoring";
+import { STALE_SCORE_REASON } from "@/lib/reliability/trust-decision";
+import { computeAndStoreReliabilityScore } from "@/lib/db/queries/reliability";
 
 const userA = "11111111-1111-1111-1111-111111111111";
 const userB = "22222222-2222-2222-2222-222222222222";
@@ -1303,5 +1305,118 @@ describe("Agent Card in the Public API", () => {
     // left as draft
     const res = await handleGetAgent(db, requestTo(`/api/v1/agents/${agent.slug}`, rawKey), agent.slug);
     expect(res.status).toBe(404);
+  });
+});
+
+describe("reliability score freshness in REST responses", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const HOUR = 60 * 60 * 1000;
+
+  async function checkAt(agentId: string, when: Date) {
+    await recordHealthCheck(
+      db,
+      agentId,
+      { status: "success", success: true, latencyMs: 100, httpStatus: 200, errorCode: null, errorMessage: null },
+      "pull",
+      when,
+    );
+  }
+
+  /** A healthy public agent whose only score was computed 9 days ago from checks that have all aged out. */
+  async function staleScoredAgent(endpointUrl: string) {
+    const agent = await createAgent(db, userA, { ...baseInput, name: "Stale Rest Bot", endpointUrl });
+    await activate(agent.id);
+    const scoredAt = new Date(Date.now() - 9 * DAY);
+    for (let i = 0; i < MIN_SAMPLES_FOR_SCORE; i++) await checkAt(agent.id, new Date(scoredAt.getTime() - i * HOUR));
+    await computeAndStoreReliabilityScore(db, agent.id, scoredAt);
+    await client.query(`update public.agents set current_status = 'healthy' where id = $1`, [agent.id]);
+    const [row] = (
+      await client.query<{ score: string }>(`select score from public.reliability_scores where agent_id = $1`, [agent.id])
+    ).rows;
+    return { agent, historicalScore: Number(row!.score) };
+  }
+
+  it("GET /agents/{slug}: keeps the historical score, marks it stale, and does not recommend", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const { agent, historicalScore } = await staleScoredAgent("https://stale-rest.example.com/invoke");
+
+    const res = await handleGetAgent(db, requestTo(`/api/v1/agents/${agent.slug}`, rawKey), agent.slug);
+    const { data } = await bodyOf(res);
+
+    expect(data.reliabilityScore).toBe(historicalScore);
+    expect(data.reliabilityScoreStatus).toBe("stale");
+    expect(data.reliabilityScoreComputedAt).not.toBeNull();
+    expect(data.trustDecision.recommended).toBe(false);
+    expect(data.trustDecision.confidence).toBe("insufficient_data");
+    expect(data.trustDecision.reasons).toContain(STALE_SCORE_REASON);
+  });
+
+  it("?endpoint_url= lookup: same stale classification and conservative trustDecision", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const url = "https://stale-lookup.example.com/invoke";
+    const { historicalScore } = await staleScoredAgent(url);
+
+    const res = await handleListAgents(
+      db,
+      requestTo(`/api/v1/agents?endpoint_url=${encodeURIComponent(url)}`, rawKey),
+    );
+    const { data } = await bodyOf(res);
+
+    expect(data).toHaveLength(1);
+    expect(data[0].reliabilityScore).toBe(historicalScore);
+    expect(data[0].reliabilityScoreStatus).toBe("stale");
+    expect(data[0].trustDecision.recommended).toBe(false);
+  });
+
+  it("GET /agents/{slug}/health: keeps the historical score and marks it stale", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const { agent, historicalScore } = await staleScoredAgent("https://stale-health.example.com/invoke");
+
+    const res = await handleGetAgentHealth(
+      db,
+      requestTo(`/api/v1/agents/${agent.slug}/health`, rawKey),
+      agent.slug,
+    );
+    const { data } = await bodyOf(res);
+
+    expect(data.reliabilityScore).toBe(historicalScore);
+    expect(data.reliabilityScoreStatus).toBe("stale");
+  });
+
+  it("a fresh score is unchanged: numeric score, status 'fresh', recommended when healthy", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const agent = await createAgent(db, userA, {
+      ...baseInput,
+      name: "Fresh Rest Bot",
+      endpointUrl: "https://fresh-rest.example.com/invoke",
+    });
+    await activate(agent.id);
+    for (let i = 1; i <= MIN_SAMPLES_FOR_SCORE; i++) await checkAt(agent.id, new Date(Date.now() - i * HOUR));
+    await computeAndStoreReliabilityScore(db, agent.id, new Date());
+    await client.query(`update public.agents set current_status = 'healthy' where id = $1`, [agent.id]);
+
+    const res = await handleGetAgent(db, requestTo(`/api/v1/agents/${agent.slug}`, rawKey), agent.slug);
+    const { data } = await bodyOf(res);
+
+    expect(typeof data.reliabilityScore).toBe("number");
+    expect(data.reliabilityScoreStatus).toBe("fresh");
+    expect(data.trustDecision.recommended).toBe(true);
+  });
+
+  it("an agent with no score reports status 'none' and a null score", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const agent = await createAgent(db, userA, {
+      ...baseInput,
+      name: "None Rest Bot",
+      endpointUrl: "https://none-rest.example.com/invoke",
+    });
+    await activate(agent.id);
+
+    const res = await handleGetAgent(db, requestTo(`/api/v1/agents/${agent.slug}`, rawKey), agent.slug);
+    const { data } = await bodyOf(res);
+
+    expect(data.reliabilityScore).toBeNull();
+    expect(data.reliabilityScoreStatus).toBe("none");
+    expect(data.trustDecision.confidence).toBe("insufficient_data");
   });
 });

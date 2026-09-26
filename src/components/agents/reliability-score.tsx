@@ -2,6 +2,7 @@ import {
   SCORE_THRESHOLD_HIGH_CONFIDENCE,
   SCORE_THRESHOLD_RECOMMENDED,
 } from "@/lib/reliability/scoring";
+import type { ReliabilityScoreStatus } from "@/lib/reliability/freshness";
 
 const SCORE_BANDS = [
   {
@@ -34,8 +35,31 @@ const SCORE_BANDS = [
  * `null` means "no score computed yet" (not enough monitoring history) —
  * rendered as a neutral placeholder, never as a 0 or any other number that
  * could read as an actual (and unjustifiably low or high) trust score.
+ *
+ * A `stale` score (see src/lib/reliability/freshness.ts) is shown with its
+ * historical value but in the same neutral style and clearly labeled "out
+ * of date" — never with the green/amber/red band, which would present it as
+ * a current verdict.
  */
-export function ReliabilityScoreBadge({ score }: { score: number | null }) {
+export function ReliabilityScoreBadge({
+  score,
+  status,
+}: {
+  score: number | null;
+  status?: ReliabilityScoreStatus;
+}) {
+  if (score !== null && status === "stale") {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 py-0.5 text-xs font-medium text-muted"
+        title="Not enough recent health checks to count this as current evidence."
+      >
+        Out of date
+        <span className="opacity-70">· last {score.toFixed(0)}/100</span>
+      </span>
+    );
+  }
+
   if (score === null) {
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 py-0.5 text-xs font-medium text-muted">

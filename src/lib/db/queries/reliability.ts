@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { agents, healthChecks, reliabilityScores } from "@/lib/db/schema";
 import {
   withAnonContext,
@@ -14,6 +14,11 @@ import {
   computeReliabilityScore,
   type ReliabilityScore,
 } from "@/lib/reliability/scoring";
+import {
+  classifyReliabilityScore,
+  scoreEvidenceWindowStart,
+  type ReliabilityScoreStatus,
+} from "@/lib/reliability/freshness";
 
 /**
  * Every check (pull or push — both land in `health_checks`) between
@@ -193,4 +198,89 @@ export async function getLatestReliabilityScorePublic(
       .limit(1);
     return row ? toDisplayScore(row) : null;
   });
+}
+
+/**
+ * Health checks per agent in the trailing scoring window ending at `now` —
+ * the evidence count `classifyReliabilityScore` needs. Same bounds as
+ * `computeAndStoreReliabilityScore` (both ends inclusive). Runs inside
+ * whatever RLS context the caller's `tx` already carries.
+ */
+async function countRecentChecks(
+  tx: AppDatabase,
+  agentIds: string[],
+  now: Date,
+): Promise<Map<string, number>> {
+  if (agentIds.length === 0) return new Map();
+  const rows = await tx
+    .select({ agentId: healthChecks.agentId, n: count() })
+    .from(healthChecks)
+    .where(
+      and(
+        inArray(healthChecks.agentId, agentIds),
+        gte(healthChecks.checkedAt, scoreEvidenceWindowStart(now)),
+        lte(healthChecks.checkedAt, now),
+      ),
+    )
+    .groupBy(healthChecks.agentId);
+  return new Map(rows.map((row) => [row.agentId, Number(row.n)]));
+}
+
+/** An agent's latest stored score together with whether it's still current. */
+export type ReliabilityScoreState = {
+  score: DisplayReliabilityScore | null;
+  status: ReliabilityScoreStatus;
+};
+
+/**
+ * The public equivalent of `getLatestReliabilityScorePublic`, plus
+ * freshness — same anonymous role, same "only for an already-confirmed
+ * public+active agent" contract. The historical score is returned as-is
+ * even when stale; `status` is what says whether it's current evidence.
+ */
+export async function getReliabilityScoreStatePublic(
+  db: AppDatabase,
+  agentId: string,
+  now: Date = new Date(),
+): Promise<ReliabilityScoreState> {
+  const [score, counts] = await Promise.all([
+    getLatestReliabilityScorePublic(db, agentId),
+    withAnonContext(db, (tx) => countRecentChecks(tx, [agentId], now)),
+  ]);
+  return {
+    score,
+    status: classifyReliabilityScore({
+      latestScore: score,
+      recentCheckCount: counts.get(agentId) ?? 0,
+      now,
+    }),
+  };
+}
+
+/**
+ * Owner-side freshness for already-fetched latest scores (from
+ * `getLatestReliabilityScoresForAgents` or
+ * `getLatestReliabilityScoreForOwnedAgent`) — one grouped count for every
+ * agent, run as the owner so RLS scopes it to their own agents' checks.
+ */
+export async function getReliabilityScoreStatusesForOwnedAgents(
+  db: AppDatabase,
+  ownerId: string,
+  latestScores: Map<string, DisplayReliabilityScore | null>,
+  now: Date = new Date(),
+): Promise<Map<string, ReliabilityScoreStatus>> {
+  const agentIds = [...latestScores.keys()];
+  const counts = await withUserContext(db, ownerId, (tx) =>
+    countRecentChecks(tx, agentIds, now),
+  );
+  return new Map(
+    agentIds.map((id) => [
+      id,
+      classifyReliabilityScore({
+        latestScore: latestScores.get(id) ?? null,
+        recentCheckCount: counts.get(id) ?? 0,
+        now,
+      }),
+    ]),
+  );
 }

@@ -3,7 +3,10 @@ import { verifySession } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import { getOwnedAgentBySlug } from "@/lib/db/queries/agents";
 import { getLatestChecksForAgents } from "@/lib/db/queries/health-checks";
-import { getLatestReliabilityScoreForOwnedAgent } from "@/lib/db/queries/reliability";
+import {
+  getLatestReliabilityScoreForOwnedAgent,
+  getReliabilityScoreStatusesForOwnedAgents,
+} from "@/lib/db/queries/reliability";
 import { getEffectiveAgentStatus } from "@/lib/monitoring/heartbeat-status";
 import { buildAgentCard } from "@/lib/validation/agent-card";
 import { AgentForm } from "@/components/agents/agent-form";
@@ -35,6 +38,13 @@ export default async function AgentDetailPage({
     session.userId,
     agent.id,
   );
+  const scoreStatus = (
+    await getReliabilityScoreStatusesForOwnedAgents(
+      db,
+      session.userId,
+      new Map([[agent.id, latestScore]]),
+    )
+  ).get(agent.id);
   const card = buildAgentCard(agent);
   // endpointUrl is always a well-formed URL by the time it's stored (the
   // same zod validation `agentColumns` relies on), so this can't actually
@@ -173,7 +183,10 @@ export default async function AgentDetailPage({
       <div className="max-w-xl rounded-lg border border-border bg-surface p-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium">Reliability / trust score</h2>
-          <ReliabilityScoreBadge score={latestScore?.score ?? null} />
+          <ReliabilityScoreBadge
+            score={latestScore?.score ?? null}
+            status={scoreStatus}
+          />
         </div>
         {latestScore ? (
           <>
@@ -209,6 +222,14 @@ export default async function AgentDetailPage({
               {new Date(latestScore.windowStart).toLocaleDateString()} and{" "}
               {new Date(latestScore.windowEnd).toLocaleDateString()}.
             </p>
+            {scoreStatus === "stale" && (
+              <p className="mt-2 text-xs text-muted">
+                Out of date: fewer than 5 health checks in the last 7 days, so
+                this score no longer counts as current evidence and your agent
+                isn&apos;t recommended on it. It becomes current again once
+                monitoring has enough recent checks.
+              </p>
+            )}
           </>
         ) : (
           <p className="mt-3 text-sm text-muted">

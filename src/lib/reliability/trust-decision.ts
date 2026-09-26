@@ -1,8 +1,14 @@
 import type { AgentHealthStatus } from "@/lib/monitoring/status";
 import {
+  MIN_SAMPLES_FOR_SCORE,
   SCORE_THRESHOLD_HIGH_CONFIDENCE,
   SCORE_THRESHOLD_RECOMMENDED,
+  SCORE_WINDOW_DAYS,
 } from "./scoring";
+import type { ReliabilityScoreStatus } from "./freshness";
+
+/** The `reasons` entry for a historical score that current evidence no longer supports. */
+export const STALE_SCORE_REASON = `Reliability score is out of date: fewer than ${MIN_SAMPLES_FOR_SCORE} health checks in the last ${SCORE_WINDOW_DAYS} days, so it no longer counts as current evidence.`;
 
 /**
  * A deterministic decision layer on top of already-existing trust signals —
@@ -37,19 +43,34 @@ export type TrustDecisionInput = {
   /** `null` means no reliability score has been computed yet (insufficient monitoring history) — see `computeReliabilityScore`. */
   score: number | null;
   verified: boolean;
+  /**
+   * Freshness of `score` (see `classifyReliabilityScore`). A `stale` score
+   * is treated exactly like no score: never enough for `recommended`, and
+   * `confidence` is `insufficient_data`. Omitted, it's inferred from
+   * `score` alone (`null` → none, a number → fresh) — the behavior before
+   * freshness existed.
+   */
+  scoreStatus?: ReliabilityScoreStatus;
 };
 
 export function computeTrustDecision({
   status,
-  score,
+  score: rawScore,
   verified,
+  scoreStatus,
 }: TrustDecisionInput): TrustDecision {
   const reasons: string[] = [];
+  const isStale = scoreStatus === "stale" && rawScore !== null;
+  // Only current evidence counts toward the decision; a stale historical
+  // score is still returned to callers, just never acted on here.
+  const score = isStale ? null : rawScore;
 
   if (status !== "healthy") {
     reasons.push(`Current status is "${status}", not healthy.`);
   }
-  if (score === null) {
+  if (isStale) {
+    reasons.push(STALE_SCORE_REASON);
+  } else if (score === null) {
     reasons.push("Not enough monitoring history yet to compute a reliability score.");
   } else if (score < SCORE_THRESHOLD_RECOMMENDED) {
     reasons.push(`Reliability score is low (${score.toFixed(0)}/100).`);

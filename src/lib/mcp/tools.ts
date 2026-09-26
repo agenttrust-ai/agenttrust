@@ -13,6 +13,7 @@ import { checkAnonymousRateLimit } from "@/lib/api/anonymous-rate-limit";
 import { apiError } from "@/lib/api/response";
 import { AppError, ErrorCode } from "@/lib/errors";
 import { DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from "@/lib/validation/pagination";
+import { RELIABILITY_SCORE_STATUSES } from "@/lib/reliability/freshness";
 
 /**
  * The whole MCP adapter's reuse story lives in this one idea: every tool
@@ -81,6 +82,13 @@ function toSuccessResult(structuredContent: Record<string, unknown>): McpToolRes
 
 const agentStatusEnum = z.enum(["unknown", "healthy", "degraded", "down"]);
 
+/**
+ * Whether `reliabilityScore` is current evidence — see
+ * src/lib/reliability/freshness.ts. `stale` means the value is the last one
+ * computed, kept for reference, but current monitoring no longer supports it.
+ */
+const reliabilityScoreStatusEnum = z.enum(RELIABILITY_SCORE_STATUSES);
+
 const agentCardOutputSchema = z.object({
   schemaVersion: z.string(),
   name: z.string(),
@@ -120,6 +128,7 @@ const publicAgentOutputSchema = z.object({
   // trust check), not from browsing the plain unfiltered listing — see
   // `mcpListAgents` / `handleListAgents`.
   reliabilityScore: z.number().nullable().optional(),
+  reliabilityScoreStatus: reliabilityScoreStatusEnum.optional(),
   reliabilityScoreComputedAt: z.string().nullable().optional(),
   lastCheckedAt: z.string().nullable().optional(),
   latencyMs: z.number().nullable().optional(),
@@ -195,6 +204,7 @@ export type GetAgentInput = z.infer<typeof getAgentInputSchema>;
 
 export const getAgentOutputSchema = publicAgentOutputSchema.extend({
   reliabilityScore: z.number().nullable(),
+  reliabilityScoreStatus: reliabilityScoreStatusEnum,
   reliabilityScoreComputedAt: z.string().nullable(),
   lastCheckedAt: z.string().nullable(),
   latencyMs: z.number().nullable(),
@@ -230,6 +240,7 @@ export const getAgentHealthOutputSchema = z.object({
   httpStatus: z.number().nullable(),
   checkStatus: z.string().nullable(),
   reliabilityScore: z.number().nullable(),
+  reliabilityScoreStatus: reliabilityScoreStatusEnum,
   reliabilityScoreComputedAt: z.string().nullable(),
 });
 
@@ -308,6 +319,7 @@ export const checkAgentTrustOutputSchema = z.object({
   status: agentStatusEnum.optional(),
   verified: z.boolean().optional(),
   reliabilityScore: z.number().nullable().optional(),
+  reliabilityScoreStatus: reliabilityScoreStatusEnum.optional(),
   trustDecision: trustDecisionOutputSchema.optional(),
 });
 
@@ -362,6 +374,7 @@ export async function mcpCheckAgentTrust(
     status: enriched.status,
     verified: enriched.verified,
     reliabilityScore: enriched.reliabilityScore,
+    reliabilityScoreStatus: enriched.reliabilityScoreStatus,
     trustDecision: enriched.trustDecision,
   });
 }
