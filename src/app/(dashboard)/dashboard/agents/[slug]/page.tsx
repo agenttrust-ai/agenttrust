@@ -17,6 +17,12 @@ import { LastCheckSummary } from "@/components/agents/last-check-summary";
 import { ReliabilityScoreBadge } from "@/components/agents/reliability-score";
 import { AgentCardSummary } from "@/components/agents/agent-card-summary";
 import { OwnershipVerificationPanel } from "@/components/agents/ownership-verification";
+import { NetworkNode } from "@/components/network/network-node";
+import { EvidenceGlyph } from "@/components/trust/evidence";
+import { trustReportFromEvidence } from "@/components/trust/report-data";
+import { TrustReport } from "@/components/trust/trust-report";
+import { buttonClass } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 import { buildVerificationUrl } from "@/lib/verification/ownership";
 import {
   updateAgentAction,
@@ -61,15 +67,31 @@ export default async function AgentDetailPage({
   const boundDelete = deleteAgentAction.bind(null, agent.id);
   const boundActivate = activateAgentAction.bind(null, agent.id);
   const isDraft = agent.lifecycleStatus === "draft";
+  const status = getEffectiveAgentStatus(agent);
+  // `check_agent_trust` and the REST lookup only match public, active
+  // agents — anything else gets `{ matched: false }`, so that's what this
+  // page shows instead of a report.
+  const isListed = agent.visibility === "public" && agent.lifecycleStatus === "active";
+  // The same four inputs the API feeds `computeTrustDecision`, so this is
+  // exactly the report a caller gets for this endpoint right now.
+  const report = trustReportFromEvidence({
+    name: agent.name,
+    slug: agent.slug,
+    status,
+    score: latestScore?.score ?? null,
+    scoreStatus: scoreStatus ?? "none",
+    verified: agent.ownershipVerifiedAt !== null,
+  });
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
+      {/* 1 — Identity. */}
       <PageHeader
         back={{ href: "/dashboard/agents", label: "Agents" }}
         title={
           <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1.5">
             {agent.name}
-            <StatusPill status={getEffectiveAgentStatus(agent)} />
+            <StatusPill status={status} />
           </span>
         }
         description={<span className="font-mono text-xs break-all">{agent.endpointUrl}</span>}
@@ -90,186 +112,228 @@ export default async function AgentDetailPage({
             its trust score.
           </p>
           <form action={boundActivate} className="mt-3">
-            <button
-              type="submit"
-              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:opacity-90"
-            >
+            <button type="submit" className={buttonClass({ size: "sm" })}>
               Activate agent
             </button>
           </form>
         </div>
       )}
 
-      {!isDraft && !agent.ownershipVerifiedAt && (
-        <div className="max-w-xl rounded-lg border border-border bg-surface p-4">
-          <h2 className="text-sm font-medium">
-            Next step (optional): verify endpoint ownership
-          </h2>
-          <p className="mt-1 text-sm text-muted">
-            This agent is active and being monitored. Proving you control its
-            endpoint raises the confidence of the trustDecision callers see —
-            it&apos;s optional and never required for{" "}
-            <code className="rounded bg-background px-1 py-0.5 font-mono text-xs text-foreground">
-              recommended
-            </code>
-            . See the verification panel below.
-          </p>
-        </div>
-      )}
-
-      <div className="max-w-xl rounded-lg border border-border bg-surface p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium">Health</h2>
-          <Link
-            href={`/dashboard/agents/${agent.slug}/health`}
-            className="text-sm text-accent hover:underline"
-          >
-            View history →
-          </Link>
-        </div>
-        <dl className="mt-3 grid grid-cols-3 gap-4 text-sm">
+      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] xl:gap-10">
+        {/* 2 — The decision callers get. */}
+        <section aria-labelledby="decision-heading" className="flex flex-col gap-3 lg:sticky lg:top-20">
           <div>
-            <dt className="text-xs text-muted">Last checked</dt>
-            <dd className="mt-0.5">
-              <LastCheckSummary check={latest} field="checkedAt" />
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted">Response time</dt>
-            <dd className="mt-0.5">
-              <LastCheckSummary check={latest} field="latency" />
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted">HTTP status</dt>
-            <dd className="mt-0.5">
-              <LastCheckSummary check={latest} field="httpStatus" />
-            </dd>
-          </div>
-        </dl>
-        {latest &&
-          !latest.success &&
-          (latest.statusCode === 401 || latest.statusCode === 403) && (
-            <p className="mt-3 text-sm text-red-600">
-              Authentication failed (HTTP {latest.statusCode}) — check the
-              credential and header name configured below.
+            <h2 id="decision-heading" className="text-heading">
+              Trust decision
+            </h2>
+            <p className="mt-1 text-sm text-muted">
+              What <code className="font-mono text-xs text-foreground">check_agent_trust</code> and the REST
+              lookup return for this endpoint right now.
             </p>
+          </div>
+          {isListed ? (
+            <TrustReport data={report} endpointUrl={agent.endpointUrl} headingLevel="p" />
+          ) : (
+            <Callout tone="neutral" title="Not in the public directory yet">
+              Until this agent is active, callers checking its endpoint get{" "}
+              <code className="font-mono text-xs text-foreground">{`{ "matched": false }`}</code> — no
+              evidence either way.
+            </Callout>
           )}
-        {latest &&
-          !latest.success &&
-          latest.statusCode !== 401 &&
-          latest.statusCode !== 403 &&
-          latest.errorMessage && (
-            <p className="mt-3 text-sm text-red-600">{latest.errorMessage}</p>
-          )}
-      </div>
+        </section>
 
-      <OwnershipVerificationPanel
-        agentId={agent.id}
-        verificationToken={agent.ownershipVerificationToken}
-        verificationUrl={verificationUrl}
-        verifiedAt={agent.ownershipVerifiedAt?.toISOString() ?? null}
-      />
+        {/* 3 — The observed evidence behind it. */}
+        <section aria-labelledby="evidence-heading" className="flex min-w-0 flex-col gap-3">
+          <div>
+            <h2 id="evidence-heading" className="flex items-center gap-2 text-heading">
+              <NetworkNode state="observed" size="md" />
+              Observed evidence
+            </h2>
+            <p className="mt-1 text-sm text-muted">
+              Collected by AgentTrust&apos;s monitoring and ownership verification.
+            </p>
+          </div>
 
-      <div className="max-w-xl rounded-lg border border-border bg-surface p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-medium">Reliability / trust score</h2>
-          <ReliabilityScoreBadge
-            score={latestScore?.score ?? null}
-            status={scoreStatus}
-          />
-        </div>
-        {latestScore ? (
-          <>
-            <dl className="mt-3 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+          <div className="rounded-lg border border-border bg-surface p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="flex items-center gap-2.5 text-sm font-medium">
+                <EvidenceGlyph kind="health" />
+                Health
+              </h3>
+              <Link
+                href={`/dashboard/agents/${agent.slug}/health`}
+                className="text-sm text-accent hover:underline"
+              >
+                View history →
+              </Link>
+            </div>
+            <dl className="mt-3 grid grid-cols-3 gap-4 text-sm">
               <div>
-                <dt className="text-xs text-muted">Uptime</dt>
+                <dt className="text-xs text-muted">Last checked</dt>
                 <dd className="mt-0.5">
-                  {latestScore.uptimeSubscore.toFixed(0)}
+                  <LastCheckSummary check={latest} field="checkedAt" />
                 </dd>
               </div>
               <div>
-                <dt className="text-xs text-muted">Latency</dt>
+                <dt className="text-xs text-muted">Response time</dt>
                 <dd className="mt-0.5">
-                  {latestScore.latencySubscore.toFixed(0)}
+                  <LastCheckSummary check={latest} field="latency" />
                 </dd>
               </div>
               <div>
-                <dt className="text-xs text-muted">Consistency</dt>
+                <dt className="text-xs text-muted">HTTP status</dt>
                 <dd className="mt-0.5">
-                  {latestScore.consistencySubscore.toFixed(0)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs text-muted">Incidents</dt>
-                <dd className="mt-0.5">
-                  {latestScore.incidentSubscore.toFixed(0)}
+                  <LastCheckSummary check={latest} field="httpStatus" />
                 </dd>
               </div>
             </dl>
-            <p className="mt-3 text-xs text-muted">
-              Computed {new Date(latestScore.computedAt).toLocaleString()} from
-              checks between{" "}
-              {new Date(latestScore.windowStart).toLocaleDateString()} and{" "}
-              {new Date(latestScore.windowEnd).toLocaleDateString()}.
-            </p>
-            {scoreStatus === "stale" && (
-              <p className="mt-2 text-xs text-muted">
-                Out of date: fewer than 5 health checks in the last 7 days, so
-                this score no longer counts as current evidence and your agent
-                isn&apos;t recommended on it. It becomes current again once
-                monitoring has enough recent checks.
+            {latest &&
+              !latest.success &&
+              (latest.statusCode === 401 || latest.statusCode === 403) && (
+                <p className="mt-3 text-sm text-negative">
+                  Authentication failed (HTTP {latest.statusCode}) — check the
+                  credential and header name configured below.
+                </p>
+              )}
+            {latest &&
+              !latest.success &&
+              latest.statusCode !== 401 &&
+              latest.statusCode !== 403 &&
+              latest.errorMessage && (
+                <p className="mt-3 text-sm text-negative">{latest.errorMessage}</p>
+              )}
+          </div>
+
+          <div className="rounded-lg border border-border bg-surface p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="flex items-center gap-2.5 text-sm font-medium">
+                <EvidenceGlyph kind="reliability" />
+                Reliability score
+              </h3>
+              <ReliabilityScoreBadge
+                score={latestScore?.score ?? null}
+                status={scoreStatus}
+              />
+            </div>
+            {latestScore ? (
+              <>
+                <dl className="mt-3 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+                  <div>
+                    <dt className="text-xs text-muted">Uptime</dt>
+                    <dd className="mt-0.5 font-mono tabular-nums">
+                      {latestScore.uptimeSubscore.toFixed(0)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-muted">Latency</dt>
+                    <dd className="mt-0.5 font-mono tabular-nums">
+                      {latestScore.latencySubscore.toFixed(0)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-muted">Consistency</dt>
+                    <dd className="mt-0.5 font-mono tabular-nums">
+                      {latestScore.consistencySubscore.toFixed(0)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-muted">Incidents</dt>
+                    <dd className="mt-0.5 font-mono tabular-nums">
+                      {latestScore.incidentSubscore.toFixed(0)}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="mt-3 text-xs text-muted">
+                  Computed {new Date(latestScore.computedAt).toLocaleString()} from
+                  checks between{" "}
+                  {new Date(latestScore.windowStart).toLocaleDateString()} and{" "}
+                  {new Date(latestScore.windowEnd).toLocaleDateString()}.
+                </p>
+                {scoreStatus === "stale" && (
+                  <p className="mt-2 text-xs text-muted">
+                    Out of date: fewer than 5 health checks in the last 7 days, so
+                    this score no longer counts as current evidence and your agent
+                    isn&apos;t recommended on it. It becomes current again once
+                    monitoring has enough recent checks.
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="mt-3 text-sm text-muted">
+                Not enough monitoring history yet — a score appears once enough
+                checks have accumulated.
               </p>
             )}
-          </>
-        ) : (
-          <p className="mt-3 text-sm text-muted">
-            Not enough monitoring history yet — a score appears once enough
-            checks have accumulated.
+          </div>
+
+          {!isDraft && !agent.ownershipVerifiedAt && (
+            <p className="text-sm text-muted">
+              <span className="font-medium text-foreground">Optional next step:</span> verify
+              endpoint ownership. It raises the confidence of the trustDecision
+              callers see, and is never required for{" "}
+              <code className="rounded bg-surface-2 px-1 py-0.5 font-mono text-xs text-foreground">
+                recommended
+              </code>
+              .
+            </p>
+          )}
+
+          <OwnershipVerificationPanel
+            agentId={agent.id}
+            verificationToken={agent.ownershipVerificationToken}
+            verificationUrl={verificationUrl}
+            verifiedAt={agent.ownershipVerifiedAt?.toISOString() ?? null}
+          />
+        </section>
+      </div>
+
+      {/* 4 — Configuration. */}
+      <section aria-labelledby="config-heading" className="flex flex-col gap-6 border-t border-border pt-8">
+        <h2 id="config-heading" className="text-heading">
+          Configuration
+        </h2>
+
+        <div className="max-w-xl rounded-lg border border-border bg-surface p-4">
+          <h3 className="text-sm font-medium">Agent Card</h3>
+          <p className="mt-1 text-xs text-muted">
+            What the Public API and your public profile show as structured
+            capability metadata.
           </p>
-        )}
-      </div>
-
-      <div className="max-w-xl rounded-lg border border-border bg-surface p-4">
-        <h2 className="text-sm font-medium">Agent Card</h2>
-        <p className="mt-1 text-xs text-muted">
-          What the Public API and your public profile show as structured
-          capability metadata.
-        </p>
-        <div className="mt-3">
-          <AgentCardSummary card={card} />
+          <div className="mt-3">
+            <AgentCardSummary card={card} />
+          </div>
         </div>
-      </div>
 
-      <div className="max-w-xl">
-        <AgentForm
-          action={boundUpdate}
-          submitLabel="Save changes"
-          defaultValues={{
-            name: agent.name,
-            description: agent.description ?? "",
-            endpointUrl: agent.endpointUrl,
-            version: agent.version ?? "",
-            capabilities: agent.capabilityTags,
-            authType: agent.authType,
-            authHeaderName: agent.authHeaderName ?? "",
-            hasStoredCredential: agent.authCredentialCiphertext !== null,
-            agentCardModalities: card.interfaces.modalities,
-            agentCardInteractionType: card.interfaces.interactionType ?? "",
-            agentCardDocumentationUrl: card.documentationUrl ?? "",
-          }}
-        />
-      </div>
-
-      <div className="max-w-xl border-t border-border pt-6">
-        <h2 className="text-sm font-medium">Danger zone</h2>
-        <p className="mt-1 text-sm text-muted">
-          Permanently delete this agent and its registration data.
-        </p>
-        <div className="mt-3">
-          <DeleteAgentButton action={boundDelete} agentName={agent.name} />
+        <div className="max-w-xl">
+          <AgentForm
+            action={boundUpdate}
+            submitLabel="Save changes"
+            defaultValues={{
+              name: agent.name,
+              description: agent.description ?? "",
+              endpointUrl: agent.endpointUrl,
+              version: agent.version ?? "",
+              capabilities: agent.capabilityTags,
+              authType: agent.authType,
+              authHeaderName: agent.authHeaderName ?? "",
+              hasStoredCredential: agent.authCredentialCiphertext !== null,
+              agentCardModalities: card.interfaces.modalities,
+              agentCardInteractionType: card.interfaces.interactionType ?? "",
+              agentCardDocumentationUrl: card.documentationUrl ?? "",
+            }}
+          />
         </div>
-      </div>
+
+        <div className="max-w-xl border-t border-border pt-6">
+          <h3 className="text-sm font-medium">Danger zone</h3>
+          <p className="mt-1 text-sm text-muted">
+            Permanently delete this agent and its registration data.
+          </p>
+          <div className="mt-3">
+            <DeleteAgentButton action={boundDelete} agentName={agent.name} />
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

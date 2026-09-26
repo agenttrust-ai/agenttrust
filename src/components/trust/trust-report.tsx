@@ -4,11 +4,9 @@ import { ReliabilityScoreBadge } from "@/components/agents/reliability-score";
 import { StatusPill } from "@/components/agents/status-pill";
 import { cx } from "@/components/ui/cx";
 import {
-  IconActivity,
   IconCheck,
   IconClock,
   IconDashedCircle,
-  IconGauge,
   IconShield,
   IconShieldCheck,
   IconX,
@@ -23,6 +21,7 @@ import {
   type TrustDecisionView,
   type VerdictKind,
 } from "./verdict";
+import { EVIDENCE, EvidenceGlyph, type EvidenceKind } from "./evidence";
 
 /**
  * Exactly the fields `check_agent_trust` returns for a matched agent — the
@@ -116,22 +115,14 @@ export function EvidenceFreshness({ status }: { status: ReliabilityScoreStatus }
   );
 }
 
-function EvidenceRow({
-  icon: Icon,
-  label,
-  children,
-}: {
-  icon: IconComponent;
-  label: string;
-  children: ReactNode;
-}) {
+function EvidenceRow({ kind, children }: { kind: EvidenceKind; children: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-2.5">
-      <dt className="flex items-center gap-2 text-sm text-muted">
-        <Icon className="size-4 text-subtle" />
-        {label}
+    <div className="flex items-center justify-between gap-3 py-2">
+      <dt className="flex min-w-0 items-center gap-2.5 text-sm text-muted">
+        <EvidenceGlyph kind={kind} />
+        {EVIDENCE[kind].label}
       </dt>
-      <dd>{children}</dd>
+      <dd className="shrink-0">{children}</dd>
     </div>
   );
 }
@@ -177,20 +168,25 @@ export function TrustReport({
     >
       <span aria-hidden="true" className={cx("absolute inset-y-0 left-0 w-1", VERDICT_RAIL[verdict.kind])} />
 
-      <header className="flex items-start justify-between gap-3 border-b border-border px-5 py-3">
-        <div className="min-w-0">
+      <header className="border-b border-border px-5 py-3">
+        <div className="flex items-start justify-between gap-3">
           <p className="eyebrow">{example ? "Example trust report" : "Trust report"}</p>
-          {!compact && (
-            <>
-              <Heading className="mt-1 truncate text-sm font-semibold">
-                {data.name ?? data.slug}
-              </Heading>
-              {endpointUrl && (
-                <p className="mt-0.5 font-mono text-xs break-all text-muted">{endpointUrl}</p>
-              )}
-            </>
+          {example && (
+            <span className="eyebrow shrink-0 rounded-sm border border-dashed border-border-strong px-1.5 text-subtle">
+              Sample data
+            </span>
           )}
         </div>
+        {!compact && (
+          <>
+            <Heading className="mt-1 truncate text-sm font-semibold">
+              {data.name ?? data.slug}
+            </Heading>
+            {endpointUrl && (
+              <p className="mt-0.5 font-mono text-xs break-all text-muted">{endpointUrl}</p>
+            )}
+          </>
+        )}
       </header>
 
       <div className="px-5 pt-4 pb-4">
@@ -217,19 +213,19 @@ export function TrustReport({
 
         {!compact && (
           <dl className="mt-4 divide-y divide-border border-y border-border">
-            <EvidenceRow icon={IconActivity} label="Health">
+            <EvidenceRow kind="health">
               <StatusPill status={data.status ?? "unknown"} />
             </EvidenceRow>
-            <EvidenceRow icon={IconGauge} label="Reliability">
+            <EvidenceRow kind="reliability">
               <ReliabilityScoreBadge
                 score={data.reliabilityScore ?? null}
                 status={data.reliabilityScoreStatus}
               />
             </EvidenceRow>
-            <EvidenceRow icon={IconClock} label="Evidence">
+            <EvidenceRow kind="freshness">
               <EvidenceFreshness status={data.reliabilityScoreStatus ?? "none"} />
             </EvidenceRow>
-            <EvidenceRow icon={IconShield} label="Endpoint ownership">
+            <EvidenceRow kind="ownership">
               <VerificationStatus verified={data.verified ?? false} />
             </EvidenceRow>
           </dl>
@@ -277,9 +273,20 @@ export function TrustReport({
  * a verdict: AgentTrust simply has no observations for that exact URL.
  * Deliberately neutral; it is not an error and not a negative result.
  */
-export function NotMatchedReport({ endpointUrl }: { endpointUrl?: string }) {
+export function NotMatchedReport({
+  endpointUrl,
+  className,
+}: {
+  endpointUrl?: string;
+  className?: string;
+}) {
   return (
-    <article className="relative overflow-hidden rounded-lg border border-dashed border-border-strong bg-surface">
+    <article
+      className={cx(
+        "relative overflow-hidden rounded-lg border border-dashed border-border-strong bg-surface",
+        className,
+      )}
+    >
       <header className="border-b border-border px-5 py-3">
         <p className="eyebrow">Trust report</p>
         {endpointUrl && (

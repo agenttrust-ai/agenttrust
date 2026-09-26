@@ -135,7 +135,16 @@ describe("TrustReport — renders exactly what the backend decided", () => {
     const html = render({ data: d, headingLevel: "h3", example: true });
     expect(html).toMatch(/<h3[^>]*>Test Agent<\/h3>/);
     expect(text(html)).toContain("Example trust report");
+    expect(text(html)).toContain("Sample data");
     expect(text(render({ data: d }))).not.toContain("Example");
+    expect(text(render({ data: d }))).not.toContain("Sample data");
+  });
+
+  it("lists the four evidence signals by their shared names", () => {
+    const out = text(render({ data: data({ status: "healthy", score: 96, scoreStatus: "fresh", verified: true }) }));
+    for (const label of ["Health", "Reliability", "Evidence freshness", "Endpoint ownership"]) {
+      expect(out).toContain(label);
+    }
   });
 
   it("compact variant keeps verdict, confidence, chips and reasons but drops the evidence grid", () => {

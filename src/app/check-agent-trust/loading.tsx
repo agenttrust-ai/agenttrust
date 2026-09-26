@@ -1,6 +1,8 @@
 /**
  * Shown while a check runs (client-side navigation from the endpoint form)
- * — the same layout as the page, so the result appears in place.
+ * — the same layout as the page, so the result appears in place. The
+ * wording matches what actually happens: a lookup in AgentTrust's own
+ * observations, never a request to the endpoint.
  */
 export default function CheckAgentTrustLoading() {
   return (
@@ -9,13 +11,16 @@ export default function CheckAgentTrustLoading() {
       aria-live="polite"
       className="mx-auto flex w-full max-w-reading flex-col gap-8 px-4 py-10 sm:px-6 sm:py-14"
     >
-      <span className="sr-only">Checking the endpoint…</span>
+      <span className="sr-only">Looking up AgentTrust observations…</span>
       <div className="flex flex-col gap-3">
         <div className="h-3 w-40 animate-pulse rounded bg-surface-2" />
         <div className="h-8 w-3/4 animate-pulse rounded bg-surface-2" />
         <div className="h-4 w-full animate-pulse rounded bg-surface-2" />
         <div className="mt-4 h-12 w-full animate-pulse rounded-md bg-surface-2" />
       </div>
+      <p aria-hidden="true" className="-mb-5 text-xs text-muted">
+        Looking up AgentTrust observations…
+      </p>
       <div className="overflow-hidden rounded-lg border border-border bg-surface">
         <div className="border-b border-border px-5 py-3">
           <div className="h-3 w-24 animate-pulse rounded bg-surface-2" />

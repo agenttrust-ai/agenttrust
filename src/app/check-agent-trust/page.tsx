@@ -7,6 +7,7 @@ import {
   mcpCheckAgentTrust,
 } from "@/lib/mcp/tools";
 import { EndpointCheckForm } from "@/components/check/endpoint-check-form";
+import { ResolutionTrace } from "@/components/check/resolution-trace";
 import { CodeBlock } from "@/components/dev/code-block";
 import { EXAMPLE_ENDPOINT, PRIMARY_EXAMPLE } from "@/components/trust/examples";
 import { NotMatchedReport, TrustReport, type TrustReportData } from "@/components/trust/trust-report";
@@ -124,7 +125,8 @@ export default async function CheckAgentTrustPage({
         <section aria-label="Trust check result" aria-live="polite" className="flex flex-col gap-3">
           {check.kind === "matched" && (
             <>
-              <TrustReport data={check.result} endpointUrl={query} headingLevel="h2" />
+              <ResolutionTrace resolved />
+              <TrustReport data={check.result} endpointUrl={query} headingLevel="h2" className="at-report-in" />
               <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-xs text-muted">
                 <p>
                   Reflects AgentTrust&apos;s observed evidence for this exact URL —
@@ -140,7 +142,8 @@ export default async function CheckAgentTrustPage({
           )}
           {check.kind === "not_matched" && (
             <>
-              <NotMatchedReport endpointUrl={query} />
+              <ResolutionTrace resolved={false} />
+              <NotMatchedReport endpointUrl={query} className="at-report-in" />
               <p className="text-xs text-muted">
                 Matching is exact after standard URL normalization —{" "}
                 <Link href="/docs#normalization" className={LINK}>

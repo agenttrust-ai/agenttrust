@@ -6,6 +6,7 @@ import { listAgentsForOwner } from "@/lib/db/queries/agents";
 import { listApiKeysForOwner } from "@/lib/db/queries/api-keys";
 import { getEffectiveAgentStatus } from "@/lib/monitoring/heartbeat-status";
 import { StatusPill } from "@/components/agents/status-pill";
+import { NetworkNode, nodeStateForAgent } from "@/components/network/network-node";
 import { VerificationStatus } from "@/components/trust/trust-report";
 import { buttonClass } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
@@ -50,12 +51,15 @@ function Stat({
   detail,
   icon: Icon,
   alert = false,
+  visual,
 }: {
   label: string;
   value: number;
   detail: string;
   icon: typeof IconActivity;
   alert?: boolean;
+  /** Decorative only — the value and detail carry the meaning. */
+  visual?: ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-1 bg-surface px-4 py-3.5">
@@ -65,7 +69,33 @@ function Stat({
       </p>
       <p className={cx("font-mono text-2xl tabular-nums", alert && "text-negative")}>{value}</p>
       <p className="text-xs text-muted">{detail}</p>
+      {visual}
     </div>
+  );
+}
+
+const MAX_NODES = 48;
+
+/**
+ * One node per registered agent, in its health state — the observed
+ * network, drawn from the owner's own real agents. Decorative: the
+ * counts next to it say the same thing in text.
+ */
+function AgentNodes({ agents }: { agents: { agent: { id: string; lifecycleStatus: string }; status: string }[] }) {
+  if (agents.length === 0) return null;
+  return (
+    <span aria-hidden="true" className="mt-1.5 flex flex-wrap items-center gap-1">
+      {agents.slice(0, MAX_NODES).map(({ agent, status }) => (
+        <NetworkNode
+          key={agent.id}
+          size="sm"
+          state={nodeStateForAgent(status, agent.lifecycleStatus !== "active")}
+        />
+      ))}
+      {agents.length > MAX_NODES && (
+        <span className="font-mono text-[10px] leading-none text-subtle">+{agents.length - MAX_NODES}</span>
+      )}
+    </span>
   );
 }
 
@@ -128,6 +158,7 @@ export default async function DashboardPage() {
           value={agents.length}
           detail={`${active.length} active · ${drafts} draft`}
           icon={IconActivity}
+          visual={<AgentNodes agents={agents} />}
         />
         <Stat
           label="Healthy"
@@ -228,7 +259,8 @@ export default async function DashboardPage() {
                 {rows.map(({ agent, status }) => (
                   <tr key={agent.id} className={T.tbodyRowInteractive}>
                     <td className={T.td}>
-                      <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <NetworkNode state={nodeStateForAgent(status, agent.lifecycleStatus !== "active")} />
                         <Link
                           href={`/dashboard/agents/${agent.slug}`}
                           className="truncate font-medium after:absolute after:inset-0 hover:text-accent"
@@ -237,7 +269,7 @@ export default async function DashboardPage() {
                         </Link>
                         {agent.lifecycleStatus !== "active" && <StatusChip tone="neutral">Draft</StatusChip>}
                       </div>
-                      <p className="mt-0.5 truncate font-mono text-xs text-muted">{agent.slug}</p>
+                      <p className="mt-0.5 truncate pl-[1.125rem] font-mono text-xs text-muted">{agent.slug}</p>
                     </td>
                     <td className={T.td}>
                       <StatusPill status={status} />

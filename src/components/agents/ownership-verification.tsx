@@ -7,11 +7,26 @@ import {
   type OwnershipVerificationState,
 } from "@/lib/agents/actions";
 
-const BADGE_BASE =
-  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium";
+import type { ReactNode } from "react";
+import { EvidenceGlyph } from "@/components/trust/evidence";
+import { buttonClass } from "@/components/ui/button";
+import { IconClock, IconShield, IconShieldCheck } from "@/components/ui/icons";
+import { StatusChip } from "@/components/ui/status-chip";
 
-function Badge({ label, className }: { label: string; className: string }) {
-  return <span className={`${BADGE_BASE} ${className}`}>{label}</span>;
+/** Same panel chrome and heading as the other evidence panels on the agent page. */
+function Panel({ status, children }: { status: ReactNode; children: ReactNode }) {
+  return (
+    <div className="rounded-lg border border-border bg-surface p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="flex items-center gap-2.5 text-sm font-medium">
+          <EvidenceGlyph kind="ownership" />
+          Endpoint ownership
+        </h3>
+        {status}
+      </div>
+      {children}
+    </div>
+  );
 }
 
 export function OwnershipVerificationPanel({
@@ -35,58 +50,52 @@ export function OwnershipVerificationPanel({
 
   if (verifiedAt) {
     return (
-      <div className="max-w-xl rounded-lg border border-border bg-surface p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium">Endpoint ownership</h2>
-          <Badge
-            label="Verified"
-            className="border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-400"
-          />
-        </div>
-        <p className="mt-1 text-sm text-muted">
+      <Panel
+        status={
+          <StatusChip tone="positive" icon={IconShieldCheck}>
+            Verified
+          </StatusChip>
+        }
+      >
+        <p className="mt-2 text-sm text-muted">
           Verified on {new Date(verifiedAt).toLocaleString()}. Other systems can see
           this on your public profile and through the Public API.
         </p>
-      </div>
+      </Panel>
     );
   }
 
   if (!verificationToken || !verificationUrl) {
     return (
-      <div className="max-w-xl rounded-lg border border-border bg-surface p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium">Endpoint ownership</h2>
-          <Badge
-            label="Unverified"
-            className="border-border bg-surface text-muted"
-          />
-        </div>
-        <p className="mt-1 text-sm text-muted">
+      <Panel
+        status={
+          <StatusChip tone="neutral" icon={IconShield}>
+            Not verified
+          </StatusChip>
+        }
+      >
+        <p className="mt-2 text-sm text-muted">
           Prove you control this agent&apos;s endpoint so other systems can trust
           its identity, not just that something answers at its URL.
         </p>
         <form action={boundStart} className="mt-3">
-          <button
-            type="submit"
-            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:opacity-90"
-          >
+          <button type="submit" className={buttonClass({ size: "sm" })}>
             Start verification
           </button>
         </form>
-      </div>
+      </Panel>
     );
   }
 
   return (
-    <div className="max-w-xl rounded-lg border border-border bg-surface p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium">Endpoint ownership</h2>
-        <Badge
-          label="Pending verification"
-          className="border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400"
-        />
-      </div>
-      <p className="mt-1 text-sm text-muted">
+    <Panel
+      status={
+        <StatusChip tone="caution" icon={IconClock}>
+          Pending verification
+        </StatusChip>
+      }
+    >
+      <p className="mt-2 text-sm text-muted">
         Publish a file at this exact URL, containing exactly this value, then check
         again:
       </p>
@@ -99,15 +108,11 @@ export function OwnershipVerificationPanel({
         {verificationToken}
       </code>
       <form action={checkAction} className="mt-3">
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:opacity-90 disabled:opacity-60"
-        >
+        <button type="submit" disabled={pending} className={buttonClass({ size: "sm" })}>
           {pending ? "Checking…" : "Check now"}
         </button>
       </form>
-      {state?.error && <p className="mt-3 text-sm text-red-600">{state.error}</p>}
-    </div>
+      {state?.error && <p className="mt-3 text-sm text-negative">{state.error}</p>}
+    </Panel>
   );
 }

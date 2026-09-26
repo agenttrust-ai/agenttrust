@@ -159,14 +159,70 @@
   color: var(--muted);
 }
 
-/* A faint measurement grid behind a hero surface, fading out from the top.
- * Pure CSS; uses the border token so it follows the theme. */
-@utility bg-grid {
-  background-image:
-    linear-gradient(to right, color-mix(in oklab, var(--border) 70%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in oklab, var(--border) 70%, transparent) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: radial-gradient(ellipse 80% 70% at 60% 0%, black 25%, transparent 75%);
+/* A faint lattice of observation points — the "observed agent network"
+ * motif at its quietest, for panels that sit inside the trust layer. */
+@utility bg-lattice {
+  background-image: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--border-strong) 80%, transparent) 1px,
+    transparent 1.5px
+  );
+  background-size: 16px 16px;
+}
+
+/*
+ * Observed Agent Network — motion. Everything is opt-in behind
+ * `prefers-reduced-motion: no-preference`: with reduced motion the network
+ * is simply static (signals hidden, nodes at rest), never a frozen
+ * mid-animation frame. Opacity and stroke offsets only — nothing that
+ * triggers layout.
+ */
+@keyframes at-signal {
+  0% {
+    stroke-dashoffset: 8;
+  }
+  55%,
+  100% {
+    stroke-dashoffset: -100;
+  }
+}
+
+@keyframes at-node-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+@keyframes at-report-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.at-signal {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .at-signal {
+    opacity: 1;
+    animation: at-signal 10s cubic-bezier(0.45, 0, 0.25, 1) infinite both;
+  }
+  .at-node-pulse {
+    animation: at-node-pulse 7s ease-in-out infinite;
+  }
+  .at-report-in {
+    animation: at-report-in 260ms ease-out both;
+  }
 }
 
 @layer base {

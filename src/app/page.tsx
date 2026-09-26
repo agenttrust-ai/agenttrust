@@ -13,7 +13,11 @@ import { CodeBlock } from "@/components/dev/code-block";
 import { CopyButton } from "@/components/dev/copy-button";
 import { TrustReport, type TrustReportData } from "@/components/trust/trust-report";
 import { EXAMPLE_ENDPOINT, PRIMARY_EXAMPLE, exampleResult } from "@/components/trust/examples";
+import { EVIDENCE, EVIDENCE_ORDER, EvidenceGlyph, type EvidenceKind } from "@/components/trust/evidence";
+import { NetworkNode } from "@/components/network/network-node";
+import { EvidenceTraces, ObservedNetworkBackdrop } from "@/components/network/observed-network";
 import { buttonClass } from "@/components/ui/button";
+import { cx } from "@/components/ui/cx";
 import { IconArrowRight, IconCheck } from "@/components/ui/icons";
 
 export const metadata: Metadata = {
@@ -97,42 +101,40 @@ const MCP_REQUEST = JSON.stringify(
 
 const MCP_RESULT = JSON.stringify(PRIMARY_EXAMPLE, null, 2);
 
-const FLOW = [
-  {
-    step: "01",
-    title: "Discover",
+const FLOW = {
+  discover: {
     body: "Your agent finds another agent's endpoint — in an A2A Agent Card, a registry, or its own configuration.",
     code: "endpointUrl",
   },
-  {
-    step: "02",
-    title: "Trust",
-    body: "Before calling it, your agent asks AgentTrust, which reads the evidence it already holds for that exact URL.",
+  trust: {
+    body: "Before calling it, your agent asks AgentTrust. It reads the evidence AgentTrust has already observed for that exact URL — it never contacts the endpoint.",
     code: "check_agent_trust({ endpointUrl })",
   },
-  {
-    step: "03",
-    title: "Invoke",
+  invoke: {
     body: "Proceed on a recommendation, or apply your own policy to the confidence and reasons. The decision stays yours.",
     code: "trustDecision.recommended",
   },
-];
+};
 
-const EVIDENCE = [
+const EVIDENCE_DETAIL: { kind: EvidenceKind; term: string; detail: string }[] = [
   {
+    kind: "health",
     term: "Health status",
     detail:
       "Healthy, degraded or down — derived from consecutive results of scheduled health checks, or heartbeats for push-mode agents.",
   },
   {
+    kind: "reliability",
     term: "Reliability score",
     detail: `0–100 from the last ${SCORE_WINDOW_DAYS} days of checks: uptime, latency, consistency and incidents. Computed once there are at least ${MIN_SAMPLES_FOR_SCORE} checks.`,
   },
   {
+    kind: "freshness",
     term: "Evidence freshness",
     detail: `Current while there are at least ${MIN_SAMPLES_FOR_SCORE} checks in the last ${SCORE_WINDOW_DAYS} days. An out-of-date score is shown for reference but never counts toward a recommendation.`,
   },
   {
+    kind: "ownership",
     term: "Endpoint ownership",
     detail: `The owner publishes a token at ${WELL_KNOWN_VERIFICATION_PATH} on the endpoint's origin. Optional — it raises confidence, but is never required for a recommendation.`,
   },
@@ -171,6 +173,50 @@ function SectionHeading({
 
 const LINK = "text-accent underline-offset-4 hover:underline";
 
+/** The arrow between two pipeline stages: down on smaller screens, right from lg. */
+function FlowConnector() {
+  return (
+    <span
+      aria-hidden="true"
+      className="absolute top-full left-8 flex h-10 w-3 -translate-x-1/2 flex-col items-center lg:top-1/2 lg:left-full lg:h-3 lg:w-12 lg:translate-x-0 lg:-translate-y-1/2 lg:flex-row"
+    >
+      <span className="w-px flex-1 bg-border-strong lg:h-px lg:w-auto" />
+      <svg viewBox="0 0 8 8" className="size-2 shrink-0 rotate-90 text-subtle lg:rotate-0" fill="currentColor">
+        <path d="M0 0 L8 4 L0 8 Z" />
+      </svg>
+    </span>
+  );
+}
+
+function FlowStage({
+  step,
+  title,
+  body,
+  code,
+  connector = false,
+}: {
+  step: string;
+  title: string;
+  body: string;
+  code: string;
+  connector?: boolean;
+}) {
+  return (
+    <li className="relative flex flex-col gap-2 rounded-lg border border-border bg-background p-5">
+      <div className="flex items-baseline gap-3">
+        <span className="font-mono text-xs text-subtle">{step}</span>
+        <h3 className="text-heading">{title}</h3>
+      </div>
+      <p className="text-sm text-muted">{body}</p>
+      <code className={FLOW_CODE}>{code}</code>
+      {connector && <FlowConnector />}
+    </li>
+  );
+}
+
+const FLOW_CODE =
+  "mt-auto self-start rounded-sm border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-xs break-all";
+
 export default function Home() {
   return (
     <div className="flex flex-col">
@@ -183,7 +229,7 @@ export default function Home() {
 
       {/* 1 — Hero: the trust check itself, next to the object it returns. */}
       <section className="relative isolate border-b border-border">
-        <div aria-hidden="true" className="bg-grid pointer-events-none absolute inset-0 -z-10" />
+        <ObservedNetworkBackdrop />
         <div className="mx-auto grid w-full max-w-shell gap-10 px-4 pt-10 pb-12 sm:px-6 sm:pt-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,25rem)] lg:items-center lg:gap-10 lg:pt-16 lg:pb-16 xl:grid-cols-[minmax(0,1fr)_minmax(0,29rem)] xl:gap-14 xl:pt-20 xl:pb-20">
           <div>
             <p className="eyebrow">Trust infrastructure for AI agents</p>
@@ -209,7 +255,8 @@ export default function Home() {
             </p>
           </div>
 
-          <div>
+          <div className="relative">
+            <EvidenceTraces />
             <TrustReport
               data={PRIMARY_EXAMPLE}
               endpointUrl={EXAMPLE_ENDPOINT}
@@ -226,20 +273,48 @@ export default function Home() {
       {/* 2 — Where AgentTrust sits in an agent's call path. */}
       <section aria-labelledby="flow-heading" className="border-b border-border bg-surface">
         <div className="mx-auto w-full max-w-shell px-4 py-12 sm:px-6">
-          <SectionHeading id="flow-heading" eyebrow="Where it fits" title="Discover → Trust → Invoke" />
-          <ol className="mt-6 grid gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-3">
-            {FLOW.map((item) => (
-              <li key={item.step} className="flex flex-col gap-2 bg-background p-5">
+          <SectionHeading id="flow-heading" eyebrow="Where it fits" title="Discover → Trust → Invoke">
+            AgentTrust sits between finding an agent and calling it: an
+            endpoint goes in, observed evidence is read, and a trustDecision
+            comes out.
+          </SectionHeading>
+          <ol className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1fr)] lg:gap-12">
+            <FlowStage step="01" title="Discover" {...FLOW.discover} connector />
+
+            {/* The trust layer: evidence in, decision out. */}
+            <li className="relative flex flex-col gap-3 rounded-lg border border-border-strong bg-background p-5 before:absolute before:inset-x-4 before:top-0 before:h-0.5 before:rounded-b-full before:bg-accent/70">
+              <div className="flex items-baseline justify-between gap-3">
                 <div className="flex items-baseline gap-3">
-                  <span className="font-mono text-xs text-subtle">{item.step}</span>
-                  <h3 className="text-heading">{item.title}</h3>
+                  <span className="font-mono text-xs text-subtle">02</span>
+                  <h3 className="text-heading">Trust</h3>
                 </div>
-                <p className="text-sm text-muted">{item.body}</p>
-                <code className="mt-auto self-start rounded-sm border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-xs break-all">
-                  {item.code}
-                </code>
-              </li>
-            ))}
+                <span className="eyebrow flex items-center gap-1.5 self-center">
+                  <NetworkNode state="signal" size="sm" />
+                  AgentTrust
+                </span>
+              </div>
+              <p className="text-sm text-muted">{FLOW.trust.body}</p>
+              <div className="bg-lattice rounded-md border border-border p-3">
+                <p className="eyebrow">Observed evidence</p>
+                <ul className="mt-2 grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 md:grid-cols-4 lg:grid-cols-2">
+                  {EVIDENCE_ORDER.map((kind) => (
+                    <li key={kind} className="flex items-center gap-2 text-xs">
+                      <EvidenceGlyph kind={kind} className="bg-surface" />
+                      {EVIDENCE[kind].label}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <p className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-muted">
+                <code className={cx(FLOW_CODE, "mt-0")}>{FLOW.trust.code}</code>
+                <span aria-hidden="true">→</span>
+                <span className="sr-only">returns</span>
+                <code className={cx(FLOW_CODE, "mt-0")}>trustDecision</code>
+              </p>
+              <FlowConnector />
+            </li>
+
+            <FlowStage step="03" title="Invoke" {...FLOW.invoke} />
           </ol>
         </div>
       </section>
@@ -265,7 +340,10 @@ export default function Home() {
             ))}
           </div>
           <div className="mt-4 flex flex-col gap-2 rounded-lg border border-dashed border-border-strong p-4 sm:flex-row sm:items-center sm:gap-4">
-            <code className="shrink-0 font-mono text-sm">{`{ "matched": false }`}</code>
+            <code className="flex shrink-0 items-center gap-2.5 font-mono text-sm">
+              <NetworkNode state="unresolved" size="lg" />
+              {`{ "matched": false }`}
+            </code>
             <p className="text-sm text-muted">
               The endpoint isn&apos;t in AgentTrust&apos;s directory, so there is no
               evidence either way — an unknown, not an error.
@@ -312,9 +390,12 @@ export default function Home() {
           </div>
 
           <dl className="divide-y divide-border border-y border-border">
-            {EVIDENCE.map((item) => (
-              <div key={item.term} className="grid gap-1 py-4 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-6">
-                <dt className="text-sm font-medium">{item.term}</dt>
+            {EVIDENCE_DETAIL.map((item) => (
+              <div key={item.term} className="grid gap-1.5 py-4 sm:grid-cols-[12.5rem_minmax(0,1fr)] sm:gap-6">
+                <dt className="flex items-center gap-2.5 text-sm font-medium">
+                  <EvidenceGlyph kind={item.kind} />
+                  {item.term}
+                </dt>
                 <dd className="text-sm text-muted [overflow-wrap:anywhere]">{item.detail}</dd>
               </div>
             ))}

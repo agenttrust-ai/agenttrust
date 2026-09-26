@@ -9,6 +9,7 @@ import {
 } from "@/lib/db/queries/reliability";
 import { getEffectiveAgentStatus } from "@/lib/monitoring/heartbeat-status";
 import { StatusPill } from "@/components/agents/status-pill";
+import { NetworkNode, nodeStateForAgent } from "@/components/network/network-node";
 import { LastCheckSummary } from "@/components/agents/last-check-summary";
 import { ReliabilityScoreBadge } from "@/components/agents/reliability-score";
 import { VerificationStatus } from "@/components/trust/trust-report";
@@ -76,11 +77,13 @@ export default async function AgentsPage() {
             <tbody>
               {agentList.map((agent) => {
                 const check = latestChecks.get(agent.id);
+                const status = getEffectiveAgentStatus(agent);
                 return (
                   <tr key={agent.id} className={T.tbodyRowInteractive}>
                     {/* Primary: identity. The name link stretches over the row. */}
                     <td className={cx(T.td, "max-w-[16rem]")}>
-                      <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <NetworkNode state={nodeStateForAgent(status, agent.lifecycleStatus !== "active")} />
                         <Link
                           href={`/dashboard/agents/${agent.slug}`}
                           className="truncate font-medium after:absolute after:inset-0 hover:text-accent"
@@ -89,11 +92,11 @@ export default async function AgentsPage() {
                         </Link>
                         {agent.lifecycleStatus !== "active" && <StatusChip tone="neutral">Draft</StatusChip>}
                       </div>
-                      <p className="mt-0.5 truncate font-mono text-xs text-muted">{agent.slug}</p>
+                      <p className="mt-0.5 truncate pl-[1.125rem] font-mono text-xs text-muted">{agent.slug}</p>
                     </td>
                     {/* Primary: trust evidence. */}
                     <td className={T.td}>
-                      <StatusPill status={getEffectiveAgentStatus(agent)} />
+                      <StatusPill status={status} />
                     </td>
                     <td className={T.td}>
                       <ReliabilityScoreBadge
