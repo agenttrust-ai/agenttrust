@@ -261,6 +261,42 @@ describe("handleListAgents", () => {
       expect(body.data.map((a: { name: string }) => a.name)).toEqual(["Trailing Slash Via API"]);
     });
 
+    it("matches normalization variants and pages through several matching agents newest first", async () => {
+      const { rawKey } = await createApiKey(db, userA, { name: "k" });
+      const older = await createAgent(db, userA, {
+        ...baseInput,
+        name: "Shared Older",
+        endpointUrl: "https://API-Shared.example.com:443/v1/invoke/",
+      });
+      const newer = await createAgent(db, userA, {
+        ...baseInput,
+        name: "Shared Newer",
+        endpointUrl: "https://api-shared.example.com/v1/invoke",
+      });
+      await activate(older.id);
+      await activate(newer.id);
+      await client.query(`update public.agents set created_at = '2026-09-01T00:00:00Z' where id = $1`, [older.id]);
+      await client.query(`update public.agents set created_at = '2026-09-02T00:00:00Z' where id = $1`, [newer.id]);
+
+      const query = encodeURIComponent("HTTPS://api-shared.EXAMPLE.com/v1/invoke/");
+      const page1 = await bodyOf(
+        await handleListAgents(db, requestTo(`/api/v1/agents?endpoint_url=${query}&limit=1`, rawKey)),
+      );
+      expect(page1.data.map((a: { name: string }) => a.name)).toEqual(["Shared Newer"]);
+      expect(page1.data[0].trustDecision).toBeDefined();
+      const cursor = page1.pagination.nextCursor;
+      expect(cursor).toEqual(expect.any(String));
+
+      const page2 = await bodyOf(
+        await handleListAgents(
+          db,
+          requestTo(`/api/v1/agents?endpoint_url=${query}&limit=1&cursor=${encodeURIComponent(cursor)}`, rawKey),
+        ),
+      );
+      expect(page2.data.map((a: { name: string }) => a.name)).toEqual(["Shared Older"]);
+      expect(page2.pagination.nextCursor).toBeNull();
+    });
+
     it("returns 200 with an empty array, not an error, for an unknown endpoint", async () => {
       const { rawKey } = await createApiKey(db, userA, { name: "k" });
 

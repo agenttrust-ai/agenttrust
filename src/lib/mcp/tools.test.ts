@@ -581,6 +581,40 @@ describe("mcpCheckAgentTrust", () => {
     expect(data.trustDecision).toMatchObject({ recommended: true, confidence: "low" });
   });
 
+  it("matches a normalization variant of the stored endpoint, and returns the newest when several agents share it", async () => {
+    const older = await createAgent(db, userA, {
+      ...baseInput,
+      name: "Anon Shared Older",
+      endpointUrl: "https://Anon-Shared.example.com:443/a2a/",
+    });
+    const newer = await createAgent(db, userB, {
+      ...baseInput,
+      name: "Anon Shared Newer",
+      endpointUrl: "https://anon-shared.example.com/a2a",
+    });
+    await activate(older.id);
+    await activate(newer.id);
+    await client.query(`update public.agents set created_at = '2026-09-01T00:00:00Z' where id = $1`, [older.id]);
+    await client.query(`update public.agents set created_at = '2026-09-02T00:00:00Z' where id = $1`, [newer.id]);
+
+    const result = await mcpCheckAgentTrust(db, requestFromIp("203.0.113.231"), {
+      endpointUrl: "HTTPS://anon-shared.EXAMPLE.com/a2a/",
+    });
+    expect(result.isError).toBeUndefined();
+    const data = structured(result);
+    expect(data).toMatchObject({ matched: true, slug: newer.slug, name: "Anon Shared Newer" });
+    expect(checkAgentTrustOutputSchema.safeParse(data).success).toBe(true);
+
+    // With the newer one unlisted, the same query falls through to the older one.
+    await activate(newer.id, "unlisted");
+    const fallback = structured(
+      await mcpCheckAgentTrust(db, requestFromIp("203.0.113.232"), {
+        endpointUrl: "https://anon-shared.example.com/a2a",
+      }),
+    );
+    expect(fallback).toMatchObject({ matched: true, slug: older.slug });
+  });
+
   it("returns a clean { matched: false } for an unregistered endpoint — never an error", async () => {
     const result = await mcpCheckAgentTrust(db, requestFromIp("203.0.113.203"), {
       endpointUrl: "https://anon-nothing-here.example.com/nope",

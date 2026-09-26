@@ -76,6 +76,21 @@ describe("insertExternallyObservedAgent", () => {
     expect(agent.authType).toBe("none");
   });
 
+  it("stores endpoint_url_normalized so the public endpoint lookup finds it", async () => {
+    const agent = await insertExternallyObservedAgent(db, {
+      ...baseObserved,
+      endpointUrl: "https://API.aux.example.com:443/a2a/v1/",
+    });
+    expect(agent.endpointUrl).toBe("https://API.aux.example.com:443/a2a/v1/");
+    expect(agent.endpointUrlNormalized).toBe("https://api.aux.example.com/a2a/v1");
+
+    const page = await listPublicAgents(db, {
+      limit: 5,
+      endpointUrl: "https://api.aux.example.com/a2a/v1",
+    });
+    expect(page.agents.map((a) => a.id)).toEqual([agent.id]);
+  });
+
   it("rejects an insert that violates the source/owner invariant, even bypassing the query layer", async () => {
     // Simulates a hypothetical future bug that tries to attach a real owner
     // to an externally-observed row directly — the DB CHECK constraint

@@ -78,6 +78,7 @@ export async function insertExternallyObservedAgent(
         name: input.name,
         description: input.description ?? null,
         endpointUrl: input.endpointUrl,
+        endpointUrlNormalized: normalizeEndpointUrlForLookup(input.endpointUrl),
         version: input.version ?? null,
         capabilityTags: input.capabilityTags,
         authType: "none",

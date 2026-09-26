@@ -6,6 +6,56 @@ entry above the previous one, not by editing history.
 
 ---
 
+## ENDPOINT LOOKUP INDEX — MIGRATION 0008 PENDING — 2026-09-26
+
+**State: implemented and tested locally; migration NOT yet applied to
+production.** Until 0008 is applied, the code that depends on it must not
+be deployed (see the ordering below).
+
+**What changed.** The public endpoint-URL lookup (`check_agent_trust` and
+`GET /api/v1/agents?endpoint_url=`, both via `listPublicAgents`) no
+longer loads every public+active agent's URL and normalizes each one in
+application code. It is now one indexed equality match on a new nullable
+column, `agents.endpoint_url_normalized`, which always holds
+`normalizeEndpointUrlForLookup(endpoint_url)` — computed by that same
+function on every write (`createAgent`, `updateOwnedAgent`,
+`insertExternallyObservedAgent`), never re-implemented in SQL. NULL never
+matches. Matching semantics, multiple-match behavior and newest-first
+ordering are unchanged; no API, MCP schema, trustDecision, discovery or
+monitoring behavior changed. Endpoint URLs are still not unique (see the
+known gap below).
+
+**Migrations applied to production (verified read-only 2026-09-26):**
+`0000` through `0007_red_crystal` — 8 total, matching the repo journal
+(the 2026-09-14 list below predates `0006_long_bastion`, discovery
+columns, and `0007_red_crystal`, anonymous rate limits).
+
+**Pending:** `0008_add_endpoint_url_normalized` — `ADD COLUMN
+endpoint_url_normalized text` (nullable, no default) and non-unique btree
+index `agents_endpoint_url_normalized_idx`. Additive only.
+
+**Required production rollout order** (no CI/CD — manual discipline):
+1. `npm run db:migrate` against production *before* pushing the code.
+   The previously deployed code ignores the new column.
+2. `npx tsx --conditions=react-server --env-file=.env.local
+   scripts/backfill-endpoint-url-normalized.ts` (dry run), then again
+   with `--apply`. Idempotent; guarded per row on `endpoint_url` being
+   unchanged; prints counts only.
+3. Push; let Vercel deploy.
+4. Immediately re-run the script with `--apply` to reconcile any row the
+   old code wrote between steps 2 and 4 (until then such a row is not
+   found by the lookup).
+5. Verify read-only: dry run reports `outOfSync: 0`; known endpoints
+   still match via `check_agent_trust`.
+
+**Rollback:** revert the code commit only. Leave the column and index in
+place — the old code ignores them and `endpoint_url` is never modified.
+
+**If `normalizeEndpointUrlForLookup` ever changes,** the stored column
+must be reconciled again (step 4's command) in every environment.
+
+---
+
 ## FIRST EXTERNAL BETA READY — 2026-09-14
 
 **Verdict: READY FOR FIRST EXTERNAL BETA.**

@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, or } from "drizzle-orm";
 import { agents } from "@/lib/db/schema";
 import {
   withUserContext,
@@ -60,6 +60,9 @@ function agentColumns(input: AgentInput) {
     name: input.name,
     description: input.description ?? null,
     endpointUrl: input.endpointUrl,
+    // Always derived from the endpointUrl written alongside it — never
+    // accepted from input — so create and update both keep it in sync.
+    endpointUrlNormalized: normalizeEndpointUrlForLookup(input.endpointUrl),
     version: input.version ?? null,
     capabilityTags: input.capabilities,
     authType: input.authType,
@@ -628,6 +631,13 @@ const MAX_LOOKUP_URL_LENGTH = 2048;
  * Returns `null` for anything that isn't a parseable URL at all (or is
  * absurdly long) — callers treat that as "can't possibly match anything",
  * not as a validation error, matching how an unknown endpoint is handled.
+ *
+ * Its output for a stored `endpointUrl` is persisted in
+ * `agents.endpoint_url_normalized` (see `agentColumns`,
+ * `insertExternallyObservedAgent`, and the backfill in
+ * ./endpoint-url-normalized.ts). Any change to this function's output
+ * changes what the stored column should contain, so it must be followed by
+ * re-running that reconcile against every environment.
  */
 export function normalizeEndpointUrlForLookup(rawUrl: string): string | null {
   if (rawUrl.length === 0 || rawUrl.length > MAX_LOOKUP_URL_LENGTH) return null;
@@ -677,38 +687,23 @@ export async function listPublicAgents(
     );
   }
 
-  return withAnonContext(db, async (tx) => {
-    let endpointUrlCondition: ReturnType<typeof inArray> | undefined;
-    if (endpointUrl) {
-      const normalizedQuery = normalizeEndpointUrlForLookup(endpointUrl);
-      if (!normalizedQuery) {
-        return { agents: [], nextCursor: null };
-      }
-
-      // No indexable normalized column exists (and adding one is out of
-      // this milestone's scope), so at MVP scale this does the match in
-      // application code: fetch the small (id, endpointUrl) candidate set
-      // already narrowed to public+active, normalize each, and only then
-      // fold the matching ids into the real query below as an ordinary
-      // `inArray` condition — everything after this point (pagination,
-      // ordering, column selection) is the exact same query path every
-      // other call to this function goes through.
-      const candidates = await tx
-        .select({ id: agents.id, endpointUrl: agents.endpointUrl })
-        .from(agents)
-        .where(
-          and(eq(agents.visibility, "public"), eq(agents.lifecycleStatus, "active")),
-        );
-      const matchedIds = candidates
-        .filter((c) => normalizeEndpointUrlForLookup(c.endpointUrl) === normalizedQuery)
-        .map((c) => c.id);
-
-      if (matchedIds.length === 0) {
-        return { agents: [], nextCursor: null };
-      }
-      endpointUrlCondition = inArray(agents.id, matchedIds);
+  let endpointUrlCondition: ReturnType<typeof eq> | undefined;
+  if (endpointUrl) {
+    const normalizedQuery = normalizeEndpointUrlForLookup(endpointUrl);
+    if (!normalizedQuery) {
+      return { agents: [], nextCursor: null };
     }
+    // An indexed equality match against the stored normalization
+    // (agents_endpoint_url_normalized_idx), computed by this same function
+    // on every write — so this matches exactly the rows the query value and
+    // `normalizeEndpointUrlForLookup(row.endpointUrl)` agree on. A NULL
+    // column never equals anything, so an unnormalizable row never matches.
+    // Everything else (pagination, ordering, column selection) is the exact
+    // same query path every other call to this function goes through.
+    endpointUrlCondition = eq(agents.endpointUrlNormalized, normalizedQuery);
+  }
 
+  return withAnonContext(db, async (tx) => {
     const rows = await tx
       .select()
       .from(agents)

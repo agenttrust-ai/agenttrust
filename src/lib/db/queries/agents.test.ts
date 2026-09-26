@@ -18,6 +18,7 @@ import {
   getPublicAgentBySlug,
   listAgentsForOwner,
   listPublicAgents,
+  normalizeEndpointUrlForLookup,
   recordAgentHeartbeatBySlug,
   startOwnershipVerification,
   updateOwnedAgent,
@@ -1149,6 +1150,209 @@ describe("listPublicAgents — Public API listing, RLS-sensitive access", () => 
       const page = await listPublicAgents(db, { limit: 20, endpointUrl: sharedUrl });
       expect(page.agents.map((a) => a.name).sort()).toEqual(["Shared First", "Shared Second"]);
     });
+  });
+
+  describe("indexed endpoint lookup (endpoint_url_normalized) — same results as the old in-memory match", () => {
+    /**
+     * The pre-index algorithm, kept here purely as a test oracle: every
+     * public+active row, `normalizeEndpointUrlForLookup` applied to its raw
+     * stored `endpoint_url` in application code, newest first. The indexed
+     * path must return exactly these ids for every query.
+     */
+    async function legacyInMemoryMatch(query: string): Promise<string[]> {
+      const normalizedQuery = normalizeEndpointUrlForLookup(query);
+      if (!normalizedQuery) return [];
+      const { rows } = await client.query<{
+        id: string;
+        endpoint_url: string;
+      }>(
+        `select id, endpoint_url from public.agents
+          where visibility = 'public' and lifecycle_status = 'active'
+          order by created_at desc, id desc`,
+      );
+      return rows
+        .filter((r) => normalizeEndpointUrlForLookup(r.endpoint_url) === normalizedQuery)
+        .map((r) => r.id);
+    }
+
+    async function lookup(query: string): Promise<string[]> {
+      const page = await listPublicAgents(db, { limit: 50, endpointUrl: query });
+      return page.agents.map((a) => a.id);
+    }
+
+    const longUrl = `https://long.example.com/${"a".repeat(2100)}`;
+
+    // name -> stored endpoint_url (deliberately NOT in normalized form)
+    const stored: Record<string, string> = {
+      trailing: "https://trail.example.com/v1/invoke/",
+      upperHost: "https://UPPER.Example.COM/v1/invoke",
+      defaultPort: "https://port.example.com:443/v1/invoke",
+      percent: "https://pct.example.com/a b/%7euser",
+      query: "https://query.example.com/v1/invoke/?v=1",
+      fragment: "https://frag.example.com/v1/invoke#section",
+      idn: "https://bücher.example/a2a",
+      root: "https://root.example.com",
+      tooLong: longUrl,
+    };
+
+    // query -> names expected to match (empty = no match)
+    const cases: Array<[string, string, string[]]> = [
+      ["trailing slash: query without it", "https://trail.example.com/v1/invoke", ["trailing"]],
+      ["trailing slash: query with it", "https://trail.example.com/v1/invoke/", ["trailing"]],
+      ["uppercase scheme and host", "HTTPS://upper.EXAMPLE.com/v1/invoke", ["upperHost"]],
+      ["default :443 omitted in query", "https://port.example.com/v1/invoke", ["defaultPort"]],
+      ["non-default port never matches", "https://port.example.com:8443/v1/invoke", []],
+      ["percent-encoded space", "https://pct.example.com/a%20b/%7euser", ["percent"]],
+      ["raw space encodes the same way", "https://pct.example.com/a b/%7euser", ["percent"]],
+      ["percent-escape case is significant (unchanged WHATWG behavior)", "https://pct.example.com/a%20b/%7Euser", []],
+      ["query string must match", "https://query.example.com/v1/invoke?v=1", ["query"]],
+      ["different query string", "https://query.example.com/v1/invoke?v=2", []],
+      ["missing query string", "https://query.example.com/v1/invoke", []],
+      ["fragment must match", "https://frag.example.com/v1/invoke#section", ["fragment"]],
+      ["missing fragment", "https://frag.example.com/v1/invoke", []],
+      ["IDN via punycode", "https://xn--bcher-kva.example/a2a", ["idn"]],
+      ["IDN via Unicode, uppercase, trailing slash", "https://BÜCHER.example/a2a/", ["idn"]],
+      ["root path with slash", "https://root.example.com/", ["root"]],
+      ["root path without slash", "https://root.example.com", ["root"]],
+      ["unparseable query", "not a url at all", []],
+      ["query over 2048 chars, even identical to a stored URL", longUrl, []],
+    ];
+
+    it("matches exactly what the in-memory algorithm matched, for every normalization edge case", async () => {
+      const idsByName: Record<string, string> = {};
+      for (const [name, endpointUrl] of Object.entries(stored)) {
+        const agent = await createAgent(db, userA, { ...baseInput, name: `Edge ${name}`, endpointUrl });
+        await activate(agent.id);
+        idsByName[name] = agent.id;
+      }
+
+      for (const [label, query, expectedNames] of cases) {
+        const actual = await lookup(query);
+        expect(actual, label).toEqual(await legacyInMemoryMatch(query));
+        expect(actual.sort(), label).toEqual(expectedNames.map((n) => idsByName[n]).sort());
+      }
+    });
+
+    it("stores the normalized form (or NULL when unnormalizable) for every edge case", async () => {
+      for (const [name, endpointUrl] of Object.entries(stored)) {
+        const agent = await createAgent(db, userA, { ...baseInput, name: `Stored ${name}`, endpointUrl });
+        expect(agent.endpointUrl).toBe(endpointUrl);
+        expect(agent.endpointUrlNormalized).toBe(normalizeEndpointUrlForLookup(endpointUrl));
+      }
+      const tooLong = await createAgent(db, userA, { ...baseInput, name: "Stored long 2", endpointUrl: longUrl });
+      expect(tooLong.endpointUrlNormalized).toBeNull();
+      const idn = await createAgent(db, userA, { ...baseInput, name: "Stored idn 2", endpointUrl: stored.idn });
+      expect(idn.endpointUrlNormalized).toBe("https://xn--bcher-kva.example/a2a");
+    });
+
+    it("excludes draft and unlisted agents sharing the endpoint, returning only the public+active one", async () => {
+      const url = "https://shared-visibility.example.com/a2a";
+      const pub = await createAgent(db, userA, { ...baseInput, name: "Vis Public", endpointUrl: url });
+      await activate(pub.id);
+      await createAgent(db, userA, { ...baseInput, name: "Vis Draft", endpointUrl: url }); // draft
+      const unlisted = await createAgent(db, userB, { ...baseInput, name: "Vis Unlisted", endpointUrl: `${url}/` });
+      await client.query(
+        `update public.agents set lifecycle_status = 'active', visibility = 'unlisted' where id = $1`,
+        [unlisted.id],
+      );
+
+      expect(await lookup(url)).toEqual([pub.id]);
+      expect(await lookup(url)).toEqual(await legacyInMemoryMatch(url));
+    });
+
+    it("returns multiple matches newest first and paginates through them with the cursor", async () => {
+      const oldest = await createAgent(db, userA, { ...baseInput, name: "Multi Oldest", endpointUrl: "https://multi.example.com/x" });
+      const middle = await createAgent(db, userB, { ...baseInput, name: "Multi Middle", endpointUrl: "https://multi.example.com/x/" });
+      const newest = await createAgent(db, userA, { ...baseInput, name: "Multi Newest", endpointUrl: "https://MULTI.example.com/x" });
+      const times = [
+        [oldest.id, "2026-09-01T00:00:00Z"],
+        [middle.id, "2026-09-02T00:00:00Z"],
+        [newest.id, "2026-09-03T00:00:00Z"],
+      ];
+      for (const [id, at] of times) {
+        await activate(id);
+        await client.query(`update public.agents set created_at = $2 where id = $1`, [id, at]);
+      }
+
+      // What check_agent_trust does: limit 1 -> the newest match.
+      const first = await listPublicAgents(db, { limit: 1, endpointUrl: "https://multi.example.com/x" });
+      expect(first.agents.map((a) => a.id)).toEqual([newest.id]);
+
+      const page1 = await listPublicAgents(db, { limit: 2, endpointUrl: "https://multi.example.com/x" });
+      expect(page1.agents.map((a) => a.id)).toEqual([newest.id, middle.id]);
+      expect(page1.nextCursor).not.toBeNull();
+
+      const page2 = await listPublicAgents(db, {
+        limit: 2,
+        endpointUrl: "https://multi.example.com/x",
+        cursor: page1.nextCursor,
+      });
+      expect(page2.agents.map((a) => a.id)).toEqual([oldest.id]);
+      expect(page2.nextCursor).toBeNull();
+
+      expect(await lookup("https://multi.example.com/x")).toEqual(
+        await legacyInMemoryMatch("https://multi.example.com/x"),
+      );
+    });
+
+    it("never matches a row whose endpoint_url_normalized is NULL (e.g. not yet backfilled)", async () => {
+      const url = "https://not-backfilled.example.com/a2a";
+      const agent = await createAgent(db, userA, { ...baseInput, name: "Not Backfilled", endpointUrl: url });
+      await activate(agent.id);
+      expect(await lookup(url)).toEqual([agent.id]);
+
+      await client.query(
+        `update public.agents set endpoint_url_normalized = null where id = $1`,
+        [agent.id],
+      );
+      expect(await lookup(url)).toEqual([]);
+    });
+  });
+});
+
+describe("endpoint_url_normalized write paths", () => {
+  it("createAgent derives it from the endpoint URL", async () => {
+    const agent = await createAgent(db, userA, {
+      ...baseInput,
+      endpointUrl: "https://Create-Path.example.com/v1/invoke/",
+    });
+    expect(agent.endpointUrlNormalized).toBe("https://create-path.example.com/v1/invoke");
+  });
+
+  it("updateOwnedAgent recomputes it when the endpoint URL changes", async () => {
+    const agent = await createAgent(db, userA, baseInput);
+    expect(agent.endpointUrlNormalized).toBe("https://agent.acme.io/v1/invoke");
+
+    const updated = await updateOwnedAgent(db, userA, agent.id, {
+      ...baseInput,
+      endpointUrl: "https://NEW-HOST.example.com/a2a/",
+    });
+    expect(updated.endpointUrlNormalized).toBe("https://new-host.example.com/a2a");
+
+    const [row] = (
+      await client.query<{ endpoint_url_normalized: string | null }>(
+        `select endpoint_url_normalized from public.agents where id = $1`,
+        [agent.id],
+      )
+    ).rows;
+    expect(row.endpoint_url_normalized).toBe("https://new-host.example.com/a2a");
+  });
+
+  it("updateOwnedAgent leaves it correct when the endpoint URL is unchanged", async () => {
+    const agent = await createAgent(db, userA, baseInput);
+    const updated = await updateOwnedAgent(db, userA, agent.id, { ...baseInput, name: "Renamed Bot" });
+    expect(updated.endpointUrlNormalized).toBe(agent.endpointUrlNormalized);
+  });
+
+  it("an updated endpoint is found by the new URL and no longer by the old one", async () => {
+    const agent = await createAgent(db, userA, baseInput);
+    await client.query(`update public.agents set lifecycle_status = 'active' where id = $1`, [agent.id]);
+    await updateOwnedAgent(db, userA, agent.id, { ...baseInput, endpointUrl: "https://moved.example.com/a2a" });
+
+    const byOld = await listPublicAgents(db, { limit: 5, endpointUrl: baseInput.endpointUrl });
+    const byNew = await listPublicAgents(db, { limit: 5, endpointUrl: "https://moved.example.com/a2a/" });
+    expect(byOld.agents).toEqual([]);
+    expect(byNew.agents.map((a) => a.id)).toEqual([agent.id]);
   });
 });
 

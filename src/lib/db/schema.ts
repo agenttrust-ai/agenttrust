@@ -105,6 +105,16 @@ export const agents = pgTable(
       .default(sql`'{}'::text[]`),
     version: text("version"),
     endpointUrl: text("endpoint_url").notNull(),
+    // `normalizeEndpointUrlForLookup(endpointUrl)`, stored so the public
+    // endpoint-URL lookup can be one indexed equality match instead of
+    // normalizing every agent's URL in application code. Always written by
+    // application code on every path that writes `endpointUrl` (the
+    // normalization is WHATWG URL parsing, which SQL can't reproduce, so
+    // this can't be a generated column). NULL means "can't be matched" —
+    // either unparseable/over-long (exactly what the function returns null
+    // for) or a row the backfill hasn't reached yet; NULL never matches a
+    // lookup. Not unique: several agents may share an endpoint.
+    endpointUrlNormalized: text("endpoint_url_normalized"),
     authType: agentAuthType("auth_type").notNull().default("none"),
     // AES-256-GCM ciphertext (iv + authTag + ciphertext, all base64-encoded
     // and concatenated — see src/lib/security/agent-credentials.ts) of the
@@ -190,6 +200,9 @@ export const agents = pgTable(
       table.visibility,
       table.lifecycleStatus,
     ),
+    // Deliberately non-unique and not partial: the public lookup filters
+    // visibility/lifecycle on top of it, and duplicate endpoints are legal.
+    index("agents_endpoint_url_normalized_idx").on(table.endpointUrlNormalized),
     uniqueIndex("agents_external_registry_id_idx")
       .on(table.externalRegistryId)
       .where(sql`${table.externalRegistryId} is not null`),
