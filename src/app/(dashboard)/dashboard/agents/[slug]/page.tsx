@@ -12,6 +12,7 @@ import { buildAgentCard } from "@/lib/validation/agent-card";
 import { AgentForm } from "@/components/agents/agent-form";
 import { DeleteAgentButton } from "@/components/agents/delete-agent-button";
 import { StatusPill } from "@/components/agents/status-pill";
+import { PageHeader } from "@/components/ui/page-header";
 import { LastCheckSummary } from "@/components/agents/last-check-summary";
 import { ReliabilityScoreBadge } from "@/components/agents/reliability-score";
 import { AgentCardSummary } from "@/components/agents/agent-card-summary";
@@ -29,15 +30,12 @@ export default async function AgentDetailPage({
   const { slug } = await params;
   const session = await verifySession();
   const agent = await getOwnedAgentBySlug(db, session.userId, slug);
-  const latestChecks = await getLatestChecksForAgents(db, session.userId, [
-    agent.id,
+  // Independent reads — run together rather than one after another.
+  const [latestChecks, latestScore] = await Promise.all([
+    getLatestChecksForAgents(db, session.userId, [agent.id]),
+    getLatestReliabilityScoreForOwnedAgent(db, session.userId, agent.id),
   ]);
   const latest = latestChecks.get(agent.id);
-  const latestScore = await getLatestReliabilityScoreForOwnedAgent(
-    db,
-    session.userId,
-    agent.id,
-  );
   const scoreStatus = (
     await getReliabilityScoreStatusesForOwnedAgents(
       db,
@@ -66,28 +64,21 @@ export default async function AgentDetailPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <Link
-            href="/dashboard/agents"
-            className="text-sm text-muted hover:text-foreground"
-          >
-            ← Agents
-          </Link>
-          <div className="mt-1 flex items-center gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {agent.name}
-            </h1>
+      <PageHeader
+        back={{ href: "/dashboard/agents", label: "Agents" }}
+        title={
+          <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            {agent.name}
             <StatusPill status={getEffectiveAgentStatus(agent)} />
-          </div>
-        </div>
-        <Link
-          href={`/a/${agent.slug}`}
-          className="text-sm text-accent hover:underline"
-        >
-          View public profile →
-        </Link>
-      </div>
+          </span>
+        }
+        description={<span className="font-mono text-xs break-all">{agent.endpointUrl}</span>}
+        actions={
+          <Link href={`/a/${agent.slug}`} className="text-sm text-accent hover:underline">
+            View public profile →
+          </Link>
+        }
+      />
 
       {isDraft && (
         <div className="max-w-xl rounded-lg border border-accent/30 bg-surface p-4">
@@ -181,7 +172,7 @@ export default async function AgentDetailPage({
       />
 
       <div className="max-w-xl rounded-lg border border-border bg-surface p-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-medium">Reliability / trust score</h2>
           <ReliabilityScoreBadge
             score={latestScore?.score ?? null}

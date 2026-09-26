@@ -11,11 +11,11 @@ import { DashboardNav } from "@/components/shell/dashboard-nav";
 export default async function DashboardLayout({
   children,
 }: LayoutProps<"/dashboard">) {
-  await verifySession();
+  const session = await verifySession();
 
   return (
     <div className="mx-auto w-full max-w-shell flex-1 px-4 py-6 sm:px-6 sm:py-8">
-      <DashboardNav />
+      <DashboardNav account={session.email ?? undefined} />
       <div className="mt-6 sm:mt-8">{children}</div>
     </div>
   );

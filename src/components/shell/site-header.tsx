@@ -3,6 +3,7 @@ import { AuthNav, AuthNavPlaceholder } from "@/components/auth-nav";
 import { Logo } from "./logo";
 import { MobileNav } from "./mobile-nav";
 import { NavLink } from "./nav-link";
+import { NAV_BAR_LINK, NAV_MENU_LINK } from "./nav-styles";
 
 /** Primary product navigation — existing routes and anchors only. */
 export const PRIMARY_NAV = [
@@ -10,14 +11,6 @@ export const PRIMARY_NAV = [
   { href: "/docs", label: "Docs" },
   { href: "/docs#mcp", label: "MCP" },
 ] as const;
-
-const BAR_LINK =
-  "inline-flex h-8 items-center rounded-md px-2.5 text-sm text-muted transition-[color,background-color] duration-150 " +
-  "hover:bg-surface-2 hover:text-foreground aria-[current=page]:text-foreground aria-[current=page]:bg-surface-2";
-
-const MENU_LINK =
-  "flex h-11 items-center rounded-md px-3 text-sm text-foreground hover:bg-surface-2 " +
-  "aria-[current=page]:bg-surface-2 aria-[current=page]:font-medium";
 
 export function SiteHeader() {
   return (
@@ -27,7 +20,7 @@ export function SiteHeader() {
 
         <nav aria-label="Primary" className="hidden items-center gap-1 md:flex">
           {PRIMARY_NAV.map((item) => (
-            <NavLink key={item.href} href={item.href} className={BAR_LINK}>
+            <NavLink key={item.href} href={item.href} className={NAV_BAR_LINK}>
               {item.label}
             </NavLink>
           ))}
@@ -43,7 +36,7 @@ export function SiteHeader() {
           <MobileNav>
             <nav aria-label="Primary" className="flex flex-col">
               {PRIMARY_NAV.map((item) => (
-                <NavLink key={item.href} href={item.href} className={MENU_LINK}>
+                <NavLink key={item.href} href={item.href} className={NAV_MENU_LINK}>
                   {item.label}
                 </NavLink>
               ))}

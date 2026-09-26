@@ -11,17 +11,24 @@ import { getEffectiveAgentStatus } from "@/lib/monitoring/heartbeat-status";
 import { StatusPill } from "@/components/agents/status-pill";
 import { LastCheckSummary } from "@/components/agents/last-check-summary";
 import { ReliabilityScoreBadge } from "@/components/agents/reliability-score";
+import { VerificationStatus } from "@/components/trust/trust-report";
+import { buttonClass } from "@/components/ui/button";
+import { cx } from "@/components/ui/cx";
+import { EmptyState } from "@/components/ui/empty-state";
+import { formatDate } from "@/components/ui/format";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatusChip } from "@/components/ui/status-chip";
+import * as T from "@/components/ui/table";
 
 export default async function AgentsPage() {
   const session = await verifySession();
   const agentList = await listAgentsForOwner(db, session.userId);
   const agentIds = agentList.map((a) => a.id);
-  const latestChecks = await getLatestChecksForAgents(db, session.userId, agentIds);
-  const latestScores = await getLatestReliabilityScoresForAgents(
-    db,
-    session.userId,
-    agentIds,
-  );
+  // Independent reads — run together rather than one after another.
+  const [latestChecks, latestScores] = await Promise.all([
+    getLatestChecksForAgents(db, session.userId, agentIds),
+    getLatestReliabilityScoresForAgents(db, session.userId, agentIds),
+  ]);
   const scoreStatuses = await getReliabilityScoreStatusesForOwnedAgents(
     db,
     session.userId,
@@ -30,93 +37,95 @@ export default async function AgentsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Agents</h1>
-          <p className="text-sm text-muted">{agentList.length} registered</p>
-        </div>
-        <Link
-          href="/dashboard/agents/new"
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:opacity-90"
-        >
-          Register agent
-        </Link>
-      </div>
+      <PageHeader
+        eyebrow="Dashboard"
+        title="Agents"
+        description={`${agentList.length} registered. Health and reliability here are the same evidence callers see when they check your endpoint.`}
+        actions={
+          <Link href="/dashboard/agents/new" className={buttonClass({ size: "sm" })}>
+            Register agent
+          </Link>
+        }
+      />
 
       {agentList.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border p-10 text-center">
-          <p className="text-sm text-muted">No agents registered yet.</p>
-          <Link
-            href="/dashboard/agents/new"
-            className="mt-3 inline-block text-sm text-accent hover:underline"
-          >
-            Register your first agent →
-          </Link>
-        </div>
+        <EmptyState
+          title="No agents registered yet"
+          action={
+            <Link href="/dashboard/agents/new" className={buttonClass({ size: "sm" })}>
+              Register your first agent
+            </Link>
+          }
+        >
+          Register an agent&apos;s endpoint to start collecting monitoring
+          evidence.
+        </EmptyState>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-[900px] text-sm">
+        <div className={T.tableFrame}>
+          <table className={cx(T.table, "min-w-[880px]")}>
             <thead>
-              <tr className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-wide text-muted">
-                <th className="px-4 py-2.5 font-medium">Name</th>
-                <th className="px-4 py-2.5 font-medium">Status</th>
-                <th className="px-4 py-2.5 font-medium">Trust score</th>
-                <th className="px-4 py-2.5 font-medium">Last checked</th>
-                <th className="px-4 py-2.5 font-medium">Response time</th>
-                <th className="px-4 py-2.5 font-medium">HTTP status</th>
-                <th className="px-4 py-2.5 font-medium">Endpoint</th>
-                <th className="px-4 py-2.5 font-medium">Created</th>
+              <tr className={T.theadRow}>
+                <th scope="col" className={T.th}>Agent</th>
+                <th scope="col" className={T.th}>Health</th>
+                <th scope="col" className={T.th}>Reliability</th>
+                <th scope="col" className={T.th}>Ownership</th>
+                <th scope="col" className={T.th}>Last check</th>
+                <th scope="col" className={T.th}>Endpoint</th>
               </tr>
             </thead>
             <tbody>
-              {agentList.map((agent) => (
-                <tr
-                  key={agent.id}
-                  className="border-b border-border last:border-0 hover:bg-surface-2"
-                >
-                  <td className="px-4 py-3">
-                    <Link
-                      href={`/dashboard/agents/${agent.slug}`}
-                      className="font-medium hover:text-accent"
-                    >
-                      {agent.name}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusPill status={getEffectiveAgentStatus(agent)} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <ReliabilityScoreBadge
-                      score={latestScores.get(agent.id)?.score ?? null}
-                      status={scoreStatuses.get(agent.id)}
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-muted">
-                    <LastCheckSummary
-                      check={latestChecks.get(agent.id)}
-                      field="checkedAt"
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-muted">
-                    <LastCheckSummary
-                      check={latestChecks.get(agent.id)}
-                      field="latency"
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-muted">
-                    <LastCheckSummary
-                      check={latestChecks.get(agent.id)}
-                      field="httpStatus"
-                    />
-                  </td>
-                  <td className="max-w-[240px] truncate px-4 py-3 font-mono text-xs text-muted">
-                    {agent.endpointUrl}
-                  </td>
-                  <td className="px-4 py-3 text-muted">
-                    {new Date(agent.createdAt).toLocaleDateString()}
-                  </td>
-                </tr>
-              ))}
+              {agentList.map((agent) => {
+                const check = latestChecks.get(agent.id);
+                return (
+                  <tr key={agent.id} className={T.tbodyRowInteractive}>
+                    {/* Primary: identity. The name link stretches over the row. */}
+                    <td className={cx(T.td, "max-w-[16rem]")}>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Link
+                          href={`/dashboard/agents/${agent.slug}`}
+                          className="truncate font-medium after:absolute after:inset-0 hover:text-accent"
+                        >
+                          {agent.name}
+                        </Link>
+                        {agent.lifecycleStatus !== "active" && <StatusChip tone="neutral">Draft</StatusChip>}
+                      </div>
+                      <p className="mt-0.5 truncate font-mono text-xs text-muted">{agent.slug}</p>
+                    </td>
+                    {/* Primary: trust evidence. */}
+                    <td className={T.td}>
+                      <StatusPill status={getEffectiveAgentStatus(agent)} />
+                    </td>
+                    <td className={T.td}>
+                      <ReliabilityScoreBadge
+                        score={latestScores.get(agent.id)?.score ?? null}
+                        status={scoreStatuses.get(agent.id)}
+                      />
+                    </td>
+                    <td className={T.td}>
+                      <VerificationStatus verified={agent.ownershipVerifiedAt != null} />
+                    </td>
+                    {/* Secondary: operational metadata. */}
+                    <td className={cx(T.td, "whitespace-nowrap")}>
+                      <p className="text-sm">
+                        <LastCheckSummary check={check} field="checkedAt" />
+                      </p>
+                      {check && (
+                        <p className="mt-0.5 font-mono text-xs text-muted tabular-nums">
+                          <LastCheckSummary check={check} field="latency" />
+                          {" · HTTP "}
+                          <LastCheckSummary check={check} field="httpStatus" />
+                        </p>
+                      )}
+                    </td>
+                    <td className={cx(T.td, "max-w-[15rem]")}>
+                      <p className="truncate font-mono text-xs text-muted" title={agent.endpointUrl}>
+                        {agent.endpointUrl}
+                      </p>
+                      <p className="mt-0.5 text-xs text-subtle">Created {formatDate(agent.createdAt)}</p>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

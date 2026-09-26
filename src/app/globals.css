@@ -159,6 +159,16 @@
   color: var(--muted);
 }
 
+/* A faint measurement grid behind a hero surface, fading out from the top.
+ * Pure CSS; uses the border token so it follows the theme. */
+@utility bg-grid {
+  background-image:
+    linear-gradient(to right, color-mix(in oklab, var(--border) 70%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--border) 70%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(ellipse 80% 70% at 60% 0%, black 25%, transparent 75%);
+}
+
 @layer base {
   html {
     /* Anchored sections clear the sticky site header. */

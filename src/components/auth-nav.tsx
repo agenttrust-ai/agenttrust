@@ -4,10 +4,7 @@ import { logout } from "@/lib/auth/actions";
 import { buttonClass } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
 import { NavLink } from "@/components/shell/nav-link";
-
-/** Current-page styling for the Dashboard link (set via `aria-current` by NavLink). */
-const CURRENT_BAR = "aria-[current=page]:bg-surface-2 aria-[current=page]:text-foreground";
-const CURRENT_MENU = "aria-[current=page]:bg-surface-2 aria-[current=page]:font-medium";
+import { NAV_BAR_LINK, NAV_MENU_LINK } from "@/components/shell/nav-styles";
 
 /**
  * Split out from the root layout so the session check (`await` on cookies)
@@ -46,10 +43,7 @@ export async function AuthNav({ variant = "bar" }: { variant?: "bar" | "menu" })
   return (
     <>
       {/* Not `exact`: stays current on every nested /dashboard/* route. */}
-      <NavLink
-        href="/dashboard"
-        className={cx(itemClass, menu ? CURRENT_MENU : CURRENT_BAR)}
-      >
+      <NavLink href="/dashboard" className={menu ? NAV_MENU_LINK : NAV_BAR_LINK}>
         Dashboard
       </NavLink>
       <form action={logout} className={menu ? "w-full" : undefined}>

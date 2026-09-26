@@ -27,8 +27,11 @@ export default async function PublicAgentProfilePage({
     throw error;
   }
 
-  const latest = await getLatestCheckPublic(db, agent.id);
-  const scoreState = await getReliabilityScoreStatePublic(db, agent.id);
+  // Independent reads — run together rather than one after another.
+  const [latest, scoreState] = await Promise.all([
+    getLatestCheckPublic(db, agent.id),
+    getReliabilityScoreStatePublic(db, agent.id),
+  ]);
   const latestScore = scoreState.score;
   const card = buildAgentCard(agent);
 

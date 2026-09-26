@@ -137,7 +137,7 @@ GET /api/v1/agents/{slug}
   if the slug doesn't exist or isn't public+active.
 
 GET /api/v1/agents/{slug}/health
-  `{agentId, slug, status, lastCheckedAt, latencyMs, httpStatus, checkStatus, reliabilityScore, reliabilityScoreComputedAt}`
+  `{agentId, slug, status, lastCheckedAt, latencyMs, httpStatus, checkStatus, reliabilityScore, reliabilityScoreStatus, reliabilityScoreComputedAt}`
 
 POST /api/v1/agents/{slug}/heartbeat
   Owner-only (the key must belong to that agent's own account) — records
@@ -156,12 +156,15 @@ POST /api/v1/agents/{slug}/heartbeat
 
 ## URL normalization (endpoint_url lookup)
 
-Exact match only — never fuzzy or partial. Normalized for exactly two
-things before comparing:
+Exact match only — never fuzzy or partial. Both the URL you pass and each
+registered URL go through standard URL parsing, plus one extra rule, before
+comparing:
   1. A trailing slash on a non-root path (`.../invoke/` matches `.../invoke`).
-  2. Scheme/host casing (`HTTPS://Example.com` matches `https://example.com`).
-Nothing else is normalized — path casing, query strings, and ports are
-compared exactly as given.
+  2. Scheme/host casing (`HTTPS://Example.com` matches `https://example.com`),
+     and the other effects of standard URL parsing — e.g. a default port is
+     dropped (`https://example.com:443/a` matches `https://example.com/a`).
+Nothing else is normalized — path casing, query strings, fragments and
+non-default ports are compared exactly as given.
 
 ## Interpreting trustDecision
 
@@ -213,7 +216,8 @@ check_agent_trust({endpointUrl}) — the preferred check before invoking an
   never contacts endpointUrl itself — it only reads AgentTrust's own
   already-observed data. Returns { matched: false } for an unregistered
   URL, or { matched: true, slug, name, status, verified,
-  reliabilityScore, trustDecision } for a known public+active agent.
+  reliabilityScore, reliabilityScoreStatus, trustDecision } for a known
+  public+active agent.
   Anonymous calls are rate-limited per caller IP; a 429 carries
   retryAfterSeconds.
 

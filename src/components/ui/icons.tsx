@@ -85,6 +85,44 @@ export function IconClock(props: IconProps) {
   );
 }
 
+/** Shield — endpoint ownership not (yet) verified. */
+export function IconShield(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8 1.75l5 1.9v3.9c0 3.05-2.05 5.35-5 6.7-2.95-1.35-5-3.65-5-6.7v-3.9z" />
+    </Icon>
+  );
+}
+
+/** Shield with tick — endpoint ownership verified. */
+export function IconShieldCheck(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8 1.75l5 1.9v3.9c0 3.05-2.05 5.35-5 6.7-2.95-1.35-5-3.65-5-6.7v-3.9z" />
+      <path d="M5.75 8.1l1.6 1.6 3-3.3" />
+    </Icon>
+  );
+}
+
+/** Pulse line — health checks. */
+export function IconActivity(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M1.75 8h2.5l1.75-4.5 3.5 9 1.75-4.5h2.5" />
+    </Icon>
+  );
+}
+
+/** Gauge — reliability score. */
+export function IconGauge(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M2.75 11.5a5.25 5.25 0 1 1 10.5 0" />
+      <path d="M8 11.5l2.5-3.5" />
+    </Icon>
+  );
+}
+
 export function IconCopy(props: IconProps) {
   return (
     <Icon {...props}>

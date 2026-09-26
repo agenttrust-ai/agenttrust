@@ -23,11 +23,11 @@ export function CreateApiKeyForm() {
   return (
     <form
       action={formAction}
-      className="flex flex-col gap-3 sm:flex-row sm:items-end"
+      className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3"
     >
       <div className="flex flex-1 flex-col gap-1.5">
         <label htmlFor="name" className="text-sm font-medium">
-          Key name
+          New key name
         </label>
         <input
           id="name"
@@ -44,7 +44,7 @@ export function CreateApiKeyForm() {
       <button
         type="submit"
         disabled={pending}
-        className={buttonClass({ className: "h-10" })}
+        className={buttonClass({ className: "h-10 self-start sm:self-auto" })}
       >
         {pending ? "Creating…" : "Create key"}
       </button>

@@ -6,11 +6,12 @@ import {
   checkAgentTrustInputSchema,
   mcpCheckAgentTrust,
 } from "@/lib/mcp/tools";
-import {
-  TrustDecisionSummary,
-  type TrustCheckResult,
-} from "@/components/agents/trust-decision-summary";
-import { CodeBlock as Code } from "@/components/dev/code-block";
+import { EndpointCheckForm } from "@/components/check/endpoint-check-form";
+import { CodeBlock } from "@/components/dev/code-block";
+import { EXAMPLE_ENDPOINT, PRIMARY_EXAMPLE } from "@/components/trust/examples";
+import { NotMatchedReport, TrustReport, type TrustReportData } from "@/components/trust/trust-report";
+import { Callout } from "@/components/ui/callout";
+import { IconAlert, IconCheck, IconClock } from "@/components/ui/icons";
 
 const TITLE = "Check AI Agent Trust Before Invocation | AgentTrust";
 const DESCRIPTION =
@@ -34,36 +35,10 @@ export const metadata: Metadata = {
   },
 };
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section>
-      <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
-      <div className="mt-3 flex flex-col gap-3 text-sm text-muted [&_strong]:text-foreground [&_code]:rounded [&_code]:bg-surface [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs [&_code]:text-foreground">
-        {children}
-      </div>
-    </section>
-  );
-}
-
-const EXAMPLE_MATCHED = `{
-  "matched": true,
-  "slug": "example-agent",
-  "name": "Example Agent",
-  "status": "healthy",
-  "verified": true,
-  "reliabilityScore": 92,
-  "trustDecision": {
-    "recommended": true,
-    "confidence": "high",
-    "reasons": []
-  }
-}`;
+type CheckResult =
+  | { kind: "matched"; result: TrustReportData & { slug?: string } }
+  | { kind: "not_matched" }
+  | { kind: "invalid" | "rate_limited" | "error"; message: string };
 
 /**
  * Runs the exact same rate-limited, read-only check the `check_agent_trust`
@@ -71,15 +46,15 @@ const EXAMPLE_MATCHED = `{
  * page instead of over MCP transport, so a human visitor sees a real,
  * live result rather than a faked one. No new lookup/rate-limit/trust
  * logic is added here; only the incoming request's IP headers are forwarded
- * on, the same way `checkAnonymousRateLimit` already expects them.
+ * on, the same way `checkAnonymousRateLimit` already expects them. The
+ * outcome is only sorted into the states the page renders.
  */
-async function runTrustCheck(
-  endpointUrl: string,
-): Promise<{ result?: TrustCheckResult; error?: string }> {
+async function runTrustCheck(endpointUrl: string): Promise<CheckResult> {
   const parsed = checkAgentTrustInputSchema.safeParse({ endpointUrl });
   if (!parsed.success) {
     return {
-      error: parsed.error.issues[0]?.message ?? "Invalid endpoint URL.",
+      kind: "invalid",
+      message: parsed.error.issues[0]?.message ?? "Invalid endpoint URL.",
     };
   }
 
@@ -91,18 +66,34 @@ async function runTrustCheck(
 
   if (toolResult.isError) {
     const error = toolResult.structuredContent?.error as
-      { message?: string; retryAfterSeconds?: number } | undefined;
+      | { message?: string; retryAfterSeconds?: number }
+      | undefined;
     const message = error?.message ?? "Something went wrong. Please try again.";
-    return {
-      error:
-        typeof error?.retryAfterSeconds === "number"
-          ? `${message} (retry in ${error.retryAfterSeconds}s)`
-          : message,
-    };
+    if (typeof error?.retryAfterSeconds === "number") {
+      return { kind: "rate_limited", message: `${message} (retry in ${error.retryAfterSeconds}s)` };
+    }
+    return { kind: "error", message };
   }
 
-  return { result: toolResult.structuredContent as TrustCheckResult };
+  const result = toolResult.structuredContent as { matched?: boolean } & Partial<TrustReportData>;
+  if (!result.matched || !result.trustDecision) return { kind: "not_matched" };
+  return { kind: "matched", result: result as TrustReportData };
 }
+
+const HOW_IT_WORKS = [
+  "Looks the URL up among the public agents AgentTrust already observes — an exact match on the invocation URL.",
+  "Reads that agent's existing monitoring history and endpoint ownership verification — not a live probe.",
+  "Returns a machine-readable trustDecision — recommended, confidence and reasons — for you to act on.",
+];
+
+const MCP_FACTS = [
+  "No AgentTrust account or API key",
+  "Exact match on the URL you supply",
+  "Unknown URL → { matched: false }, never an error",
+  "Rate-limited per caller IP",
+];
+
+const LINK = "text-accent underline-offset-4 hover:underline";
 
 export default async function CheckAgentTrustPage({
   searchParams,
@@ -110,167 +101,145 @@ export default async function CheckAgentTrustPage({
   const { endpointUrl } = await searchParams;
   const query = typeof endpointUrl === "string" ? endpointUrl : undefined;
   const check = query ? await runTrustCheck(query) : undefined;
+  const checkedUrl = check && (check.kind === "matched" || check.kind === "not_matched") ? query : undefined;
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-6 py-16">
+    <div className="mx-auto flex w-full max-w-reading flex-col gap-8 px-4 py-10 sm:px-6 sm:py-14">
+      {/* What the check does → the input → the action. */}
       <div>
-        <p className="text-sm font-medium tracking-wide text-accent uppercase">
-          Pre-invocation trust check
-        </p>
-        <h1 className="mt-1 text-4xl font-semibold tracking-tight text-balance">
+        <p className="eyebrow">Pre-invocation trust check</p>
+        <h1 className="mt-2 text-title text-balance sm:text-[1.875rem] sm:leading-tight">
           Check an AI Agent Before You Invoke It
         </h1>
-        <p className="mt-4 max-w-xl text-muted">
-          Check the trust and reliability of an AI agent endpoint before
-          invocation. AgentTrust uses existing monitoring history, endpoint
-          ownership verification, and reliability data to return a
-          machine-readable trustDecision without contacting the target agent
-          during the check.
+        <p className="mt-3 text-muted">
+          Paste the exact endpoint URL your agent is about to call. AgentTrust
+          returns a trust decision from the monitoring, reliability and
+          ownership evidence it already holds — without contacting the target.
         </p>
+        <EndpointCheckForm id="endpointUrl" defaultValue={query ?? ""} className="mt-6" />
       </div>
 
-      <form
-        action="/check-agent-trust"
-        method="GET"
-        className="flex flex-col gap-2 sm:flex-row"
-      >
-        <label htmlFor="endpointUrl" className="sr-only">
-          Agent endpoint URL
-        </label>
-        <input
-          id="endpointUrl"
-          name="endpointUrl"
-          type="url"
-          required
-          maxLength={2048}
-          defaultValue={query ?? ""}
-          placeholder="https://api.example.com/invoke"
-          className="flex-1 rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-accent"
-        />
-        <button
-          type="submit"
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:opacity-90"
-        >
-          Check trust →
-        </button>
-      </form>
-
-      {check?.error && (
-        <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-400">
-          {check.error}
-        </p>
+      {/* The result and its reasons. */}
+      {check && (
+        <section aria-label="Trust check result" aria-live="polite" className="flex flex-col gap-3">
+          {check.kind === "matched" && (
+            <>
+              <TrustReport data={check.result} endpointUrl={query} headingLevel="h2" />
+              <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-xs text-muted">
+                <p>
+                  Reflects AgentTrust&apos;s observed evidence for this exact URL —
+                  not a security guarantee, certification or endorsement.
+                </p>
+                {check.result.slug && (
+                  <Link href={`/a/${check.result.slug}`} className={`shrink-0 ${LINK}`}>
+                    Public profile →
+                  </Link>
+                )}
+              </div>
+            </>
+          )}
+          {check.kind === "not_matched" && (
+            <>
+              <NotMatchedReport endpointUrl={query} />
+              <p className="text-xs text-muted">
+                Matching is exact after standard URL normalization —{" "}
+                <Link href="/docs#normalization" className={LINK}>
+                  see how
+                </Link>
+                . Running this agent?{" "}
+                <Link href="/signup" className={LINK}>
+                  Register it
+                </Link>{" "}
+                so it can be checked.
+              </p>
+            </>
+          )}
+          {check.kind === "rate_limited" && (
+            <Callout tone="neutral" icon={IconClock} role="status" title="Too many checks from your network">
+              {check.message}
+            </Callout>
+          )}
+          {(check.kind === "invalid" || check.kind === "error") && (
+            <Callout tone="caution" icon={IconAlert} role="alert" title="The check didn't run">
+              {check.message}
+            </Callout>
+          )}
+        </section>
       )}
-      {check?.result && <TrustDecisionSummary result={check.result} />}
 
-      <Section title="How it works">
-        <p>
-          A pre-invocation trust check answers one question: based on what
-          AgentTrust already knows about this AI agent endpoint, should you
-          proceed?
-        </p>
-        <ol className="ml-5 list-decimal space-y-1">
-          <li>You have an agent endpoint URL you&apos;re about to call.</li>
-          <li>
-            AgentTrust looks it up among its already-observed public agents — an
-            exact match on the invocation URL.
-          </li>
-          <li>
-            If it&apos;s known, AgentTrust reads that agent&apos;s existing
-            monitoring history — health checks over time, not a live probe.
-          </li>
-          <li>
-            It also reads the agent&apos;s endpoint ownership verification state
-            — whether whoever registered it proved they control that endpoint.
-          </li>
-          <li>
-            It combines both into reliability evidence: a deterministic score,
-            when there&apos;s enough monitoring history to compute one.
-          </li>
-          <li>
-            You get back a machine-readable trustDecision —{" "}
-            <code>recommended</code>, <code>confidence</code>, and{" "}
-            <code>reasons</code> — to base your own invocation decision on.
-          </li>
+      {/* Technical explanation — compact, below the tool. */}
+      <section aria-labelledby="how-heading" className="border-t border-border pt-8">
+        <h2 id="how-heading" className="text-heading">
+          How it works
+        </h2>
+        <ol className="mt-4 flex flex-col gap-3">
+          {HOW_IT_WORKS.map((step, i) => (
+            <li key={step} className="flex gap-3 text-sm">
+              <span className="font-mono text-xs leading-5 text-subtle">
+                {String(i + 1).padStart(2, "0")}
+              </span>
+              <span className="text-muted">{step}</span>
+            </li>
+          ))}
         </ol>
-      </Section>
+        <Callout tone="info" className="mt-5" title="AgentTrust never contacts the target endpoint">
+          A trust check reads only what AgentTrust has already observed — past
+          health checks and verification state — so it&apos;s safe to run
+          before you&apos;ve decided the endpoint is worth talking to.
+        </Callout>
+      </section>
 
-      <Section title="AgentTrust never contacts the target endpoint">
-        <p className="rounded-md border border-accent/30 bg-surface p-3">
-          <strong className="text-foreground">Important:</strong> checking an
-          agent&apos;s trust does not involve AgentTrust calling that agent. A
-          pre-invocation trust check reads AgentTrust&apos;s own
-          already-observed data about the endpoint — the monitoring history and
-          verification state it has previously collected — not a fresh request
-          made to the endpoint at check time. That distinction is what makes the
-          check safe to run before you&apos;ve decided the endpoint is worth
-          talking to in the first place.
-        </p>
-      </Section>
-
-      <Section title="For AI agents and MCP clients">
-        <p>
-          If you&apos;re an AI agent or MCP client evaluating another
-          agent&apos;s endpoint — whether discovered via A2A or any other means
-          — AgentTrust exposes this same check as an anonymous, read-only MCP
-          tool:
-        </p>
-        <Code>{`check_agent_trust({ endpointUrl })`}</Code>
-        <p>
-          MCP endpoint: <code>https://getagenttrust.com/api/mcp</code>{" "}
+      {/* MCP and docs. */}
+      <section aria-labelledby="mcp-heading" className="border-t border-border pt-8">
+        <h2 id="mcp-heading" className="text-heading">
+          For AI agents and MCP clients
+        </h2>
+        <p className="mt-2 text-sm text-muted">
+          The same check is the anonymous, read-only MCP tool{" "}
+          <code className="font-mono text-xs text-foreground">check_agent_trust</code> at{" "}
+          <code className="font-mono text-xs break-all text-foreground">https://getagenttrust.com/api/mcp</code>{" "}
           (Streamable HTTP).
         </p>
-        <ul className="ml-5 list-disc space-y-1">
-          <li>No AgentTrust API key or account required.</li>
-          <li>Read-only — it only reads existing AgentTrust data.</li>
-          <li>Exact match on the endpoint URL you supply.</li>
-          <li>
-            An unknown or unregistered endpoint returns{" "}
-            <code>{"{ matched: false }"}</code>, never an error.
-          </li>
-          <li>
-            The check itself does not contact the target endpoint — see above.
-          </li>
+        <ul className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+          {MCP_FACTS.map((fact) => (
+            <li key={fact} className="flex gap-2">
+              <IconCheck className="mt-0.5 size-4 shrink-0 text-positive" />
+              <span>{fact}</span>
+            </li>
+          ))}
         </ul>
-        <p>Example response for a matched, generic fictional endpoint:</p>
-        <Code>{EXAMPLE_MATCHED}</Code>
-        <p>
-          Full request/response detail, including the REST equivalent and the
-          other MCP tools, is in the{" "}
-          <Link href="/docs#mcp" className="text-accent hover:underline">
+        <CodeBlock label="check_agent_trust call">
+          {`check_agent_trust({ endpointUrl: "${checkedUrl ?? EXAMPLE_ENDPOINT}" })`}
+        </CodeBlock>
+        <p className="mt-4 text-xs font-medium">
+          Example result <span className="font-normal text-muted">— fictional values</span>
+        </p>
+        <CodeBlock label="check_agent_trust example result">
+          {JSON.stringify(PRIMARY_EXAMPLE, null, 2)}
+        </CodeBlock>
+        <p className="mt-4 text-sm text-muted">
+          Full request/response detail, the REST equivalent and the other MCP
+          tools are in the{" "}
+          <Link href="/docs#mcp" className={LINK}>
             API docs
           </Link>
           .
         </p>
-      </Section>
+      </section>
 
-      <Section title="What this is, and isn't">
-        <p>
-          AgentTrust&apos;s trustDecision is derived from an agent&apos;s
-          monitoring history, reliability score, and endpoint ownership
-          verification state — signals AgentTrust has itself observed over time.
+      <section aria-labelledby="scope-heading" className="border-t border-border pt-8">
+        <h2 id="scope-heading" className="text-heading">
+          What this is, and isn&apos;t
+        </h2>
+        <p className="mt-2 text-sm text-muted">
+          The trustDecision is derived from an agent&apos;s monitoring history,
+          reliability score and endpoint ownership verification — signals
+          AgentTrust has itself observed over time. It is not a community
+          reputation or rating system, offers no security guarantee, and does
+          not prove an agent is safe to use: it reports what AgentTrust has
+          observed so you can make your own decision.
         </p>
-        <p>
-          It is not a community reputation or rating system, it does not offer
-          any security guarantee, and it does not prove an agent is safe to use
-          — it reports what AgentTrust has observed so you can make your own
-          decision.
-        </p>
-      </Section>
-
-      <div className="flex gap-3">
-        <Link
-          href="/docs"
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:opacity-90"
-        >
-          Read the API docs
-        </Link>
-        <Link
-          href="/signup"
-          className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-surface"
-        >
-          Create an account
-        </Link>
-      </div>
+      </section>
     </div>
   );
 }

@@ -22,7 +22,7 @@ export function RevokeApiKeyButton({
     >
       <button
         type="submit"
-        className="text-sm font-medium text-red-600 hover:underline"
+        className="rounded-sm text-sm font-medium text-negative underline-offset-4 hover:underline"
       >
         Revoke
       </button>
