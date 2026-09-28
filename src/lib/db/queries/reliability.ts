@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, count, desc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, max } from "drizzle-orm";
 import { agents, healthChecks, reliabilityScores } from "@/lib/db/schema";
 import {
   withAnonContext,
@@ -16,7 +16,6 @@ import {
 } from "@/lib/reliability/scoring";
 import {
   classifyReliabilityScore,
-  scoreEvidenceWindowStart,
   type ReliabilityScoreStatus,
 } from "@/lib/reliability/freshness";
 
@@ -201,29 +200,25 @@ export async function getLatestReliabilityScorePublic(
 }
 
 /**
- * Health checks per agent in the trailing scoring window ending at `now` —
- * the evidence count `classifyReliabilityScore` needs. Same bounds as
- * `computeAndStoreReliabilityScore` (both ends inclusive). Runs inside
- * whatever RLS context the caller's `tx` already carries.
+ * Each agent's most recent health check time (pull or push) — what
+ * `classifyReliabilityScore` compares a score against to tell whether the
+ * latest observation produced it. One grouped `max` per call, served by
+ * `health_checks_agent_time_idx`. Runs inside whatever RLS context the
+ * caller's `tx` already carries.
  */
-async function countRecentChecks(
+async function getLatestCheckTimes(
   tx: AppDatabase,
   agentIds: string[],
-  now: Date,
-): Promise<Map<string, number>> {
+): Promise<Map<string, Date>> {
   if (agentIds.length === 0) return new Map();
   const rows = await tx
-    .select({ agentId: healthChecks.agentId, n: count() })
+    .select({ agentId: healthChecks.agentId, latest: max(healthChecks.checkedAt) })
     .from(healthChecks)
-    .where(
-      and(
-        inArray(healthChecks.agentId, agentIds),
-        gte(healthChecks.checkedAt, scoreEvidenceWindowStart(now)),
-        lte(healthChecks.checkedAt, now),
-      ),
-    )
+    .where(inArray(healthChecks.agentId, agentIds))
     .groupBy(healthChecks.agentId);
-  return new Map(rows.map((row) => [row.agentId, Number(row.n)]));
+  return new Map(
+    rows.flatMap((row) => (row.latest ? [[row.agentId, row.latest] as const] : [])),
+  );
 }
 
 /** An agent's latest stored score together with whether it's still current. */
@@ -243,15 +238,15 @@ export async function getReliabilityScoreStatePublic(
   agentId: string,
   now: Date = new Date(),
 ): Promise<ReliabilityScoreState> {
-  const [score, counts] = await Promise.all([
+  const [score, latestChecks] = await Promise.all([
     getLatestReliabilityScorePublic(db, agentId),
-    withAnonContext(db, (tx) => countRecentChecks(tx, [agentId], now)),
+    withAnonContext(db, (tx) => getLatestCheckTimes(tx, [agentId])),
   ]);
   return {
     score,
     status: classifyReliabilityScore({
       latestScore: score,
-      recentCheckCount: counts.get(agentId) ?? 0,
+      latestCheckAt: latestChecks.get(agentId) ?? null,
       now,
     }),
   };
@@ -260,8 +255,9 @@ export async function getReliabilityScoreStatePublic(
 /**
  * Owner-side freshness for already-fetched latest scores (from
  * `getLatestReliabilityScoresForAgents` or
- * `getLatestReliabilityScoreForOwnedAgent`) — one grouped count for every
- * agent, run as the owner so RLS scopes it to their own agents' checks.
+ * `getLatestReliabilityScoreForOwnedAgent`) — one grouped latest-check
+ * lookup for every agent, run as the owner so RLS scopes it to their own
+ * agents' checks. Same rule as the public path, so both always agree.
  */
 export async function getReliabilityScoreStatusesForOwnedAgents(
   db: AppDatabase,
@@ -270,15 +266,15 @@ export async function getReliabilityScoreStatusesForOwnedAgents(
   now: Date = new Date(),
 ): Promise<Map<string, ReliabilityScoreStatus>> {
   const agentIds = [...latestScores.keys()];
-  const counts = await withUserContext(db, ownerId, (tx) =>
-    countRecentChecks(tx, agentIds, now),
+  const latestChecks = await withUserContext(db, ownerId, (tx) =>
+    getLatestCheckTimes(tx, agentIds),
   );
   return new Map(
     agentIds.map((id) => [
       id,
       classifyReliabilityScore({
         latestScore: latestScores.get(id) ?? null,
-        recentCheckCount: counts.get(id) ?? 0,
+        latestCheckAt: latestChecks.get(id) ?? null,
         now,
       }),
     ]),

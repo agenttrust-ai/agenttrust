@@ -8,6 +8,7 @@ import {
   getReliabilityScoreStatusesForOwnedAgents,
 } from "@/lib/db/queries/reliability";
 import { getEffectiveAgentStatus } from "@/lib/monitoring/heartbeat-status";
+import { SCORE_MAX_AGE_HOURS } from "@/lib/reliability/freshness";
 import { buildAgentCard } from "@/lib/validation/agent-card";
 import { AgentForm } from "@/components/agents/agent-form";
 import { DeleteAgentButton } from "@/components/agents/delete-agent-button";
@@ -251,10 +252,13 @@ export default async function AgentDetailPage({
                 </p>
                 {scoreStatus === "stale" && (
                   <p className="mt-2 text-xs text-muted">
-                    Out of date: fewer than 5 health checks in the last 7 days, so
-                    this score no longer counts as current evidence and your agent
-                    isn&apos;t recommended on it. It becomes current again once
-                    monitoring has enough recent checks.
+                    Out of date: the latest health check couldn&apos;t produce a
+                    new score (a score needs at least 5 checks in the 7 days
+                    before it), or monitoring hasn&apos;t refreshed it in over{" "}
+                    {SCORE_MAX_AGE_HOURS} hours. It no longer counts as current
+                    evidence and your agent isn&apos;t recommended on it. It
+                    becomes current again the next time monitoring computes a
+                    score.
                   </p>
                 )}
               </>

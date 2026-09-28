@@ -900,6 +900,61 @@ describe("reliability score freshness in MCP tool output", () => {
     expect(getAgentHealthOutputSchema.safeParse(data).success).toBe(true);
   });
 
+  /** The 2026-09-27 production shape: five samples, scored 12h ago, oldest since aged out of a 7-day window ending now. */
+  async function boundaryScoredAgent(endpointUrl: string) {
+    const agent = await createAgent(db, userA, { ...baseInput, name: "Boundary Mcp Bot", endpointUrl });
+    await activate(agent.id);
+    const run = new Date(Date.now() - 12 * HOUR);
+    for (const ago of [7 * DAY - 1500, 4 * DAY, 2 * DAY, DAY]) await checkAt(agent.id, new Date(run.getTime() - ago));
+    await checkAt(agent.id, run);
+    const { computeAndStoreReliabilityScore } = await import("@/lib/db/queries/reliability");
+    await computeAndStoreReliabilityScore(db, agent.id, run);
+    await client.query(`update public.agents set current_status = 'healthy' where id = $1`, [agent.id]);
+    return agent;
+  }
+
+  it("check_agent_trust boundary regression: stays fresh, drives trustDecision, same output shape", async () => {
+    const url = "https://boundary-mcp-trust.example.com/invoke";
+    await boundaryScoredAgent(url);
+
+    const result = await mcpCheckAgentTrust(db, requestFromIp("203.0.113.233"), { endpointUrl: url });
+    const data = structured(result);
+
+    expect(data.reliabilityScoreStatus).toBe("fresh");
+    expect(typeof data.reliabilityScore).toBe("number");
+    expect(data.trustDecision).toEqual({
+      recommended: true,
+      confidence: "low",
+      reasons: ["Endpoint ownership has not been verified."],
+    });
+    expect(Object.keys(data).sort()).toEqual([
+      "matched", "name", "reliabilityScore", "reliabilityScoreStatus", "slug", "status", "trustDecision", "verified",
+    ]);
+    expect(checkAgentTrustOutputSchema.safeParse(data).success).toBe(true);
+  });
+
+  it("get_agent and get_agent_health boundary regression: fresh, and still valid against their output schemas", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const agent = await boundaryScoredAgent("https://boundary-mcp-get.example.com/invoke");
+
+    const got = structured(await mcpGetAgent(db, rawKey, { slug: agent.slug }));
+    expect(got.reliabilityScoreStatus).toBe("fresh");
+    expect((got.trustDecision as { recommended: boolean }).recommended).toBe(true);
+    expect(getAgentOutputSchema.safeParse(got).success).toBe(true);
+
+    const health = structured(await mcpGetAgentHealth(db, rawKey, { slug: agent.slug }));
+    expect(health.reliabilityScoreStatus).toBe("fresh");
+    expect(getAgentHealthOutputSchema.safeParse(health).success).toBe(true);
+  });
+
+  it("output schemas accept exactly the three freshness values", () => {
+    for (const value of ["none", "fresh", "stale"]) {
+      expect(
+        checkAgentTrustOutputSchema.safeParse({ matched: true, reliabilityScoreStatus: value }).success,
+      ).toBe(true);
+    }
+  });
+
   it("output schemas reject an unknown freshness value", () => {
     expect(
       checkAgentTrustOutputSchema.safeParse({ matched: true, reliabilityScoreStatus: "expired" }).success,

@@ -323,48 +323,125 @@ describe("reliability score freshness (none / fresh / stale)", () => {
     expect(state.score).not.toBeNull();
   });
 
-  it("is 'stale' with exactly 4 checks left in the window, even though the score's window_end is recent", async () => {
-    const now = new Date();
-    const agent = await publicAgent("Stale Four Bot");
-    // One check that has since aged out of the window, four still inside it.
-    await checkAt(agent.id, new Date(now.getTime() - 8 * DAY + HOUR));
-    for (let i = 1; i <= 4; i++) await checkAt(agent.id, new Date(now.getTime() - DAY - i * HOUR));
-    await computeAndStoreReliabilityScore(db, agent.id, new Date(now.getTime() - DAY));
+  /** Records a check at `when` and scores it, exactly as one monitoring run does for one agent. */
+  async function runAt(agentId: string, when: Date) {
+    await checkAt(agentId, when);
+    return computeAndStoreReliabilityScore(db, agentId, when);
+  }
 
-    const state = await getReliabilityScoreStatePublic(db, agent.id, now);
-    expect(state.status).toBe("stale");
-    expect(state.score).not.toBeNull();
+  async function checksInTrailingWeek(agentId: string, at: Date) {
+    const rows = await client.query<{ n: number }>(
+      `select count(*)::int as n from public.health_checks
+        where agent_id = $1 and checked_at >= $2 and checked_at <= $3`,
+      [agentId, new Date(at.getTime() - 7 * DAY), at],
+    );
+    return rows.rows[0].n;
+  }
+
+  // Regression: the 2026-09-27 production case. Agents with exactly five
+  // daily checks were scored at 00:44:10, and went stale ~1.5s later when
+  // the 09-20 check (taken at 00:44:11.5) aged out of a 7-day window
+  // re-counted at read time — with no new evidence either way.
+  it("keeps the 2026-09-27 boundary scores fresh until the next run, though the oldest sample aged out seconds later", async () => {
+    const agent = await publicAgent("Boundary Regression Bot");
+    for (const at of [
+      "2026-09-20T00:44:11.500Z",
+      "2026-09-23T00:44:11.420Z",
+      "2026-09-25T00:44:12.637Z",
+      "2026-09-26T00:44:12.664Z",
+    ]) {
+      await checkAt(agent.id, new Date(at));
+    }
+    const run = new Date("2026-09-27T00:44:10.012Z");
+    expect(await runAt(agent.id, run)).not.toBeNull();
+
+    const audit = new Date("2026-09-27T12:46:48.710Z");
+    // The condition that used to flip it: only 4 of its 5 samples are
+    // still inside a 7-day window ending at the audit.
+    expect(await checksInTrailingWeek(agent.id, audit)).toBe(4);
+
+    for (const at of [run, new Date(run.getTime() + 2000), audit, new Date(run.getTime() + DAY - 60_000)]) {
+      expect((await getReliabilityScoreStatePublic(db, agent.id, at)).status).toBe("fresh");
+    }
   });
 
-  it("counts a check exactly at the 7-day boundary, but not one a second earlier", async () => {
-    const now = new Date();
-    const boundary = new Date(now.getTime() - 7 * DAY);
+  it("is fresh 23h59m after computation, though the oldest sample has left the original window", async () => {
+    const run = new Date();
+    const agent = await publicAgent("Aging Sample Bot");
+    await checkAt(agent.id, new Date(run.getTime() - 7 * DAY + 60_000));
+    for (let i = 1; i <= 3; i++) await checkAt(agent.id, new Date(run.getTime() - i * DAY));
+    expect(await runAt(agent.id, run)).not.toBeNull();
 
-    const onBoundary = await publicAgent("On Boundary Bot");
-    await checkAt(onBoundary.id, boundary);
-    for (let i = 1; i <= 4; i++) await checkAt(onBoundary.id, new Date(now.getTime() - i * HOUR));
-    await computeAndStoreReliabilityScore(db, onBoundary.id, now);
-    expect((await getReliabilityScoreStatePublic(db, onBoundary.id, now)).status).toBe("fresh");
-
-    const pastBoundary = await publicAgent("Past Boundary Bot");
-    await checkAt(pastBoundary.id, new Date(boundary.getTime() - 1000));
-    for (let i = 1; i <= 4; i++) await checkAt(pastBoundary.id, new Date(now.getTime() - i * HOUR));
-    // Scored a second earlier, when all five still counted.
-    await computeAndStoreReliabilityScore(db, pastBoundary.id, new Date(now.getTime() - 1000));
-    expect((await getReliabilityScoreStatePublic(db, pastBoundary.id, now)).status).toBe("stale");
+    const later = new Date(run.getTime() + DAY - 60_000);
+    expect(await checksInTrailingWeek(agent.id, later)).toBe(4);
+    expect((await getReliabilityScoreStatePublic(db, agent.id, later)).status).toBe("fresh");
   });
 
-  it("stays fresh when checks continued after the score's window_end (within 7 days)", async () => {
-    const now = new Date();
-    const agent = await publicAgent("Continuing Bot");
-    for (let i = 0; i < MIN_SAMPLES_FOR_SCORE; i++) await checkAt(agent.id, new Date(now.getTime() - 3 * DAY - i * HOUR));
-    await computeAndStoreReliabilityScore(db, agent.id, new Date(now.getTime() - 3 * DAY));
-    for (let i = 1; i <= 3; i++) await checkAt(agent.id, new Date(now.getTime() - i * DAY + HOUR));
+  it("goes stale once a newer check is 10 minutes old without having produced a score", async () => {
+    const t = new Date();
+    const agent = await publicAgent("Insufficient Rerun Bot");
+    // Five samples at T; two days later only three remain in the window.
+    await checkAt(agent.id, new Date(t.getTime() - 7 * DAY + HOUR));
+    await checkAt(agent.id, new Date(t.getTime() - 6 * DAY));
+    await checkAt(agent.id, new Date(t.getTime() - 5 * DAY - HOUR));
+    await checkAt(agent.id, new Date(t.getTime() - 4 * DAY));
+    expect(await runAt(agent.id, t)).not.toBeNull();
 
-    expect((await getReliabilityScoreStatePublic(db, agent.id, now)).status).toBe("fresh");
+    const rerun = new Date(t.getTime() + 2 * DAY);
+    expect(await runAt(agent.id, rerun)).toBeNull();
+    expect(await scoreRows(agent.id)).toHaveLength(1);
+
+    // Within the settle window the previous score still stands…
+    expect((await getReliabilityScoreStatePublic(db, agent.id, new Date(rerun.getTime() + 5 * 60_000))).status).toBe(
+      "fresh",
+    );
+    // …then the observation that couldn't be scored makes it stale.
+    for (const after of [10 * 60_000, 12 * HOUR]) {
+      const state = await getReliabilityScoreStatePublic(db, agent.id, new Date(rerun.getTime() + after));
+      expect(state.status).toBe("stale");
+      expect(state.score).not.toBeNull();
+    }
   });
 
-  it("is stale when the score's window_end is older than 7 days, even with enough new checks since", async () => {
+  it("doesn't flicker stale in the moment between a check and its own score being written", async () => {
+    const t = new Date();
+    const agent = await publicAgent("Mid Write Bot");
+    for (let i = 1; i <= MIN_SAMPLES_FOR_SCORE; i++) await checkAt(agent.id, new Date(t.getTime() - i * DAY + HOUR));
+    expect(await runAt(agent.id, t)).not.toBeNull();
+
+    const next = new Date(t.getTime() + DAY);
+    await checkAt(agent.id, next); // written; its score isn't yet
+    expect((await getReliabilityScoreStatePublic(db, agent.id, new Date(next.getTime() + 500))).status).toBe("fresh");
+    await computeAndStoreReliabilityScore(db, agent.id, next);
+    expect((await getReliabilityScoreStatePublic(db, agent.id, new Date(next.getTime() + HOUR))).status).toBe("fresh");
+  });
+
+  it("stays fresh while each monitoring run keeps rescoring", async () => {
+    const start = new Date(Date.now() - 6 * DAY);
+    const agent = await publicAgent("Daily Bot");
+    for (let d = 0; d <= 6; d++) await runAt(agent.id, new Date(start.getTime() + d * DAY));
+
+    const last = new Date(start.getTime() + 6 * DAY);
+    expect((await getReliabilityScoreStatePublic(db, agent.id, new Date(last.getTime() + 20 * HOUR))).status).toBe(
+      "fresh",
+    );
+  });
+
+  it("goes stale after 50 hours without a new score — monitoring stopped", async () => {
+    const t = new Date(Date.now() - 3 * DAY);
+    const agent = await publicAgent("Silent Bot");
+    for (let i = 1; i <= MIN_SAMPLES_FOR_SCORE; i++) await checkAt(agent.id, new Date(t.getTime() - i * HOUR));
+    expect(await runAt(agent.id, t)).not.toBeNull();
+
+    expect((await getReliabilityScoreStatePublic(db, agent.id, new Date(t.getTime() + 50 * HOUR))).status).toBe(
+      "fresh",
+    );
+    expect((await getReliabilityScoreStatePublic(db, agent.id, new Date(t.getTime() + 50 * HOUR + 1))).status).toBe(
+      "stale",
+    );
+  });
+
+  it("stays stale for a score whose window_end is over a week old, even with enough new checks since", async () => {
     const now = new Date();
     const agent = await publicAgent("Old Window Bot");
     for (let i = 0; i < MIN_SAMPLES_FOR_SCORE; i++) await checkAt(agent.id, new Date(now.getTime() - 8 * DAY - i * HOUR));
@@ -410,5 +487,59 @@ describe("reliability score freshness (none / fresh / stale)", () => {
     expect(statuses.get(fresh.id)).toBe("fresh");
     expect(statuses.get(stale.id)).toBe("stale");
     expect(statuses.get(none.id)).toBe("none");
+  });
+
+  it("gives the public and owner paths the same classification in every case", async () => {
+    const t = new Date();
+    const cases: { name: string; setup: (id: string) => Promise<void>; expected: string }[] = [
+      { name: "Agree None Bot", setup: async () => {}, expected: "none" },
+      {
+        name: "Agree Fresh Bot",
+        setup: async (id) => {
+          for (let i = 1; i <= MIN_SAMPLES_FOR_SCORE; i++) await checkAt(id, new Date(t.getTime() - i * HOUR));
+          await runAt(id, t);
+        },
+        expected: "fresh",
+      },
+      {
+        name: "Agree Unscored Rerun Bot",
+        setup: async (id) => {
+          const scoredAt = new Date(t.getTime() - 2 * DAY);
+          for (let i = 1; i <= MIN_SAMPLES_FOR_SCORE; i++) await checkAt(id, new Date(scoredAt.getTime() - 7 * DAY + i * HOUR));
+          await runAt(id, scoredAt);
+          await runAt(id, new Date(t.getTime() - HOUR));
+        },
+        expected: "stale",
+      },
+      {
+        name: "Agree Old Bot",
+        setup: async (id) => {
+          const scoredAt = new Date(t.getTime() - 4 * DAY);
+          for (let i = 1; i <= MIN_SAMPLES_FOR_SCORE; i++) await checkAt(id, new Date(scoredAt.getTime() - i * HOUR));
+          await runAt(id, scoredAt);
+        },
+        expected: "stale",
+      },
+    ];
+
+    const ids: string[] = [];
+    for (const c of cases) {
+      const agent = await publicAgent(c.name);
+      await c.setup(agent.id);
+      ids.push(agent.id);
+    }
+
+    const latest = await getLatestReliabilityScoresForAgents(db, userA, ids);
+    const owner = await getReliabilityScoreStatusesForOwnedAgents(
+      db,
+      userA,
+      new Map(ids.map((id) => [id, latest.get(id) ?? null])),
+      t,
+    );
+    for (const [i, c] of cases.entries()) {
+      const pub = await getReliabilityScoreStatePublic(db, ids[i], t);
+      expect(pub.status, c.name).toBe(c.expected);
+      expect(owner.get(ids[i]), c.name).toBe(c.expected);
+    }
   });
 });

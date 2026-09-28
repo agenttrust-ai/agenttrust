@@ -149,9 +149,9 @@ export default async function PublicAgentProfilePage({
               </p>
               {scoreState.status === "stale" && (
                 <p className="mt-2 text-xs text-muted">
-                  Out of date: not enough health checks in the last 7 days
-                  for this to count as current evidence. Shown for reference
-                  only.
+                  Out of date: recent monitoring hasn&apos;t produced a current
+                  score, so this no longer counts as current evidence. Shown
+                  for reference only.
                 </p>
               )}
             </>

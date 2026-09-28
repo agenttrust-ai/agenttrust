@@ -7,6 +7,7 @@ import {
   SCORE_THRESHOLD_RECOMMENDED,
   SCORE_WINDOW_DAYS,
 } from "@/lib/reliability/scoring";
+import { SCORE_MAX_AGE_HOURS } from "@/lib/reliability/freshness";
 import { WELL_KNOWN_VERIFICATION_PATH } from "@/lib/verification/ownership";
 import { EndpointCheckForm } from "@/components/check/endpoint-check-form";
 import { CodeBlock } from "@/components/dev/code-block";
@@ -131,7 +132,7 @@ const EVIDENCE_DETAIL: { kind: EvidenceKind; term: string; detail: string }[] = 
   {
     kind: "freshness",
     term: "Evidence freshness",
-    detail: `Current while there are at least ${MIN_SAMPLES_FOR_SCORE} checks in the last ${SCORE_WINDOW_DAYS} days. An out-of-date score is shown for reference but never counts toward a recommendation.`,
+    detail: `Current when the agent's latest check produced it — which takes at least ${MIN_SAMPLES_FOR_SCORE} checks in the ${SCORE_WINDOW_DAYS} days before it — and it's at most ${SCORE_MAX_AGE_HOURS} hours old. An out-of-date score is shown for reference but never counts toward a recommendation.`,
   },
   {
     kind: "ownership",

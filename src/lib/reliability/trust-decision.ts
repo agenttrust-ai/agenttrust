@@ -1,14 +1,16 @@
 import type { AgentHealthStatus } from "@/lib/monitoring/status";
 import {
-  MIN_SAMPLES_FOR_SCORE,
   SCORE_THRESHOLD_HIGH_CONFIDENCE,
   SCORE_THRESHOLD_RECOMMENDED,
-  SCORE_WINDOW_DAYS,
 } from "./scoring";
 import type { ReliabilityScoreStatus } from "./freshness";
 
-/** The `reasons` entry for a historical score that current evidence no longer supports. */
-export const STALE_SCORE_REASON = `Reliability score is out of date: fewer than ${MIN_SAMPLES_FOR_SCORE} health checks in the last ${SCORE_WINDOW_DAYS} days, so it no longer counts as current evidence.`;
+/**
+ * The `reasons` entry for a historical score that current evidence no
+ * longer supports — see `classifyReliabilityScore` for exactly when that is.
+ */
+export const STALE_SCORE_REASON =
+  "Reliability score is out of date: recent monitoring hasn't produced a current score, so it no longer counts as current evidence.";
 
 /**
  * A deterministic decision layer on top of already-existing trust signals —

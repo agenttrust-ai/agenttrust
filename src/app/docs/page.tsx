@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { SCORE_MAX_AGE_HOURS } from "@/lib/reliability/freshness";
 import { CodeBlock as Code } from "@/components/dev/code-block";
 import { CopyButton } from "@/components/dev/copy-button";
 import { Callout } from "@/components/ui/callout";
@@ -516,10 +517,12 @@ Authorization: Bearer at_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}</Code>
           <p>
             <code>reliabilityScoreStatus</code> (<code>&quot;none&quot;</code>{" "}
             | <code>&quot;fresh&quot;</code> | <code>&quot;stale&quot;</code>):{" "}
-            <code>none</code> — no score computed yet; <code>fresh</code> — at
-            least 5 health checks in the last 7 days (the same evidence the
-            score itself requires); <code>stale</code> — a score exists but
-            current monitoring no longer supports it.{" "}
+            <code>none</code> — no score computed yet; <code>fresh</code> — the
+            latest score was produced by the agent&apos;s most recent health
+            check (a score needs at least 5 checks in the 7 days before it)
+            and is at most {SCORE_MAX_AGE_HOURS} hours old; <code>stale</code>{" "}
+            — a score exists, but it&apos;s older than that, or a newer health
+            check couldn&apos;t produce a replacement.{" "}
             <strong>
               A stale <code>reliabilityScore</code> is the last computed value,
               kept for reference — not current evidence

@@ -24,7 +24,8 @@ function data(input: {
 }
 
 const render = (props: Parameters<typeof TrustReport>[0]) => renderToStaticMarkup(TrustReport(props));
-const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&quot;/g, '"').replace(/\s+/g, " ");
+const text = (html: string) =>
+  html.replace(/<[^>]+>/g, " ").replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/\s+/g, " ");
 
 describe("verdictOf — presentation of the backend's own fields only", () => {
   it("maps insufficient_data to its own neutral verdict, regardless of `recommended`", () => {

@@ -177,9 +177,12 @@ recommended (boolean): true only when `status === "healthy"` AND
 
 reliabilityScoreStatus ("none" | "fresh" | "stale"):
   - `none`: no score computed yet.
-  - `fresh`: at least 5 health checks in the last 7 days (the same
-    evidence the score itself requires).
-  - `stale`: a score exists but current monitoring no longer supports it.
+  - `fresh`: the latest score was produced by the agent's most recent
+    health check (a score needs at least 5 checks in the 7 days before
+    it) and is at most 50 hours old. It doesn't change between monitoring
+    runs.
+  - `stale`: a score exists, but it's more than 50 hours old, or a newer
+    health check couldn't produce a replacement.
     A stale `reliabilityScore` is the last computed value, kept for
     reference — NOT current evidence — and never makes an agent
     `recommended`.

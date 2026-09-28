@@ -1439,6 +1439,81 @@ describe("reliability score freshness in REST responses", () => {
     expect(data.trustDecision.recommended).toBe(true);
   });
 
+  /**
+   * The 2026-09-27 production shape: five samples, scored 12 hours ago,
+   * whose oldest sample has since aged out of a 7-day window ending now.
+   */
+  async function boundaryScoredAgent(endpointUrl: string) {
+    const agent = await createAgent(db, userA, { ...baseInput, name: "Boundary Rest Bot", endpointUrl });
+    await activate(agent.id);
+    const run = new Date(Date.now() - 12 * HOUR);
+    for (const ago of [7 * DAY - 1500, 4 * DAY, 2 * DAY, DAY]) await checkAt(agent.id, new Date(run.getTime() - ago));
+    await checkAt(agent.id, run);
+    await computeAndStoreReliabilityScore(db, agent.id, run);
+    await client.query(`update public.agents set current_status = 'healthy' where id = $1`, [agent.id]);
+    return agent;
+  }
+
+  const AGENT_KEYS = [
+    "agentCard", "capabilities", "createdAt", "description", "httpStatus", "id", "lastCheckedAt",
+    "latencyMs", "name", "ownershipVerifiedAt", "reliabilityScore", "reliabilityScoreComputedAt",
+    "reliabilityScoreStatus", "slug", "source", "status", "trustDecision", "verified", "version",
+  ];
+  const HEALTH_KEYS = [
+    "agentId", "checkStatus", "httpStatus", "lastCheckedAt", "latencyMs", "reliabilityScore",
+    "reliabilityScoreComputedAt", "reliabilityScoreStatus", "slug", "status",
+  ];
+
+  it("boundary regression: a score whose oldest sample aged out after computation stays fresh and drives trustDecision", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const agent = await boundaryScoredAgent("https://boundary-rest.example.com/invoke");
+
+    const res = await handleGetAgent(db, requestTo(`/api/v1/agents/${agent.slug}`, rawKey), agent.slug);
+    const { data } = await bodyOf(res);
+
+    expect(data.reliabilityScoreStatus).toBe("fresh");
+    expect(typeof data.reliabilityScore).toBe("number");
+    expect(data.trustDecision).toEqual({
+      recommended: true,
+      confidence: "low",
+      reasons: ["Endpoint ownership has not been verified."],
+    });
+    expect(Object.keys(data).sort()).toEqual(AGENT_KEYS);
+
+    const health = await bodyOf(
+      await handleGetAgentHealth(db, requestTo(`/api/v1/agents/${agent.slug}/health`, rawKey), agent.slug),
+    );
+    expect(health.data.reliabilityScoreStatus).toBe("fresh");
+    expect(Object.keys(health.data).sort()).toEqual(HEALTH_KEYS);
+  });
+
+  it("a newer check that couldn't produce a score makes the old one stale, with the same response shape", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const agent = await createAgent(db, userA, {
+      ...baseInput,
+      name: "Unscored Rerun Rest Bot",
+      endpointUrl: "https://unscored-rerun-rest.example.com/invoke",
+    });
+    await activate(agent.id);
+    const scoredAt = new Date(Date.now() - 2 * DAY);
+    for (let i = 1; i <= MIN_SAMPLES_FOR_SCORE; i++) await checkAt(agent.id, new Date(scoredAt.getTime() - 7 * DAY + i * HOUR));
+    await computeAndStoreReliabilityScore(db, agent.id, scoredAt);
+    const rerun = new Date(Date.now() - HOUR);
+    await checkAt(agent.id, rerun);
+    expect(await computeAndStoreReliabilityScore(db, agent.id, rerun)).toBeNull();
+    await client.query(`update public.agents set current_status = 'healthy' where id = $1`, [agent.id]);
+
+    const { data } = await bodyOf(
+      await handleGetAgent(db, requestTo(`/api/v1/agents/${agent.slug}`, rawKey), agent.slug),
+    );
+    expect(data.reliabilityScoreStatus).toBe("stale");
+    expect(typeof data.reliabilityScore).toBe("number");
+    expect(data.trustDecision.recommended).toBe(false);
+    expect(data.trustDecision.confidence).toBe("insufficient_data");
+    expect(data.trustDecision.reasons).toContain(STALE_SCORE_REASON);
+    expect(Object.keys(data).sort()).toEqual(AGENT_KEYS);
+  });
+
   it("an agent with no score reports status 'none' and a null score", async () => {
     const { rawKey } = await createApiKey(db, userA, { name: "k" });
     const agent = await createAgent(db, userA, {

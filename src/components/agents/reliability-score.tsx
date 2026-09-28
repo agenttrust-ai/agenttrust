@@ -40,7 +40,7 @@ export function ReliabilityScoreBadge({
       <StatusChip
         tone="neutral"
         icon={IconClock}
-        title="Not enough recent health checks to count this as current evidence."
+        title="Recent monitoring hasn't produced a current score, so this no longer counts as current evidence."
       >
         Out of date
         <span className="font-mono tabular-nums opacity-75">
