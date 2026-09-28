@@ -548,6 +548,32 @@ describe("importMcpRegistryAgents — pagination and resume", () => {
     expect((await runRecords()).at(-1)?.cursorReset).toBe(true);
   });
 
+  it.each([429, 408])(
+    "keeps its place when the registry answers %i (retry later) on a stored cursor — never restarts from page 1",
+    async (status) => {
+      await seedResumeCursor("deep-cursor");
+      mockedFetch.mockRejectedValueOnce(
+        new McpRegistryFetchError(`MCP Registry returned HTTP ${status}.`, undefined, status),
+      );
+
+      await expect(importMcpRegistryAgents(db, { fetchLimit: 50 })).rejects.toBeInstanceOf(
+        McpRegistryFetchError,
+      );
+
+      expect(cursorsRequested()).toEqual(["deep-cursor"]);
+      const last = (await runRecords()).at(-1);
+      expect(last?.stoppedReason).toBe("registry_error");
+      expect(last?.cursorReset).toBe(false);
+      expect(last?.resumeCursor).toBe("deep-cursor");
+
+      // The next run resumes from the same place.
+      mockedFetch.mockReset();
+      mockedFetch.mockResolvedValueOnce({ entries: [], nextCursor: null });
+      await importMcpRegistryAgents(db, { fetchLimit: 50 });
+      expect(cursorsRequested()).toEqual(["deep-cursor"]);
+    },
+  );
+
   it("ignores an unusable stored cursor and starts from the first page", async () => {
     await seedResumeCursor(12345);
     mockedFetch.mockResolvedValueOnce({ entries: [], nextCursor: null });

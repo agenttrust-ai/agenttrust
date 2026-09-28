@@ -103,9 +103,17 @@ function startOfUtcDay(date: Date): Date {
 }
 
 /**
+ * 4xx statuses that mean "try again later", not "this request is invalid".
+ * A rate-limited or timed-out request says nothing about the cursor.
+ */
+const RETRY_LATER_STATUSES: ReadonlySet<number> = new Set([408, 429]);
+
+/**
  * A 4xx on a request that carried a stored cursor means the registry
- * rejected that cursor itself (5xx and network errors are the registry
- * being unavailable, which a later run should simply retry).
+ * rejected that cursor itself (5xx, network errors, and the retry-later
+ * 4xx statuses above are the registry being unavailable, which a later run
+ * should simply retry — from the same cursor, so the traversal position
+ * isn't lost).
  */
 function isRejectedCursor(error: unknown, cursor: string | null): boolean {
   return (
@@ -113,7 +121,8 @@ function isRejectedCursor(error: unknown, cursor: string | null): boolean {
     error instanceof McpRegistryFetchError &&
     typeof error.status === "number" &&
     error.status >= 400 &&
-    error.status < 500
+    error.status < 500 &&
+    !RETRY_LATER_STATUSES.has(error.status)
   );
 }
 
