@@ -93,6 +93,31 @@ describe("AgentTrust's A2A Agent Card (public/.well-known/agent-card.json)", () 
     expect(card.url).toBe("https://getagenttrust.com/api/v1");
   });
 
+  it("doesn't claim the trust check is key-free over its REST url, and points to the real anonymous MCP tool", () => {
+    const card = readCard();
+    // The card's url is the authenticated REST API, and its card-level
+    // security requires a bearer key — so no skill may present itself as
+    // key-free over that url.
+    expect(card.security).toEqual([{ bearerAuth: [] }]);
+    const skill = (card.skills as { id: string; tags: string[]; description: string }[]).find(
+      (s) => s.id === "check-agent-trust",
+    )!;
+    expect(skill.tags).not.toContain("no-api-key");
+    expect(skill.description).toMatch(/requires an API key/);
+    // The anonymous path is real, but it's MCP — named exactly, never as an A2A interface.
+    expect(skill.description).toContain("check_agent_trust");
+    expect(skill.description).toContain("https://getagenttrust.com/api/mcp");
+    expect(skill.description).toMatch(/not an A2A interface/);
+  });
+
+  it("doesn't advertise the MCP endpoint as an A2A interface", () => {
+    const card = readCard();
+    for (const field of ["additionalInterfaces", "supportedInterfaces", "preferredTransport"]) {
+      expect(card).not.toHaveProperty(field);
+    }
+    expect(card.url).not.toContain("/api/mcp");
+  });
+
   it("describes the real Bearer auth scheme without embedding any actual credential", () => {
     const card = readCard();
     const schemes = card.securitySchemes as Record<string, { type: string; scheme?: string }>;
