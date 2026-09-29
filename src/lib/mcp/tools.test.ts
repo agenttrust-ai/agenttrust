@@ -679,6 +679,36 @@ describe("mcpCheckAgentTrust", () => {
     expect(text).not.toContain("anon-private-fields.example.com");
   });
 
+  it("never exposes a verified agent's challenge token — only the verified result", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const agent = await createAgent(db, userA, {
+      ...baseInput,
+      name: "Anon Token Bot",
+      endpointUrl: "https://anon-token.example.com/v1/invoke",
+    });
+    await activate(agent.id);
+    const token = "c".repeat(48);
+    await client.query(
+      `update public.agents set ownership_verification_token = $2, ownership_verified_at = now() where id = $1`,
+      [agent.id, token],
+    );
+
+    const trust = await mcpCheckAgentTrust(db, requestFromIp("203.0.113.207"), {
+      endpointUrl: "https://anon-token.example.com/v1/invoke",
+    });
+    expect(structured(trust).verified).toBe(true);
+    const outputs = [
+      trust,
+      await mcpGetAgent(db, rawKey, { slug: agent.slug }),
+      await mcpGetAgentHealth(db, rawKey, { slug: agent.slug }),
+    ];
+    for (const output of outputs) {
+      const serialized = JSON.stringify(output);
+      expect(serialized).not.toContain(token);
+      expect(serialized).not.toContain("ownershipVerificationToken");
+    }
+  });
+
   it("rejects empty endpointUrl at the schema level", () => {
     expect(checkAgentTrustInputSchema.safeParse({ endpointUrl: "" }).success).toBe(false);
     expect(checkAgentTrustInputSchema.safeParse({}).success).toBe(false);

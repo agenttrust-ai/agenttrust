@@ -457,6 +457,10 @@ export async function checkOwnershipVerification(
       "Start verification before checking it.",
     );
   }
+  // What this check verifies against — the final write only succeeds if
+  // the row still holds exactly these values (see below).
+  const expectedToken = agent.ownershipVerificationToken;
+  const expectedEndpointUrl = agent.endpointUrl;
 
   const cooldownCutoff = new Date(
     Date.now() - OWNERSHIP_CHECK_COOLDOWN_SECONDS * 1000,
@@ -504,26 +508,49 @@ export async function checkOwnershipVerification(
     );
   }
 
-  const verificationUrl = buildVerificationUrl(agent.endpointUrl);
+  const verificationUrl = buildVerificationUrl(expectedEndpointUrl);
   const result = await fetchOwnershipVerificationFile(verificationUrl);
   if (!result.success) {
     throw new AppError(ErrorCode.VALIDATION_ERROR, result.errorMessage);
   }
-  if (!tokenMatches(result.body, agent.ownershipVerificationToken)) {
+  if (!tokenMatches(result.body, expectedToken)) {
     throw new AppError(
       ErrorCode.VALIDATION_ERROR,
       "The verification file's contents didn't match the expected token.",
     );
   }
 
+  // The fetch above can take seconds, and the owner can edit the agent
+  // meanwhile — changing the endpoint clears the token and any verification
+  // (see `resolveOwnershipColumnsForUpdate`). So only record success if the
+  // row still has exactly the endpoint and token this fetch verified;
+  // otherwise a check started against one origin could mark the agent
+  // verified for a different one.
   return withUserContext(db, ownerId, async (tx) => {
     const [updated] = await tx
       .update(agents)
       .set({ ownershipVerifiedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(agents.id, agentId), eq(agents.ownerId, ownerId)))
+      .where(
+        and(
+          eq(agents.id, agentId),
+          eq(agents.ownerId, ownerId),
+          eq(agents.endpointUrl, expectedEndpointUrl),
+          eq(agents.ownershipVerificationToken, expectedToken),
+        ),
+      )
       .returning();
-    if (!updated) throw new AppError(ErrorCode.NOT_FOUND, AGENT_NOT_FOUND);
-    return updated;
+    if (updated) return updated;
+
+    const [stillOwned] = await tx
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.ownerId, ownerId)))
+      .limit(1);
+    if (!stillOwned) throw new AppError(ErrorCode.NOT_FOUND, AGENT_NOT_FOUND);
+    throw new AppError(
+      ErrorCode.CONFLICT,
+      "This agent's endpoint or verification changed while it was being checked. Start verification again.",
+    );
   });
 }
 

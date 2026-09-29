@@ -143,6 +143,22 @@ beforeAll(async () => {
         res.end();
         return;
       }
+      if (url === "/redirect-verification-other-host") {
+        // Same server (the test lookup resolves every name to it), but a
+        // different hostname — so a different origin.
+        res.writeHead(302, {
+          Location: `https://elsewhere.test.invalid:${port}/.well-known/agenttrust-verification.txt`,
+        });
+        res.end();
+        return;
+      }
+      if (url === "/redirect-verification-other-port") {
+        res.writeHead(302, {
+          Location: `https://agent.test.invalid:${port + 1}/.well-known/agenttrust-verification.txt`,
+        });
+        res.end();
+        return;
+      }
       if (url === "/verification-too-large") {
         res.writeHead(200, { "content-type": "text/plain" });
         res.end("x".repeat(10_000));
@@ -530,12 +546,23 @@ describe("fetchOwnershipVerificationFile", () => {
     expect(result).toEqual({ success: true, body: "the-correct-token\n" });
   });
 
-  it("follows a redirect to reach the file", async () => {
+  it("follows a same-origin redirect to reach the file", async () => {
     const result = await fetchOwnershipVerificationFile(
       withPort("/redirect-to-verification-file", port),
       { lookup: testLookup, extraCaCert: cert.cert },
     );
     expect(result).toEqual({ success: true, body: "the-correct-token\n" });
+  });
+
+  it.each([
+    ["a different host", "/redirect-verification-other-host"],
+    ["a different port", "/redirect-verification-other-port"],
+  ])("fails a redirect to %s — another origin can't vouch for this one", async (_label, path) => {
+    const result = await fetchOwnershipVerificationFile(withPort(path, port), {
+      lookup: testLookup,
+      extraCaCert: cert.cert,
+    });
+    expect(result).toMatchObject({ success: false, errorCode: "CROSS_ORIGIN_REDIRECT" });
   });
 
   it("fails with a safe error on a non-200 response, never exposing raw response content", async () => {

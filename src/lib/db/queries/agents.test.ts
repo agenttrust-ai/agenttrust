@@ -653,6 +653,75 @@ describe("endpoint-ownership verification", () => {
     });
   });
 
+  describe("checkOwnershipVerification — changes during the fetch (TOCTOU)", () => {
+    it("does NOT verify when the endpoint changes while the file is being fetched", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      const started = await startOwnershipVerification(db, userA, created.id);
+      const token = started.ownershipVerificationToken!;
+      // The owner repoints the agent at another origin mid-fetch; the
+      // original origin still serves the right token.
+      mockedFetchOwnershipVerificationFile.mockImplementation(async () => {
+        await updateOwnedAgent(db, userA, created.id, {
+          ...baseInput,
+          endpointUrl: "https://someone-else.example.com/v1/invoke",
+        });
+        return { success: true, body: token };
+      });
+
+      const failure = await checkOwnershipVerification(db, userA, created.id).catch((e) => e);
+      expect(failure).toMatchObject({ code: ErrorCode.CONFLICT });
+      expect(String(failure.message)).not.toContain(token);
+
+      const after = await getOwnedAgent(db, userA, created.id);
+      expect(after.endpointUrl).toBe("https://someone-else.example.com/v1/invoke");
+      expect(after.ownershipVerifiedAt).toBeNull();
+    });
+
+    it("does NOT verify when the token changes while the file is being fetched", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      const started = await startOwnershipVerification(db, userA, created.id);
+      const token = started.ownershipVerificationToken!;
+      mockedFetchOwnershipVerificationFile.mockImplementation(async () => {
+        await client.query(
+          `update public.agents set ownership_verification_token = $2 where id = $1`,
+          [created.id, "f".repeat(48)],
+        );
+        return { success: true, body: token };
+      });
+
+      const failure = await checkOwnershipVerification(db, userA, created.id).catch((e) => e);
+      expect(failure).toMatchObject({ code: ErrorCode.CONFLICT });
+      expect(String(failure.message)).not.toContain(token);
+      expect((await getOwnedAgent(db, userA, created.id)).ownershipVerifiedAt).toBeNull();
+    });
+
+    it("still reports NOT_FOUND if the agent was deleted while the file was being fetched", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      const started = await startOwnershipVerification(db, userA, created.id);
+      mockedFetchOwnershipVerificationFile.mockImplementation(async () => {
+        await deleteOwnedAgent(db, userA, created.id);
+        return { success: true, body: started.ownershipVerificationToken! };
+      });
+
+      await expect(checkOwnershipVerification(db, userA, created.id)).rejects.toMatchObject({
+        code: ErrorCode.NOT_FOUND,
+      });
+    });
+
+    it("verifies normally when nothing changed during the fetch", async () => {
+      const created = await createAgent(db, userA, baseInput);
+      const started = await startOwnershipVerification(db, userA, created.id);
+      mockedFetchOwnershipVerificationFile.mockResolvedValue({
+        success: true,
+        body: started.ownershipVerificationToken!,
+      });
+
+      const verified = await checkOwnershipVerification(db, userA, created.id);
+      expect(verified.ownershipVerifiedAt).not.toBeNull();
+      expect(verified.endpointUrl).toBe(baseInput.endpointUrl);
+    });
+  });
+
   describe("checkOwnershipVerification — rate limiting (beta blocker fix)", () => {
     function mockSuccess(token: string) {
       mockedFetchOwnershipVerificationFile.mockResolvedValue({ success: true, body: token });

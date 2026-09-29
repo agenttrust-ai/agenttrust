@@ -461,6 +461,8 @@ export async function fetchOwnershipVerificationFile(
       errorMessage: error instanceof Error ? error.message : "Blocked URL.",
     };
   }
+  // assertSafeAgentUrl has already proven `url` parses.
+  const verifiedOrigin = new URL(url).origin;
 
   const agent = new Agent({
     connect: {
@@ -485,6 +487,19 @@ export async function fetchOwnershipVerificationFile(
           success: false,
           errorCode: "SSRF_BLOCKED",
           errorMessage: error instanceof Error ? error.message : "Blocked URL.",
+        };
+      }
+      // Verification proves control of *this* origin, so the file must be
+      // served by it. A redirect elsewhere (e.g. an open redirect on the
+      // origin) would let another origin's content vouch for this one.
+      // Checked after the SSRF gate, which keeps its own, more specific
+      // classification for blocked destinations.
+      if (new URL(currentUrl).origin !== verifiedOrigin) {
+        return {
+          success: false,
+          errorCode: "CROSS_ORIGIN_REDIRECT",
+          errorMessage:
+            "The verification file must be served by the endpoint's own origin, without redirecting to a different one.",
         };
       }
 
