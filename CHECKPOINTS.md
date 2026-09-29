@@ -6,6 +6,41 @@ entry above the previous one, not by editing history.
 
 ---
 
+## MCP REGISTRY RELEASE 1.0.3 — PUBLISHED VIA GITHUB ACTIONS OIDC — 2026-09-29
+
+**Released.** `io.github.agenttrust-ai/agenttrust` 1.0.3 is the latest
+active version in the official MCP Registry (published 2026-09-29 13:47 UTC),
+replacing 1.0.2's listing from 2026-09-20. The production MCP server reports
+the same version in `initialize` (`5b40c86`).
+- Title: "AgentTrust — Pre-Invocation AI Agent Trust & Reliability Checks".
+- Description: "Check an AI agent endpoint before you call it: read-only, no
+  API key, returns a trustDecision." The registry caps descriptions at 100
+  characters; the previous local one (~280) is why the improved metadata had
+  never been published.
+- Remote unchanged: streamable-http `https://getagenttrust.com/api/mcp`. No
+  tool, schema, or behavior change.
+
+**How it was published.** `.github/workflows/publish-mcp-registry.yml`
+(`9bc7ac0`): manual dispatch only, from `main`; `permissions: contents: read,
+id-token: write`; `mcp-publisher` 1.8.1 pinned by SHA-256 and
+`actions/checkout` pinned to a commit. The registry grants
+`io.github.agenttrust-ai/*` from the OIDC token's `repository_owner` claim.
+
+**Why not `mcp-publisher login github`.** Its device-flow login is a GitHub
+App; the registry grants an org namespace only to org Owners it can see via
+`GET /user/memberships/orgs`, which that App's token can't see unless the App
+is installed on the org. Making org membership public or changing the org's
+OAuth app policy doesn't help (see registry issues #1551, #1649). No GitHub,
+org, or OAuth setting was changed; `agenttrust-ai` keeps "Access
+restricted", and membership of `leegwangmyeong` is now public.
+
+**Next release.** Bump `version` in `server.json` and the `serverInfo`
+version in `src/app/api/mcp/route.ts`, deploy, then run the workflow from
+the Actions tab. The registry rejects a version that already exists, and
+published versions can only be deprecated, never deleted.
+
+---
+
 ## P0 RELIABILITY-SCORE FRESHNESS BUG — VERIFIED FIXED — 2026-09-29
 
 **Bug.** On 2026-09-27, 18 agents scored at ~00:44 UTC with exactly 5
