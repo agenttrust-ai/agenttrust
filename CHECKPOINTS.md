@@ -6,6 +6,41 @@ entry above the previous one, not by editing history.
 
 ---
 
+## P0 RELIABILITY-SCORE FRESHNESS BUG — VERIFIED FIXED — 2026-09-29
+
+**Bug.** On 2026-09-27, 18 agents scored at ~00:44 UTC with exactly 5
+checks in their 7-day window went `stale` 1–2 s later: freshness
+re-counted a 7-day window ending at *read* time, so their oldest sample
+aged out between daily runs with no new evidence either way.
+
+**Fix.** `927e636` — freshness is anchored to observations: a score is
+`fresh` when it exists, is at most 50 h old, and no health check ≥ 10 min
+newer than its `window_end` failed to replace it. No schema, scoring,
+monitoring, REST or MCP shape change.
+
+**Verification (read-only, against the normal 2026-09-29 run):**
+- 92/92 pre-existing active pull-mode agents checked; 52 new reliability
+  scores.
+- 52/52 remained `fresh`, 0 `stale`, at every 10-minute step from
+  computation to verification time, and projected to the next run.
+- 0 fresh → stale transitions from the 2026-09-28 11:06 UTC baseline.
+- No `trustDecision` changed because of an unexpected freshness transition.
+- Public (anon role) and owner (authenticated) read paths agreed on every
+  agent.
+- A regression test replaying the exact 2026-09-27 production timestamps
+  fails on the old logic and passes on the fix.
+- Production at verification: 102 active pull-mode agents — 52 `fresh`,
+  50 `none`, 0 `stale`.
+
+**Caveat.** The 2026-09-29 live population did not reproduce the historical
+trigger by itself: every agent is now checked daily (the per-run cap was
+raised from 20 to 500 on 2026-09-24), so check histories no longer have the
+gaps the trigger needs. The regression replay is what proves the fix; the
+live run shows no regression. The trigger can only recur after missed runs
+or above 500 active agents.
+
+---
+
 ## FUNCTION REGION MOVE iad1 → sin1 (MONITORING-ORIGIN CHANGE) — 2026-09-26
 
 **What changed.** `vercel.json` now sets `"regions": ["sin1"]`, so every
