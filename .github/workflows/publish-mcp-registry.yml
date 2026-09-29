@@ -1,0 +1,52 @@
+# Publishes server.json to the official MCP Registry.
+#
+# Authenticates with GitHub Actions OIDC: the registry grants the
+# io.github.agenttrust-ai/* namespace from the token's repository_owner
+# claim, so no personal token, installed app, or org setting is involved.
+#
+# Manual only (Actions tab -> "Publish to MCP Registry" -> Run workflow),
+# and only from main. Bump "version" in server.json (and the MCP server's
+# reported version) before running — the registry rejects a version that
+# is already published.
+name: Publish to MCP Registry
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # the OIDC token the registry exchanges; nothing else
+
+concurrency:
+  group: publish-mcp-registry
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install mcp-publisher 1.8.1 (checksum-verified)
+        env:
+          PUBLISHER_URL: https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz
+          PUBLISHER_SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
+        run: |
+          curl -fsSL -o mcp-publisher.tar.gz "$PUBLISHER_URL"
+          echo "$PUBLISHER_SHA256  mcp-publisher.tar.gz" | sha256sum -c -
+          tar -xzf mcp-publisher.tar.gz mcp-publisher
+          ./mcp-publisher --version
+
+      - name: Validate server.json
+        run: ./mcp-publisher validate
+
+      - name: Log in with GitHub Actions OIDC
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish
+        run: ./mcp-publisher publish
