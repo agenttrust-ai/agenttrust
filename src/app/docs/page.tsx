@@ -9,6 +9,7 @@ export const metadata: Metadata = {
   title: "API Reference — AgentTrust",
   description:
     "How to authenticate, look up an agent by endpoint URL, and interpret its trust decision — REST and MCP.",
+  alternates: { canonical: "/docs" },
 };
 
 /**
