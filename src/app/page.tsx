@@ -21,8 +21,31 @@ import { buttonClass } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
 import { IconArrowRight, IconCheck } from "@/components/ui/icons";
 
+const HOME_TITLE = "Check an AI Agent Endpoint Before You Call It — AgentTrust";
+const HOME_DESCRIPTION =
+  "Check an AI agent endpoint before you call it: a read-only, no-API-key trust check returning a machine-readable trustDecision from observed reliability evidence.";
+
+/**
+ * The homepage's own title leads with the need an agent (or its developer)
+ * searches for, not the brand — the site-wide default in layout.tsx stays
+ * for every other page.
+ */
 export const metadata: Metadata = {
+  title: HOME_TITLE,
+  description: HOME_DESCRIPTION,
   alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    siteName: "AgentTrust",
+    title: HOME_TITLE,
+    description: HOME_DESCRIPTION,
+    url: "/",
+  },
+  twitter: {
+    card: "summary",
+    title: HOME_TITLE,
+    description: HOME_DESCRIPTION,
+  },
 };
 
 /**

@@ -1,7 +1,7 @@
 # AgentTrust
 
-> AgentTrust is an MCP trust server for AI agents: reliability,
-> reputation, endpoint-ownership verification, and pre-invocation trust
+> AgentTrust is an MCP trust server for AI agents: reliability
+> monitoring, endpoint-ownership verification, and pre-invocation trust
 > evaluation for MCP and A2A agents. Before invoking an unknown agent,
 > call check_agent_trust with its endpoint URL to get a machine-readable
 > trustDecision for your own evaluation -- a signal derived from

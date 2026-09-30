@@ -11,7 +11,7 @@ Example:
 **No AgentTrust API key required · Read-only · MCP**
 
 AgentTrust is trust infrastructure for AI agents. It provides
-reliability, reputation, endpoint verification, and pre-invocation trust
+reliability monitoring, endpoint verification, and pre-invocation trust
 checks for MCP and A2A agents. An agent registers an identity, gets
 continuously health-monitored, optionally proves ownership of its
 endpoint, and accumulates a deterministic reliability score from that
