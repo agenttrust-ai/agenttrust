@@ -6,6 +6,49 @@ entry above the previous one, not by editing history.
 
 ---
 
+## CHECK_AGENT_TRUST USAGE TELEMETRY (PHASE 1) — LIVE — 2026-10-01
+
+**Why.** Before this, a `check_agent_trust` result was discarded once sent:
+only per-minute anonymous rate-limit counters existed, so real external AI
+usage could not be proven (94 anonymous checks from 23 hashed callers,
+2026-09-19 → 30, none attributable, none repeated across days).
+
+**What.** `2964442` records each completed check (MCP tool `surface=mcp`,
+web check page `surface=web`) in `trust_check_events`, after the response
+is sent via `after()` — best-effort, failures swallowed; the MCP response,
+scoring and trustDecision are unchanged. Module:
+`src/lib/telemetry/trust-check-events.ts`.
+- Matched: `agent_id`, `recommended`, `confidence`. Unmatched: sanitized
+  public `endpoint_host` (null for IP literals, localhost, single-label and
+  internal/reserved names) + `endpoint_key`.
+- Never stored: raw IP, full URL, path, query, fragment, request body,
+  header values beyond the user-agent's product token (`client_family`), API
+  keys or credentials. Rate-limited calls are not recorded.
+- Keyed hashes from `TELEMETRY_HASH_KEY` via HKDF-SHA256 subkeys (the key
+  itself never rotates): `caller_key` = HMAC of the IP under a subkey that
+  changes every 30 days (unlinkable across periods); `endpoint_key` = HMAC of
+  the normalized URL without query/fragment under a separate, time-independent
+  subkey (stable while the key is unchanged — changing it resets continuity).
+- Bounds: 5,000 events/UTC day, 50 per caller/day; rows older than 90 days
+  swept on ~1% of inserts. RLS enabled with no policies.
+- Unmatched demand is analysis input only — it never triggers crawling,
+  registration, monitoring or endpoint contact.
+
+**Rollout.** Migration `0009_add_trust_check_events` applied to production
+first (10 migrations; table, 3 indexes, 6 constraints, RLS on, 0 policies),
+then `2964442` deployed. `TELEMETRY_HASH_KEY` added in Vercel (Production,
+encrypted) at ~12:55 UTC and picked up by redeploy
+`dpl_mXFzoQFRJQeg6Sf7tEDP84QcG7HP` (12:58 UTC, Ready). No synthetic
+telemetry was created; the table had 0 rows at verification (13:16 UTC).
+Keyed hashes are confirmed once the first real event shows a non-null
+`caller_key` (a key shorter than 32 characters is ignored, leaving them null).
+
+**Next (separate).** The anonymous rate limiter stores unsalted SHA-256 IP
+hashes with no retention (`anonymous_rate_limits`) — effectively reversible.
+Salt/key them and prune old windows.
+
+---
+
 ## MCP REGISTRY RELEASE 1.0.3 — PUBLISHED VIA GITHUB ACTIONS OIDC — 2026-09-29
 
 **Released.** `io.github.agenttrust-ai/agenttrust` 1.0.3 is the latest
