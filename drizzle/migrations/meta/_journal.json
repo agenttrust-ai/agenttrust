@@ -71,6 +71,13 @@
       "when": 1790774427275,
       "tag": "0009_add_trust_check_events",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790864944766,
+      "tag": "0010_purge_legacy_rate_limit_ip_hashes",
+      "breakpoints": true
     }
   ]
 }
