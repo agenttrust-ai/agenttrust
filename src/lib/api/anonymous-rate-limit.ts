@@ -1,6 +1,7 @@
 import "server-only";
 import crypto from "node:crypto";
-import { sql } from "drizzle-orm";
+import { and, eq, lt, ne, sql } from "drizzle-orm";
+import { env } from "@/lib/config.server";
 import { anonymousRateLimits } from "@/lib/db/schema";
 import { withDbErrorNormalization, type AppDatabase } from "@/lib/db/rls";
 
@@ -24,14 +25,83 @@ function currentWindowStart(now: Date): Date {
 }
 
 /**
- * Hashes the caller's IP before it ever touches storage -- the raw address
- * is never persisted or logged. Not a security-critical secret (an IP
- * isn't confidential the way a password is), so a plain unsalted SHA-256
- * is sufficient: the goal is "don't store raw IPs verbatim", not "prevent
- * an operator with DB access from ever correlating repeat callers".
+ * Per-IP buckets older than this are deleted; a bucket is only ever read
+ * during its own 60-second window.
  */
-function hashIp(ip: string): string {
-  return crypto.createHash("sha256").update(ip).digest("hex");
+export const PER_IP_RETENTION_MS = 24 * 60 * 60 * 1000;
+/** GLOBAL buckets (aggregate counts, no personal data) are kept this long. */
+export const GLOBAL_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+const CLEANUP_PROBABILITY = 0.01;
+const CLEANUP_BATCH = 1_000;
+
+/** HKDF `info` prefix for the rate-limit IP subkey; the UTC day is appended. */
+export const RATE_LIMIT_IP_KEY_INFO_PREFIX = "agenttrust/anonymous-rate-limit/ip/v1/day=";
+
+/**
+ * The bucket key for a caller's IP: HMAC-SHA256 of the IP under a subkey
+ * derived (HKDF-SHA256) from API_KEY_HASH_PEPPER with a label that names
+ * this purpose and the window's UTC day. The raw address is never stored
+ * or logged, and — unlike a plain hash — the key can't be reversed by
+ * hashing the whole IPv4 space without the secret, or linked across days.
+ *
+ * Correctness only needs the same key for the same IP within one 60-second
+ * window. The day comes from the window's own start, and UTC midnight is
+ * always a window boundary (86,400 is a multiple of 60), so a window never
+ * spans two keys. The pepper is required at startup, so this security
+ * control never runs without a key. The label keeps it separate from API-key
+ * hashing (HMAC directly under the pepper) and from usage telemetry, which
+ * uses its own secret.
+ */
+export function hashIpForRateLimit(
+  ip: string,
+  windowStart: Date,
+  pepper: string = env.API_KEY_HASH_PEPPER,
+): string {
+  const day = windowStart.toISOString().slice(0, 10);
+  const subkey = Buffer.from(
+    crypto.hkdfSync("sha256", pepper, Buffer.alloc(0), `${RATE_LIMIT_IP_KEY_INFO_PREFIX}${day}`, 32),
+  );
+  return crypto.createHmac("sha256", subkey).update(ip).digest("hex");
+}
+
+/**
+ * Deletes up to one batch each of expired per-IP buckets (older than a day)
+ * and expired GLOBAL buckets (older than 90 days). Never reads or changes a
+ * live bucket, so it can't affect any rate-limit decision.
+ */
+export async function sweepExpiredRateLimitWindows(
+  db: AppDatabase,
+  now: Date,
+): Promise<{ perIp: number; global: number }> {
+  const perIpCutoff = new Date(now.getTime() - PER_IP_RETENTION_MS);
+  const globalCutoff = new Date(now.getTime() - GLOBAL_RETENTION_MS);
+  const t = anonymousRateLimits;
+
+  // Matched on the full primary key, so a batch is exactly CLEANUP_BATCH
+  // rows at most, however many callers share a window.
+  const expiredPerIp = db
+    .select({ ipHash: t.ipHash, windowStart: t.windowStart })
+    .from(t)
+    .where(and(ne(t.ipHash, GLOBAL_RATE_LIMIT_KEY), lt(t.windowStart, perIpCutoff)))
+    .orderBy(t.windowStart)
+    .limit(CLEANUP_BATCH);
+  const perIp = await db
+    .delete(t)
+    .where(sql`(${t.ipHash}, ${t.windowStart}) in (${expiredPerIp})`)
+    .returning({ windowStart: t.windowStart });
+
+  const expiredGlobal = db
+    .select({ ipHash: t.ipHash, windowStart: t.windowStart })
+    .from(t)
+    .where(and(eq(t.ipHash, GLOBAL_RATE_LIMIT_KEY), lt(t.windowStart, globalCutoff)))
+    .orderBy(t.windowStart)
+    .limit(CLEANUP_BATCH);
+  const global = await db
+    .delete(t)
+    .where(sql`(${t.ipHash}, ${t.windowStart}) in (${expiredGlobal})`)
+    .returning({ windowStart: t.windowStart });
+
+  return { perIp: perIp.length, global: global.length };
 }
 
 /**
@@ -117,19 +187,42 @@ async function claimWindow(
  * elsewhere in this codebase (e.g. reliability scoring), a failure here
  * must never fail open.
  */
+export type AnonymousRateLimitOptions = {
+  /** Tests only. */
+  now?: () => Date;
+  /** Tests only: decides whether this call also sweeps expired buckets. */
+  random?: () => number;
+};
+
 export async function checkAnonymousRateLimit(
   db: AppDatabase,
   request: Request,
+  options: AnonymousRateLimitOptions = {},
 ): Promise<AnonymousRateLimitResult> {
   const ip = extractTrustedClientIp(request);
   if (!ip) {
     return { allowed: false, retryAfterSeconds: ANONYMOUS_RATE_LIMIT_WINDOW_SECONDS };
   }
 
+  const now = (options.now ?? (() => new Date()))();
+  const result = await decide(db, ip, now);
+
+  // Opportunistic, bounded retention — only after the decision, and any
+  // failure here is swallowed: it can never change the result above.
+  if ((options.random ?? Math.random)() < CLEANUP_PROBABILITY) {
+    try {
+      await sweepExpiredRateLimitWindows(db, now);
+    } catch {
+      console.error("Anonymous rate limit cleanup failed.");
+    }
+  }
+  return result;
+}
+
+async function decide(db: AppDatabase, ip: string, now: Date): Promise<AnonymousRateLimitResult> {
   try {
-    const now = new Date();
     const windowStart = currentWindowStart(now);
-    const ipHash = hashIp(ip);
+    const ipHash = hashIpForRateLimit(ip, windowStart);
 
     return await withDbErrorNormalization(async () => {
       const perIp = await claimWindow(
