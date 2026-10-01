@@ -408,3 +408,50 @@ export const auditLog = pgTable(
     index("audit_log_agent_idx").on(table.agentId, table.createdAt.desc()),
   ],
 );
+
+// One completed `check_agent_trust` lookup (MCP tool or the web check page),
+// recorded after the response is sent — see
+// src/lib/telemetry/trust-check-events.ts. Privacy by construction: never a
+// raw IP, full endpoint URL, query string, fragment, request body, header
+// value or credential. A matched check keeps only the agent it resolved to;
+// an unmatched one keeps only a sanitized public hostname and a keyed hash of
+// the URL without query/fragment. `caller_key` is a keyed hash of the caller's
+// IP that rotates every 30 days. Rows are kept for 90 days. Server-written
+// only: RLS is enabled with no policies (see the migration).
+export const trustCheckEvents = pgTable(
+  "trust_check_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    surface: text("surface").notNull(),
+    outcome: text("outcome").notNull(),
+    agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
+    recommended: boolean("recommended"),
+    confidence: text("confidence"),
+    endpointHost: text("endpoint_host"),
+    endpointKey: text("endpoint_key"),
+    callerKey: text("caller_key"),
+    clientFamily: text("client_family"),
+  },
+  (table) => [
+    index("trust_check_events_occurred_at_idx").on(table.occurredAt),
+    index("trust_check_events_unmatched_endpoint_idx")
+      .on(table.endpointKey)
+      .where(sql`${table.outcome} = 'not_matched'`),
+    check("trust_check_events_surface_valid", sql`${table.surface} in ('mcp', 'web')`),
+    check(
+      "trust_check_events_outcome_valid",
+      sql`${table.outcome} in ('matched', 'not_matched')`,
+    ),
+    check(
+      "trust_check_events_endpoint_host_length",
+      sql`char_length(${table.endpointHost}) <= 253`,
+    ),
+    check(
+      "trust_check_events_client_family_length",
+      sql`char_length(${table.clientFamily}) <= 64`,
+    ),
+  ],
+);

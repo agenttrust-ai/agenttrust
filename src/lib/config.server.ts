@@ -29,6 +29,11 @@ const serverEnvSchema = z.object({
     .string()
     .length(64)
     .regex(/^[0-9a-f]+$/i, "must be 64 hex characters (32 bytes)"),
+  // Optional key for check_agent_trust usage telemetry's keyed hashes (see
+  // src/lib/telemetry/trust-check-events.ts, which reads it at call time and
+  // ignores anything shorter than 32 characters). Never required: without it,
+  // telemetry records events with no caller or endpoint hashes.
+  TELEMETRY_HASH_KEY: z.string().optional(),
 });
 
 function loadServerEnv() {

@@ -14,6 +14,11 @@ import { apiError } from "@/lib/api/response";
 import { AppError, ErrorCode } from "@/lib/errors";
 import { DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from "@/lib/validation/pagination";
 import { RELIABILITY_SCORE_STATUSES } from "@/lib/reliability/freshness";
+import {
+  trackTrustCheck,
+  type TelemetryScheduler,
+  type TrustCheckSurface,
+} from "@/lib/telemetry/trust-check-events";
 
 /**
  * The whole MCP adapter's reuse story lives in this one idea: every tool
@@ -337,11 +342,20 @@ export const checkAgentTrustOutputSchema = z.object({
  * without the auth step, so there is only ever one implementation of
  * "how an endpoint URL is matched to a public agent" in this codebase.
  */
+export type CheckAgentTrustOptions = {
+  /** Where the check came from, for usage telemetry. Defaults to "mcp". */
+  surface?: TrustCheckSurface;
+  /** Tests only: how telemetry is scheduled (defaults to after the response). */
+  scheduleTelemetry?: TelemetryScheduler;
+};
+
 export async function mcpCheckAgentTrust(
   db: AppDatabase,
   request: Request,
   input: CheckAgentTrustInput,
+  options: CheckAgentTrustOptions = {},
 ): Promise<McpToolResult> {
+  const surface = options.surface ?? "mcp";
   const rateLimit = await checkAnonymousRateLimit(db, request);
   if (!rateLimit.allowed) {
     const response = apiError(
@@ -363,10 +377,31 @@ export async function mcpCheckAgentTrust(
   const page = await listPublicAgents(db, { limit: 1, endpointUrl: input.endpointUrl });
   const agent = page.agents[0];
   if (!agent) {
+    // Best-effort usage telemetry, recorded after the response is sent —
+    // never awaited, never able to change or fail this result, and never a
+    // trigger for crawling, registration, monitoring or contacting the URL.
+    trackTrustCheck(
+      db,
+      { surface, request, endpointUrl: input.endpointUrl, outcome: "not_matched" },
+      options.scheduleTelemetry,
+    );
     return toSuccessResult({ matched: false });
   }
 
   const enriched = await toTrustEnrichedAgentJson(db, agent);
+  trackTrustCheck(
+    db,
+    {
+      surface,
+      request,
+      endpointUrl: input.endpointUrl,
+      outcome: "matched",
+      agentId: agent.id,
+      recommended: enriched.trustDecision.recommended,
+      confidence: enriched.trustDecision.confidence,
+    },
+    options.scheduleTelemetry,
+  );
   return toSuccessResult({
     matched: true,
     slug: enriched.slug,

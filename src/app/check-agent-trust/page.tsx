@@ -63,7 +63,7 @@ async function runTrustCheck(endpointUrl: string): Promise<CheckResult> {
   const request = new Request("https://mcp.internal/check-agent-trust", {
     headers: incomingHeaders,
   });
-  const toolResult = await mcpCheckAgentTrust(db, request, parsed.data);
+  const toolResult = await mcpCheckAgentTrust(db, request, parsed.data, { surface: "web" });
 
   if (toolResult.isError) {
     const error = toolResult.structuredContent?.error as

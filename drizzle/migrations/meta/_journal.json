@@ -64,6 +64,13 @@
       "when": 1790411319823,
       "tag": "0008_add_endpoint_url_normalized",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790774427275,
+      "tag": "0009_add_trust_check_events",
+      "breakpoints": true
     }
   ]
 }

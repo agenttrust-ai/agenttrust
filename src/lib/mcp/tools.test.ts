@@ -991,3 +991,220 @@ describe("reliability score freshness in MCP tool output", () => {
     ).toBe(false);
   });
 });
+
+describe("check_agent_trust usage telemetry", () => {
+  const KEY = "t".repeat(48);
+  const originalKey = process.env.TELEMETRY_HASH_KEY;
+  beforeEach(() => {
+    process.env.TELEMETRY_HASH_KEY = KEY;
+  });
+  afterEach(() => {
+    if (originalKey === undefined) delete process.env.TELEMETRY_HASH_KEY;
+    else process.env.TELEMETRY_HASH_KEY = originalKey;
+  });
+
+  function request(ip: string, userAgent = "claude-code/1.2.3"): Request {
+    return new Request("https://getagenttrust.com/api/mcp", {
+      headers: {
+        "x-vercel-forwarded-for": ip,
+        "user-agent": userAgent,
+        authorization: "Bearer at_live_should_never_be_stored",
+      },
+    });
+  }
+
+  /** Collects scheduled telemetry so a test can run it deterministically. */
+  function capture() {
+    const tasks: (() => Promise<void>)[] = [];
+    return {
+      schedule: (task: () => Promise<void>) => {
+        tasks.push(task);
+      },
+      flush: async () => {
+        for (const task of tasks.splice(0)) await task();
+      },
+      pending: () => tasks.length,
+    };
+  }
+
+  async function events() {
+    return (
+      await client.query<Record<string, unknown>>(
+        `select surface, outcome, agent_id, recommended, confidence, endpoint_host,
+                endpoint_key, caller_key, client_family
+           from public.trust_check_events order by occurred_at`,
+      )
+    ).rows;
+  }
+
+  async function knownAgent(endpointUrl: string) {
+    const agent = await createAgent(db, userA, { ...baseInput, name: "Telemetry Bot", endpointUrl });
+    await activate(agent.id);
+    return agent;
+  }
+
+  it("returns a byte-identical response whether telemetry runs, fails, or is unconfigured", async () => {
+    await knownAgent("https://telemetry-same.example.com/v1/invoke");
+    const input = { endpointUrl: "https://telemetry-same.example.com/v1/invoke" };
+
+    const recorded = capture();
+    const withTelemetry = await mcpCheckAgentTrust(db, request("203.0.113.61"), input, {
+      scheduleTelemetry: recorded.schedule,
+    });
+    await recorded.flush();
+    const failing = await mcpCheckAgentTrust(db, request("203.0.113.62"), input, {
+      scheduleTelemetry: () => {
+        throw new Error("scheduler exploded");
+      },
+    });
+    delete process.env.TELEMETRY_HASH_KEY;
+    const noKey = capture();
+    const unconfigured = await mcpCheckAgentTrust(db, request("203.0.113.63"), input, {
+      scheduleTelemetry: noKey.schedule,
+    });
+    await noKey.flush();
+
+    expect(JSON.stringify(failing)).toBe(JSON.stringify(withTelemetry));
+    expect(JSON.stringify(unconfigured)).toBe(JSON.stringify(withTelemetry));
+    expect(checkAgentTrustOutputSchema.safeParse(structured(withTelemetry)).success).toBe(true);
+    expect(Object.keys(structured(withTelemetry)).sort()).toEqual([
+      "matched", "name", "reliabilityScore", "reliabilityScoreStatus", "slug", "status", "trustDecision", "verified",
+    ]);
+  });
+
+  it("doesn't record before the response — only when the scheduled task runs", async () => {
+    const queued = capture();
+    await mcpCheckAgentTrust(db, request("203.0.113.64"), { endpointUrl: "https://nobody.example.com/a" }, {
+      scheduleTelemetry: queued.schedule,
+    });
+    expect(queued.pending()).toBe(1);
+    expect(await events()).toHaveLength(0);
+    await queued.flush();
+    expect(await events()).toHaveLength(1);
+  });
+
+  it("records a matched check with the agent and its trustDecision, and no endpoint data", async () => {
+    const agent = await knownAgent("https://telemetry-matched.example.com/v1/invoke");
+    const queued = capture();
+    const result = await mcpCheckAgentTrust(
+      db,
+      request("203.0.113.65"),
+      { endpointUrl: "https://telemetry-matched.example.com/v1/invoke" },
+      { scheduleTelemetry: queued.schedule },
+    );
+    await queued.flush();
+
+    const decision = structured(result).trustDecision as { recommended: boolean; confidence: string };
+    const [row] = await events();
+    expect(row).toMatchObject({
+      surface: "mcp",
+      outcome: "matched",
+      agent_id: agent.id,
+      recommended: decision.recommended,
+      confidence: decision.confidence,
+      endpoint_host: null,
+      endpoint_key: null,
+      client_family: "claude-code",
+    });
+    expect(row.caller_key).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("records an unmatched check as a sanitized host plus keyed hash — no URL, query, fragment, IP or credential", async () => {
+    const queued = capture();
+    await mcpCheckAgentTrust(
+      db,
+      request("198.51.100.77"),
+      { endpointUrl: "https://Unknown-Agent.io/private/path?token=secret123#frag" },
+      { scheduleTelemetry: queued.schedule },
+    );
+    await queued.flush();
+
+    const [row] = await events();
+    expect(row).toMatchObject({
+      surface: "mcp",
+      outcome: "not_matched",
+      agent_id: null,
+      recommended: null,
+      confidence: null,
+      endpoint_host: "unknown-agent.io",
+    });
+    expect(row.endpoint_key).toMatch(/^[0-9a-f]{64}$/);
+    const stored = JSON.stringify(row);
+    for (const forbidden of ["/private/path", "secret123", "token", "#frag", "198.51.100.77", "at_live_", "Bearer"]) {
+      expect(stored).not.toContain(forbidden);
+    }
+  });
+
+  it("omits the host for IP literals, localhost and internal names, but still counts the check", async () => {
+    const queued = capture();
+    for (const endpointUrl of [
+      "https://203.0.113.9/agent",
+      "https://localhost/agent",
+      "https://svc.cluster.internal/agent",
+    ]) {
+      await mcpCheckAgentTrust(db, request("203.0.113.66"), { endpointUrl }, { scheduleTelemetry: queued.schedule });
+    }
+    await queued.flush();
+    const rows = await events();
+    expect(rows).toHaveLength(3);
+    expect(rows.every((r) => r.outcome === "not_matched" && r.endpoint_host === null)).toBe(true);
+  });
+
+  it("labels the web check surface separately from MCP", async () => {
+    const queued = capture();
+    await mcpCheckAgentTrust(db, request("203.0.113.67", "Mozilla/5.0 (Macintosh)"), {
+      endpointUrl: "https://nobody-web.example.com/a",
+    }, { surface: "web", scheduleTelemetry: queued.schedule });
+    await queued.flush();
+    expect((await events())[0]).toMatchObject({ surface: "web", client_family: "mozilla" });
+  });
+
+  it("without TELEMETRY_HASH_KEY still records, with no caller or endpoint hashes", async () => {
+    delete process.env.TELEMETRY_HASH_KEY;
+    const queued = capture();
+    await mcpCheckAgentTrust(db, request("203.0.113.68"), { endpointUrl: "https://nobody-nokey.io/a" }, {
+      scheduleTelemetry: queued.schedule,
+    });
+    await queued.flush();
+    expect((await events())[0]).toMatchObject({
+      outcome: "not_matched",
+      endpoint_host: "nobody-nokey.io",
+      endpoint_key: null,
+      caller_key: null,
+    });
+  });
+
+  it("doesn't record rate-limited calls", async () => {
+    const queued = capture();
+    for (let i = 0; i <= ANONYMOUS_RATE_LIMIT_PER_IP; i++) {
+      await mcpCheckAgentTrust(db, request("203.0.113.69"), { endpointUrl: "https://nobody-flood.io/a" }, {
+        scheduleTelemetry: queued.schedule,
+      });
+    }
+    expect(queued.pending()).toBe(ANONYMOUS_RATE_LIMIT_PER_IP);
+  });
+
+  it("a telemetry storage failure never affects the check", async () => {
+    await client.query(`drop table public.trust_check_events`);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const queued = capture();
+    const result = await mcpCheckAgentTrust(db, request("203.0.113.70"), { endpointUrl: "https://nobody-broken.io/a" }, {
+      scheduleTelemetry: queued.schedule,
+    });
+    await expect(queued.flush()).resolves.toBeUndefined();
+    expect(structured(result)).toEqual({ matched: false });
+    expect(JSON.stringify(errors.mock.calls)).not.toContain("nobody-broken.io");
+    errors.mockRestore();
+  });
+
+  it("never contacts the checked endpoint, before or after the response", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const queued = capture();
+    await mcpCheckAgentTrust(db, request("203.0.113.71"), { endpointUrl: "https://never-contact.io/a" }, {
+      scheduleTelemetry: queued.schedule,
+    });
+    await queued.flush();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+});
