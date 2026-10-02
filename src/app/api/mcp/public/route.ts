@@ -16,7 +16,7 @@ const handler = createMcpHandler(
     registerPublicTrustCheckTool(server, db);
   },
   {
-    serverInfo: { name: "agenttrust", version: "1.0.3" },
+    serverInfo: { name: "agenttrust", version: "1.0.4" },
     instructions: PUBLIC_CONNECTOR_INSTRUCTIONS,
   },
 );

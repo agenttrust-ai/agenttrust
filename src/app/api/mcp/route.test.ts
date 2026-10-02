@@ -23,7 +23,7 @@ beforeAll(async () => {
  * any change to them has to be deliberate.
  */
 describe("/api/mcp (unchanged)", () => {
-  it("initialize result matches the pinned snapshot (serverInfo agenttrust 1.0.3, instructions)", async () => {
+  it("initialize result matches the pinned snapshot (serverInfo agenttrust 1.0.4, instructions)", async () => {
     const { status, body } = await mcpRpc(post, URL_MCP, {
       id: 1,
       method: "initialize",
@@ -31,7 +31,7 @@ describe("/api/mcp (unchanged)", () => {
     });
     expect(status).toBe(200);
     const result = body.result as { serverInfo: unknown };
-    expect(result.serverInfo).toEqual({ name: "agenttrust", version: "1.0.3" });
+    expect(result.serverInfo).toEqual({ name: "agenttrust", version: "1.0.4" });
     await expect(JSON.stringify(result, null, 2)).toMatchFileSnapshot("./__snapshots__/initialize.json");
   });
 

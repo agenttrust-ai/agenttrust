@@ -3,7 +3,7 @@
   "name": "io.github.agenttrust-ai/agenttrust",
   "title": "AgentTrust — Pre-Invocation AI Agent Trust & Reliability Checks",
   "description": "Check an AI agent endpoint before you call it: read-only, no API key, returns a trustDecision.",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "websiteUrl": "https://getagenttrust.com/docs",
   "repository": {
     "url": "https://github.com/agenttrust-ai/agenttrust",
@@ -11,6 +11,10 @@
     "id": "1363348936"
   },
   "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://getagenttrust.com/api/mcp/public"
+    },
     {
       "type": "streamable-http",
       "url": "https://getagenttrust.com/api/mcp",

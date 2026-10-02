@@ -67,7 +67,7 @@ describe("/api/mcp/public", () => {
     });
     expect(status).toBe(200);
     const result = body.result as { serverInfo: unknown; instructions: string };
-    expect(result.serverInfo).toEqual({ name: "agenttrust", version: "1.0.3" });
+    expect(result.serverInfo).toEqual({ name: "agenttrust", version: "1.0.4" });
     expect(result.instructions).toBe(PUBLIC_CONNECTOR_INSTRUCTIONS);
     for (const directive of [/only proceed/i, /before invoking/i, /preferred/i, /\bcall check_agent_trust\b/i]) {
       expect(result.instructions).not.toMatch(directive);
