@@ -6,6 +6,30 @@ entry above the previous one, not by editing history.
 
 ---
 
+## CLAUDE CONNECTORS DIRECTORY — SUBMITTED, IN REVIEW — 2026-10-02
+
+**Submitted.** AgentTrust was submitted as an MCP connector through Claude's
+developer portal (`claude.ai/directory/manage`) on 2026-10-02. Portal
+status: **In review** (검토 중). Anthropic contacts the account email; review
+can take weeks and approval is not guaranteed.
+- Endpoint: `https://getagenttrust.com/api/mcp/public` — one tool
+  (`check_agent_trust`, read-only, idempotent), authentication: none.
+- Listing: name `AgentTrust`, slug `agenttrust` (permanent), categories
+  Development tools and Data & Analytics (no Security category exists).
+  Docs `https://getagenttrust.com/docs`, privacy
+  `https://getagenttrust.com/privacy`, support `dlrhkdaud5592@naver.com`.
+- Icon: the current site favicon/logo was retained — no custom icon and no
+  logo change (later logo explorations were not adopted).
+- Use cases: read only, no prerequisites; reviewer test instructions need no
+  account. Data handling: first-party API, no health data, no sponsored
+  content. Self-tested with MCP Inspector CLI 2.9.0 and as a Claude custom
+  connector. All 7 policy acknowledgements confirmed.
+
+**Next.** Watch the portal for review feedback. No product change was made
+for the submission itself (code at `e4fa0a8`).
+
+---
+
 ## PUBLIC MCP CONNECTOR + RATE-LIMIT IP HASH CLEANUP (0010) — LIVE — 2026-10-02
 
 **Public connector.** `/api/mcp/public` (`6c5937b`, input validation
