@@ -1,0 +1,746 @@
+{
+  "tools": [
+    {
+      "name": "list_agents",
+      "title": "List Agents",
+      "description": "Discover AgentTrust agents. Pass `endpointUrl` to check the trust status of a specific external agent by its exact invocation URL before deciding whether to invoke it — the response includes a reliability score, endpoint-ownership verification status, and a machine-readable trustDecision (recommended, confidence, reasons). Without `endpointUrl`, returns the plain paginated listing of public agents, newest first.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "limit": {
+            "description": "Max agents to return (1-100, default 20).",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "description": "Opaque pagination cursor from a previous call's nextCursor.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "endpointUrl": {
+            "description": "Look up the agent registered with exactly this invocation URL, instead of browsing the full listing — the entry point for a trust check on an agent you only have a URL for. Matches ignore trailing-slash and scheme/host-casing differences only — never a fuzzy match. Returns an empty list, not an error, if nothing is registered with that URL. Unlike a plain (unfiltered) call, results here also include reliabilityScore, lastCheckedAt/latencyMs/httpStatus, and a derived trustDecision ({recommended, confidence, reasons}) so a caller can decide whether to interact with the agent from this one call.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        }
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "agents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "slug": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "version": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "capabilities": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "unknown",
+                    "healthy",
+                    "degraded",
+                    "down"
+                  ]
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "agentCard": {
+                  "type": "object",
+                  "properties": {
+                    "schemaVersion": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "capabilities": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "authentication": {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "type"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "interfaces": {
+                      "type": "object",
+                      "properties": {
+                        "modalities": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "interactionType": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "modalities",
+                        "interactionType"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "documentationUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "name",
+                    "description",
+                    "capabilities",
+                    "authentication",
+                    "interfaces",
+                    "documentationUrl"
+                  ],
+                  "additionalProperties": false
+                },
+                "verified": {
+                  "type": "boolean"
+                },
+                "ownershipVerifiedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "reliabilityScore": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "reliabilityScoreStatus": {
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "fresh",
+                    "stale"
+                  ]
+                },
+                "reliabilityScoreComputedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "lastCheckedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "latencyMs": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "httpStatus": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "trustDecision": {
+                  "type": "object",
+                  "properties": {
+                    "recommended": {
+                      "type": "boolean"
+                    },
+                    "confidence": {
+                      "type": "string",
+                      "enum": [
+                        "high",
+                        "medium",
+                        "low",
+                        "insufficient_data"
+                      ]
+                    },
+                    "reasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "recommended",
+                    "confidence",
+                    "reasons"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "id",
+                "slug",
+                "name",
+                "description",
+                "version",
+                "capabilities",
+                "status",
+                "createdAt",
+                "agentCard",
+                "verified",
+                "ownershipVerifiedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "pagination": {
+            "type": "object",
+            "properties": {
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "nextCursor"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "agents",
+          "pagination"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_agent",
+      "title": "Get Agent",
+      "description": "Get one AgentTrust agent's public profile by slug, including its structured Agent Card, current reliability score, and a machine-readable trustDecision (recommended, confidence, reasons) for deciding whether to invoke it.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The agent's URL slug (from its public profile or a list_agents result)."
+          }
+        },
+        "required": [
+          "slug"
+        ]
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "healthy",
+              "degraded",
+              "down"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "agentCard": {
+            "type": "object",
+            "properties": {
+              "schemaVersion": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "capabilities": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "authentication": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "additionalProperties": false
+              },
+              "interfaces": {
+                "type": "object",
+                "properties": {
+                  "modalities": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "interactionType": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "modalities",
+                  "interactionType"
+                ],
+                "additionalProperties": false
+              },
+              "documentationUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "schemaVersion",
+              "name",
+              "description",
+              "capabilities",
+              "authentication",
+              "interfaces",
+              "documentationUrl"
+            ],
+            "additionalProperties": false
+          },
+          "verified": {
+            "type": "boolean"
+          },
+          "ownershipVerifiedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reliabilityScore": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "reliabilityScoreStatus": {
+            "type": "string",
+            "enum": [
+              "none",
+              "fresh",
+              "stale"
+            ]
+          },
+          "reliabilityScoreComputedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastCheckedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latencyMs": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "httpStatus": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "trustDecision": {
+            "type": "object",
+            "properties": {
+              "recommended": {
+                "type": "boolean"
+              },
+              "confidence": {
+                "type": "string",
+                "enum": [
+                  "high",
+                  "medium",
+                  "low",
+                  "insufficient_data"
+                ]
+              },
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "recommended",
+              "confidence",
+              "reasons"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "description",
+          "version",
+          "capabilities",
+          "status",
+          "createdAt",
+          "agentCard",
+          "verified",
+          "ownershipVerifiedAt",
+          "reliabilityScore",
+          "reliabilityScoreStatus",
+          "reliabilityScoreComputedAt",
+          "lastCheckedAt",
+          "latencyMs",
+          "httpStatus",
+          "trustDecision"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_agent_health",
+      "title": "Get Agent Health",
+      "description": "Get one agent's current effective health status and monitoring detail — derived from heartbeat freshness for push-mode agents, or the latest pull check otherwise.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The agent's URL slug (from its public profile or a list_agents result)."
+          }
+        },
+        "required": [
+          "slug"
+        ]
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "healthy",
+              "degraded",
+              "down"
+            ]
+          },
+          "lastCheckedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latencyMs": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "httpStatus": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "checkStatus": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reliabilityScore": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "reliabilityScoreStatus": {
+            "type": "string",
+            "enum": [
+              "none",
+              "fresh",
+              "stale"
+            ]
+          },
+          "reliabilityScoreComputedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "agentId",
+          "slug",
+          "status",
+          "lastCheckedAt",
+          "latencyMs",
+          "httpStatus",
+          "checkStatus",
+          "reliabilityScore",
+          "reliabilityScoreStatus",
+          "reliabilityScoreComputedAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "send_heartbeat",
+      "title": "Send Heartbeat",
+      "description": "Record a push-style heartbeat for an agent you own, marking it alive right now. The server sets the timestamp; no client-supplied time is accepted.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The agent's URL slug (from its public profile or a list_agents result)."
+          }
+        },
+        "required": [
+          "slug"
+        ]
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "healthy",
+              "degraded",
+              "down"
+            ]
+          },
+          "lastHeartbeatAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "slug",
+          "status",
+          "lastHeartbeatAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "check_agent_trust",
+      "title": "Check Agent Trust",
+      "description": "The preferred pre-invocation trust check for an unknown external agent. Read-only, requires no AgentTrust API key or account. Looks up an agent by its exact invocation URL among AgentTrust's already-observed public agents and returns its status, endpoint-ownership verification, agent reliability score (when available), and a machine-readable trustDecision (recommended, confidence, reasons). Does NOT contact endpointUrl itself during this check — it only reads AgentTrust's own existing monitoring history. An unregistered URL returns { matched: false }, never an error.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "endpointUrl": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048,
+            "description": "The exact invocation URL of the agent you're about to call. Used only to look up AgentTrust's own already-observed data for it — this endpoint is never contacted during the check."
+          }
+        },
+        "required": [
+          "endpointUrl"
+        ]
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "matched": {
+            "type": "boolean"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "healthy",
+              "degraded",
+              "down"
+            ]
+          },
+          "verified": {
+            "type": "boolean"
+          },
+          "reliabilityScore": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "reliabilityScoreStatus": {
+            "type": "string",
+            "enum": [
+              "none",
+              "fresh",
+              "stale"
+            ]
+          },
+          "trustDecision": {
+            "type": "object",
+            "properties": {
+              "recommended": {
+                "type": "boolean"
+              },
+              "confidence": {
+                "type": "string",
+                "enum": [
+                  "high",
+                  "medium",
+                  "low",
+                  "insufficient_data"
+                ]
+              },
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "recommended",
+              "confidence",
+              "reasons"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "matched"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

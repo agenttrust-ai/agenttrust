@@ -4,6 +4,7 @@ import { SCORE_MAX_AGE_HOURS } from "@/lib/reliability/freshness";
 import { CodeBlock as Code } from "@/components/dev/code-block";
 import { CopyButton } from "@/components/dev/copy-button";
 import { Callout } from "@/components/ui/callout";
+import { SUPPORT_EMAIL } from "@/lib/contact";
 
 export const metadata: Metadata = {
   title: "API Reference — AgentTrust",
@@ -32,9 +33,11 @@ const DOCS_NAV_ITEMS = [
   { id: "rate-limits", label: "Rate limits" },
   { id: "errors", label: "Common errors" },
   { id: "not-built", label: "Not yet built" },
+  { id: "support", label: "Support" },
 ] as const;
 
 const MCP_URL = "https://getagenttrust.com/api/mcp";
+const PUBLIC_MCP_URL = "https://getagenttrust.com/api/mcp/public";
 
 /** The facts a developer looks for first — each is detailed further down. */
 const AT_A_GLANCE: { label: string; value: string; note: string; copy?: boolean }[] = [
@@ -230,6 +233,14 @@ export default function DocsPage() {
             <a href="/check-agent-trust">Check an AI Agent Before You Invoke It</a>{" "}
             for a plain-language walkthrough of this check.
           </Callout>
+          <p>
+            Public connector endpoint: <code>{PUBLIC_MCP_URL}</code> (Streamable
+            HTTP, no authentication). It exposes only{" "}
+            <code>check_agent_trust</code>, annotated read-only, and runs the same
+            check with the same rate limit. Use it to add AgentTrust to an MCP
+            client or connector directory that connects without credentials, such
+            as a custom connector in Claude.
+          </p>
           <p>
             Tools requiring an API key (each backed by the exact same handler as
             its REST equivalent):
@@ -650,6 +661,15 @@ Authorization: Bearer at_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}</Code>
             account creation — a human creates the account and first API key. No
             batch/multi-URL lookup — call <code>?endpoint_url=</code> once per
             URL.
+          </p>
+        </Section>
+
+        <Section id="support" title="Support">
+          <p>
+            For product support, privacy questions, or to report a security
+            issue, email <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>.
+            How AgentTrust handles data is described in the{" "}
+            <a href="/privacy">Privacy Policy</a>.
           </p>
         </Section>
       </div>

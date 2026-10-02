@@ -17,6 +17,7 @@ import {
   mcpSendHeartbeat,
   sendHeartbeatInputSchema,
   sendHeartbeatOutputSchema,
+  type CheckAgentTrustInput,
 } from "./tools";
 
 /**
@@ -90,14 +91,57 @@ export function registerAgentTrustTools(server: McpServer, db: AppDatabase): voi
       inputSchema: checkAgentTrustInputSchema,
       outputSchema: checkAgentTrustOutputSchema,
     },
-    // ctx.http.req is the *real* inbound request (unlike every other tool
-    // here, which only ever needs the bearer token off it) -- this tool
-    // rate-limits by caller IP instead of by API key, since it has no key
-    // to key on. If a transport ever hands this tool a context with no
-    // `req` at all, fall back to a header-less Request: the rate limiter's
-    // own IP extraction already fails closed on missing IP signal, so this
-    // never silently becomes "unlimited".
-    async (input, ctx) =>
-      mcpCheckAgentTrust(db, ctx.http?.req ?? new Request("https://mcp.internal/check-agent-trust"), input),
+    checkAgentTrustHandler(db),
+  );
+}
+
+/**
+ * The one `check_agent_trust` tool callback, shared by `/api/mcp` and the
+ * public connector endpoint so both run the identical check.
+ *
+ * ctx.http.req is the *real* inbound request (unlike every other tool
+ * here, which only ever needs the bearer token off it) -- this tool
+ * rate-limits by caller IP instead of by API key, since it has no key
+ * to key on. If a transport ever hands this tool a context with no
+ * `req` at all, fall back to a header-less Request: the rate limiter's
+ * own IP extraction already fails closed on missing IP signal, so this
+ * never silently becomes "unlimited".
+ */
+function checkAgentTrustHandler(db: AppDatabase) {
+  return async (input: CheckAgentTrustInput, ctx: { http?: { req?: Request } }) =>
+    mcpCheckAgentTrust(db, ctx.http?.req ?? new Request("https://mcp.internal/check-agent-trust"), input);
+}
+
+/**
+ * Server instructions for the public connector endpoint (`/api/mcp/public`):
+ * what the server offers, stated as fact — no directions to the client.
+ */
+export const PUBLIC_CONNECTOR_INSTRUCTIONS =
+  "AgentTrust offers one read-only tool, check_agent_trust. It looks up an AI agent's exact endpoint URL in AgentTrust's own monitoring data and returns the agent's observed status, endpoint-ownership verification, reliability score (when available), and a trustDecision (recommended, confidence, reasons). The result is a signal derived from AgentTrust's observations, not a certification or guarantee of safety. The tool never contacts the endpoint being checked.";
+
+/**
+ * The public connector endpoint's only tool: the same `check_agent_trust`
+ * check, schemas and handler as `/api/mcp`, with a neutral description and
+ * the tool annotations directory listings (e.g. Claude's) require. Needs no
+ * API key, so this endpoint needs no authentication at all.
+ */
+export function registerPublicTrustCheckTool(server: McpServer, db: AppDatabase): void {
+  server.registerTool(
+    "check_agent_trust",
+    {
+      title: "Check Agent Trust",
+      description:
+        "Looks up an AI agent by its exact invocation URL among the public agents AgentTrust already monitors, and returns its status, endpoint-ownership verification, reliability score (when available), and a trustDecision (recommended, confidence, reasons). Use it to see AgentTrust's observed evidence about an agent endpoint before calling that endpoint. Read-only, and needs no account or API key. It does not contact endpointUrl; it only reads AgentTrust's stored monitoring history. A URL AgentTrust has not observed returns { matched: false }.",
+      inputSchema: checkAgentTrustInputSchema,
+      outputSchema: checkAgentTrustOutputSchema,
+      annotations: {
+        title: "Check Agent Trust",
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    checkAgentTrustHandler(db),
   );
 }

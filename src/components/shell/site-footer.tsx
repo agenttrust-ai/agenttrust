@@ -11,6 +11,7 @@ const GROUPS: { title: string; links: FooterLink[] }[] = [
       { href: "/check-agent-trust", label: "Check an agent" },
       { href: "/dashboard", label: "Dashboard" },
       { href: "/docs", label: "Docs" },
+      { href: "/privacy", label: "Privacy" },
     ],
   },
   {
