@@ -6,6 +6,58 @@ entry above the previous one, not by editing history.
 
 ---
 
+## PUBLIC MCP CONNECTOR + RATE-LIMIT IP HASH CLEANUP (0010) — LIVE — 2026-10-02
+
+**Public connector.** `/api/mcp/public` (`6c5937b`, input validation
+`d7e37e7`) is a Streamable HTTP MCP endpoint with no authentication that
+exposes only `check_agent_trust`, for directories that list servers without
+auth (Claude's Connectors Directory). It shares the handler, output schema,
+rate limit and telemetry with `/api/mcp`, and adds:
+- annotations `title: "Check Agent Trust"`, `readOnlyHint: true`,
+  `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false`;
+- neutral description and server instructions (no "preferred" / "only
+  proceed after…" wording, which directory review treats as prompt
+  injection);
+- an `endpointUrl` check (absolute http(s) URL) that rejects malformed input
+  with an actionable error before the tool runs — no rate-limit or telemetry
+  cost. The advertised input schema is identical to `/api/mcp`'s.
+
+The four API-key tools are not exposed there (`-32602 Tool … not found`).
+`/api/mcp` is unchanged: its live `initialize` (agenttrust 1.0.3) and
+`tools/list` matched the pre-change baseline, and both are now pinned by
+snapshot tests (`src/app/api/mcp/__snapshots__/`).
+
+**Site.** `/privacy` (footer, sitemap) describes current data handling:
+telemetry, rate-limit hashing and retention, accounts, agents and monitoring,
+Vercel/Supabase. `/docs` documents the public endpoint and adds a Support
+section. Support/security contact: `src/lib/contact.ts`.
+
+**Verified.** Production checks 2026-10-02 passed with an MCP Inspector CLI
+2.9.0 run and a Claude custom-connector test: Claude matched `support-bot`
+(recommended, low confidence) at 12:47:31 UTC, `client_family=claude-user`,
+`caller_key` non-null — confirming telemetry's keyed hashes work in
+production. Five synthetic verification events (05:55–06:47 UTC; client
+families `agenttrust-*` and `node`) should be excluded from usage analysis.
+Earlier external `/api/mcp` events from `toucan-datagen` (8 since 2026-10-01
+18:18 UTC, all unmatched, mostly `example.com` hosts) look like an automated
+synthetic-data client, not pre-invocation use.
+
+**Rate-limit IP hashes.** `2586655` replaced the anonymous rate limiter's
+unsalted SHA-256(IP) with HMAC-SHA256 under a daily-rotating HKDF subkey of
+`API_KEY_HASH_PEPPER` (label `agenttrust/anonymous-rate-limit/ip/v1/day=…`;
+UTC midnight is always a window boundary), plus bounded cleanup on ~1% of
+checks: per-IP rows > 1 day, `GLOBAL` rows > 90 days. Data-only migration
+`0010_purge_legacy_rate_limit_ip_hashes` (`e4842b2`) was applied to
+production at 12:52 UTC: it deleted the 44 legacy per-IP rows, leaving 0 of
+them; the 55 `GLOBAL` rows and 12 keyed rows remain; 11 migrations applied.
+
+**Next.** Submit `/api/mcp/public` in Claude's developer portal (needs a
+paid plan, icon, listing copy, example prompts and policy acknowledgments;
+auth: none). Watch the shared per-IP limit: Claude's hosted surfaces call
+from Anthropic's egress range, so many users may share 10 checks/min per IP.
+
+---
+
 ## CHECK_AGENT_TRUST USAGE TELEMETRY (PHASE 1) — LIVE — 2026-10-01
 
 **Why.** Before this, a `check_agent_trust` result was discarded once sent:
