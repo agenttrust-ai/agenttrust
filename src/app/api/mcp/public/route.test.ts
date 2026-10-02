@@ -169,6 +169,45 @@ describe("/api/mcp/public", () => {
     expect(result?.structuredContent).toBeUndefined();
   });
 
+  it.each([
+    "not a url",
+    "agent.example.com/v1/invoke",
+    "/v1/invoke",
+    "ftp://files.example.com/agent",
+    "mailto:agent@example.com",
+    "javascript:alert(1)",
+  ])("rejects a malformed endpointUrl (%s) with an actionable error, not { matched: false }", async (endpointUrl) => {
+    const { body, result } = await callTool("check_agent_trust", { endpointUrl }, fromIp("198.51.100.16"));
+    const error = JSON.stringify(body.error ?? result);
+    if (!body.error) expect(result?.isError).toBe(true);
+    expect(error).toContain("endpointUrl must be an absolute http:// or https:// URL");
+    expect(result?.structuredContent).not.toEqual({ matched: false });
+  });
+
+  it("accepts a plain http:// URL as well as https://", async () => {
+    const { result } = await callTool(
+      "check_agent_trust",
+      { endpointUrl: "http://never-registered.example.com/v1/invoke" },
+      fromIp("198.51.100.17"),
+    );
+    expect(result?.isError).toBeFalsy();
+    expect(result?.structuredContent).toEqual({ matched: false });
+  });
+
+  it("rejects malformed input before the rate limiter: it uses up none of the caller's allowance", async () => {
+    const ip = fromIp("198.51.100.18");
+    for (let i = 0; i < ANONYMOUS_RATE_LIMIT_PER_IP + 1; i++) {
+      await callTool("check_agent_trust", { endpointUrl: "not a url" }, ip);
+    }
+    const { result } = await callTool(
+      "check_agent_trust",
+      { endpointUrl: "https://never-registered.example.com/v1/invoke" },
+      ip,
+    );
+    expect(result?.isError).toBeFalsy();
+    expect(result?.structuredContent).toEqual({ matched: false });
+  });
+
   it("keeps the anonymous per-IP rate limit", async () => {
     const ip = fromIp("198.51.100.15");
     const args = { endpointUrl: "https://never-registered.example.com/v1/invoke" };

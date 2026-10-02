@@ -119,11 +119,35 @@ function checkAgentTrustHandler(db: AppDatabase) {
 export const PUBLIC_CONNECTOR_INSTRUCTIONS =
   "AgentTrust offers one read-only tool, check_agent_trust. It looks up an AI agent's exact endpoint URL in AgentTrust's own monitoring data and returns the agent's observed status, endpoint-ownership verification, reliability score (when available), and a trustDecision (recommended, confidence, reasons). The result is a signal derived from AgentTrust's observations, not a certification or guarantee of safety. The tool never contacts the endpoint being checked.";
 
+function isHttpUrl(value: string): boolean {
+  try {
+    const { protocol } = new URL(value);
+    return protocol === "https:" || protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The public tool's input: the same schema `/api/mcp` advertises, plus a
+ * check that `endpointUrl` is an absolute http(s) URL, so a malformed
+ * value gets an actionable error instead of `{ matched: false }`. The
+ * extra check doesn't change the advertised JSON Schema, and it runs
+ * before the tool does, so a rejected call never touches the rate limiter
+ * or telemetry.
+ */
+const publicCheckAgentTrustInputSchema = checkAgentTrustInputSchema.extend({
+  endpointUrl: checkAgentTrustInputSchema.shape.endpointUrl.refine(isHttpUrl, {
+    error: "endpointUrl must be an absolute http:// or https:// URL, such as https://agent.example.com/invoke.",
+  }),
+});
+
 /**
  * The public connector endpoint's only tool: the same `check_agent_trust`
- * check, schemas and handler as `/api/mcp`, with a neutral description and
- * the tool annotations directory listings (e.g. Claude's) require. Needs no
- * API key, so this endpoint needs no authentication at all.
+ * check, output schema and handler as `/api/mcp`, with a neutral
+ * description, stricter input validation, and the tool annotations
+ * directory listings (e.g. Claude's) require. Needs no API key, so this
+ * endpoint needs no authentication at all.
  */
 export function registerPublicTrustCheckTool(server: McpServer, db: AppDatabase): void {
   server.registerTool(
@@ -132,7 +156,7 @@ export function registerPublicTrustCheckTool(server: McpServer, db: AppDatabase)
       title: "Check Agent Trust",
       description:
         "Looks up an AI agent by its exact invocation URL among the public agents AgentTrust already monitors, and returns its status, endpoint-ownership verification, reliability score (when available), and a trustDecision (recommended, confidence, reasons). Use it to see AgentTrust's observed evidence about an agent endpoint before calling that endpoint. Read-only, and needs no account or API key. It does not contact endpointUrl; it only reads AgentTrust's stored monitoring history. A URL AgentTrust has not observed returns { matched: false }.",
-      inputSchema: checkAgentTrustInputSchema,
+      inputSchema: publicCheckAgentTrustInputSchema,
       outputSchema: checkAgentTrustOutputSchema,
       annotations: {
         title: "Check Agent Trust",
