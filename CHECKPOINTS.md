@@ -6,6 +6,28 @@ entry above the previous one, not by editing history.
 
 ---
 
+## CLAUDE CONNECTORS DIRECTORY — APPROVED AND PUBLISHED — 2026-10-02
+
+**Published.** The AgentTrust connector submitted earlier on 2026-10-02 was
+approved by Anthropic's directory review and published on 2026-10-02 at about
+15:50 UTC. Portal status: **Published** (Submitted → Approved → Published).
+Public listing: `https://claude.ai/directory/agenttrust`. Anthropic notes new
+listings can take up to an hour to appear; the label is Community by default.
+- Listed endpoint: `https://getagenttrust.com/api/mcp/public`, authentication
+  none, one tool (`check_agent_trust`); available in Claude on web and mobile,
+  Desktop, the Claude API and Claude Code.
+- Published exactly as approved — no listing edits, which would have sent it
+  back for review. The current site favicon/logo is the listing icon.
+- The portal's dashboard (directory rank, health, accounts, tool calls, error
+  rate) starts filling about a day after the first calls and updates daily.
+
+**Next.** Watch the dashboard and `trust_check_events` for the first
+directory-originated calls (`client_family` from Claude clients). Any listing
+edit goes through review before replacing the live one; directory contact:
+`mcp-review@anthropic.com`.
+
+---
+
 ## MCP REGISTRY RELEASE 1.0.4 — PUBLIC CONNECTOR LISTED FIRST — 2026-10-02
 
 **Released.** `io.github.agenttrust-ai/agenttrust` 1.0.4 is the latest
