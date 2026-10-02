@@ -6,6 +6,31 @@ entry above the previous one, not by editing history.
 
 ---
 
+## MCP REGISTRY RELEASE 1.0.4 — PUBLIC CONNECTOR LISTED FIRST — 2026-10-02
+
+**Released.** `io.github.agenttrust-ai/agenttrust` 1.0.4 is the latest
+active version in the official MCP Registry (published 2026-10-02 15:21 UTC
+by workflow run #2, GitHub Actions OIDC), replacing 1.0.3. Remotes, in order:
+1. `streamable-http` `https://getagenttrust.com/api/mcp/public` — no headers:
+   one read-only, annotated tool (`check_agent_trust`), no auth.
+2. `streamable-http` `https://getagenttrust.com/api/mcp` — optional
+   `Authorization` header for the four API-key tools.
+
+The public endpoint is listed first because directories that ingest the
+registry may use only the first remote; title and description are unchanged.
+
+**Code.** `ad6efb9` changed only `server.json` and both endpoints' reported
+`serverInfo` version (1.0.3 → 1.0.4), deployed before publishing so the
+registry never listed a version production didn't report. Verified live:
+both endpoints report `agenttrust` 1.0.4; `/api/mcp`'s `tools/list` matches
+its pinned snapshot and `/api/mcp/public`'s matches its pre-change capture —
+no tool, schema, auth or rate-limit change.
+
+**Next.** Watch registry-fed directories (Glama; PulseMCP when it reopens)
+pick up the public endpoint.
+
+---
+
 ## CLAUDE CONNECTORS DIRECTORY — SUBMITTED, IN REVIEW — 2026-10-02
 
 **Submitted.** AgentTrust was submitted as an MCP connector through Claude's
