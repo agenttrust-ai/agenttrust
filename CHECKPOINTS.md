@@ -6,6 +6,30 @@ entry above the previous one, not by editing history.
 
 ---
 
+## GLAMA — REGISTRY 1.0.4 NOT YET PICKED UP — 2026-10-03
+
+**Checked (2026-10-03 13:50 UTC, ~22.5 h after registry 1.0.4, read-only).**
+The registry still lists 1.0.4 with `/api/mcp/public` first and `/api/mcp`
+second, but Glama's connector `io.github.agenttrust-ai/agenttrust` still
+uses only `https://getagenttrust.com/api/mcp`:
+- 5 tools, the old "The preferred pre-invocation trust check…" description,
+  no MCP tool annotations shown.
+- Healthy, last tested 2026-10-03 13:36 UTC, 100% uptime over 15 days;
+  quality A 3.9/5 scored 2026-09-26 08:30; last tool change it detected was
+  2026-09-26 (`reliabilityScoreStatus`).
+- Its connector search for "agenttrust" has no second entry for
+  `/api/mcp/public` (only ours and the unrelated `io.github.eamwhite1`).
+
+Glama keeps monitoring its endpoint but has not switched endpoints; whether
+it never follows registry remote changes or just syncs slowly is unknown.
+
+**Next.** No product change — `/api/mcp` is healthy. Re-check around
+2026-10-05 (~72 h after the update); if still only `/api/mcp`, use Glama's
+owner controls (ownership is verified) or Glama support to switch it to the
+public endpoint.
+
+---
+
 ## CLAUDE DIRECTORY SEARCH — LISTING FINDABLE BY NAME — 2026-10-02
 
 **Verified (16:51 UTC, signed in to the owner's account, read-only).** The
