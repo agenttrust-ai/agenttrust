@@ -6,6 +6,33 @@ entry above the previous one, not by editing history.
 
 ---
 
+## CLAUDE DIRECTORY SEARCH — LISTING FINDABLE BY NAME — 2026-10-02
+
+**Verified (16:51 UTC, signed in to the owner's account, read-only).** The
+published listing `https://claude.ai/directory/agenttrust` loads with the
+Community badge, the approved copy, `check_agent_trust`, sign-in not required
+and connector URL `https://getagenttrust.com/api/mcp/public`.
+
+Directory search (`claude.ai/directory?q=…`):
+- `AgentTrust` → 1 result: the directory listing ("AgentTrust · Community ·
+  by AgentTrust"). At 15:56 UTC the same search still returned only the
+  owner's custom test connector, so the listing propagated within the
+  "up to an hour" Anthropic states.
+- `agent trust` (72 results) → AgentTrust first, but in the pinned "added to
+  your account" section, so this says nothing about ranking for other users.
+- `trust check` (63) and `agent endpoint` (61) → not among results shown.
+
+**Limits.** Checked only from the owner's account, where it shows as
+connected; a signed-out view is blocked by Cloudflare (HTTP 403 challenge),
+so ranking for a new user is unverified.
+
+**Next.** No change needed. Discovery by name works; generic-query ranking
+depends on the directory's own signals (the portal's "directory rank" fills
+from usage). Watch the portal dashboard, which reports about a day after the
+first calls.
+
+---
+
 ## CLAUDE CONNECTORS DIRECTORY — APPROVED AND PUBLISHED — 2026-10-02
 
 **Published.** The AgentTrust connector submitted earlier on 2026-10-02 was
