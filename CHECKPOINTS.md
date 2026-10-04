@@ -6,6 +6,36 @@ entry above the previous one, not by editing history.
 
 ---
 
+## GLAMA PICKED UP /api/mcp WORDING — DISAMBIGUATION 2/5 → 4/5 — 2026-10-04
+
+**Checked (2026-10-04 ~14:20 UTC, read-only page fetch).** Glama's connector
+`io.github.agenttrust-ai/agenttrust` re-tested `/api/mcp` at 13:44 UTC and
+re-scored it at 13:50 UTC, both after the `969917f` deploy
+(`dpl_5TG63ftgqMzKMyNTaNcNKCeZMHau`):
+- `check_agent_trust` shows the new first sentence, "Pre-invocation trust
+  check for an unknown AI agent or MCP server endpoint.", and now carries
+  Read-only and Idempotent badges; Glama's scoring notes the annotations
+  "already cover the safety profile (readOnly, idempotent,
+  non-destructive)". No "preferred" remains on the page.
+- `list_agents` shows the new last sentence, "Requires an API key; for an
+  anonymous pre-invocation check use check_agent_trust."
+- Overall quality A 3.9 → **A 4.1**; Disambiguation 2/5 → **4/5**; Naming
+  Consistency 5/5, Tool Count 5/5, Completeness 4/5. The remaining
+  disambiguation note: `check_agent_trust` and `list_agents` with
+  `endpointUrl` overlap, but the descriptions clarify the difference
+  (anonymous vs API key), so confusion is limited.
+- Uptime 100% over 16 days.
+
+**Unchanged on Glama.** Still only `https://getagenttrust.com/api/mcp`
+(5 tools); `/api/mcp/public` does not appear — it has not followed the
+registry 1.0.4 remote order. Less important now that `/api/mcp` carries
+the same wording and annotations.
+
+**Next.** No product change. Smithery still serves its stored old copy
+until re-scanned from the owner's Smithery account.
+
+---
+
 ## llms.txt AND README POINT AT /api/mcp/public — 2026-10-04
 
 **Why.** The discovery audit found that `llms.txt` and the README — what
