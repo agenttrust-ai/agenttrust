@@ -64,6 +64,14 @@ beforeAll(async () => {
         res.end("ok");
         return;
       }
+      // Answers with exactly the requested status code — never with a
+      // Location header, so a 3xx here is a final response, not a redirect.
+      const statusMatch = /^\/status\/(\d{3})$/.exec(url);
+      if (statusMatch) {
+        res.writeHead(Number(statusMatch[1]));
+        res.end();
+        return;
+      }
       if (url === "/slow-ok") {
         setTimeout(() => {
           res.writeHead(200);
@@ -236,6 +244,60 @@ describe("fetchWithGuard — HTTP-level failures", () => {
       success: false,
       httpStatus: 500,
       errorCode: "HTTP_500",
+    });
+  });
+});
+
+describe("fetchWithGuard — reachability classification by final HTTP status", () => {
+  async function check(status: number) {
+    return fetchWithGuard(withPort(`/status/${status}`, port), {
+      lookup: testLookup,
+      extraCaCert: cert.cert,
+    });
+  }
+
+  it.each([200, 201, 204])("treats %i (2xx) as reachable", async (status) => {
+    expect(await check(status)).toMatchObject({
+      status: "success",
+      success: true,
+      httpStatus: status,
+      errorCode: null,
+      errorMessage: null,
+    });
+  });
+
+  it.each([300, 304])("treats a final %i (3xx without Location) as reachable", async (status) => {
+    expect(await check(status)).toMatchObject({ status: "success", success: true, httpStatus: status });
+  });
+
+  it.each([401, 403, 405, 406])(
+    "treats %i as reachable — the endpoint is up and answered, keeping the real status",
+    async (status) => {
+      expect(await check(status)).toMatchObject({
+        status: "success",
+        success: true,
+        httpStatus: status,
+        errorCode: null,
+        errorMessage: null,
+      });
+    },
+  );
+
+  it.each([400, 402, 404, 408, 410, 429])("treats %i as a failure (http_error)", async (status) => {
+    expect(await check(status)).toMatchObject({
+      status: "http_error",
+      success: false,
+      httpStatus: status,
+      errorCode: `HTTP_${status}`,
+    });
+  });
+
+  it.each([500, 502, 503, 504])("treats %i (5xx) as a failure (http_error)", async (status) => {
+    expect(await check(status)).toMatchObject({
+      status: "http_error",
+      success: false,
+      httpStatus: status,
+      errorCode: `HTTP_${status}`,
     });
   });
 });
@@ -475,21 +537,23 @@ describe("fetchWithGuard — authenticated requests", () => {
     expect(result).toMatchObject({ status: "success", success: true, httpStatus: 200 });
   });
 
-  it("reports http_error 401, not a network failure, when no auth header is attached to a protected endpoint", async () => {
+  // A health check measures reachability, so a protected endpoint that
+  // answers 401/403 is up; the real status stays in httpStatus.
+  it("reports a protected endpoint as reachable (httpStatus 401) when no auth header is attached", async () => {
     const result = await fetchWithGuard(withPort("/require-bearer", port), {
       lookup: testLookup,
       extraCaCert: cert.cert,
     });
-    expect(result).toMatchObject({ status: "http_error", success: false, httpStatus: 401 });
+    expect(result).toMatchObject({ status: "success", success: true, httpStatus: 401 });
   });
 
-  it("reports http_error 401 when the wrong bearer value is attached", async () => {
+  it("reports a protected endpoint as reachable (httpStatus 401) when the wrong bearer value is attached", async () => {
     const result = await fetchWithGuard(withPort("/require-bearer", port), {
       lookup: testLookup,
       extraCaCert: cert.cert,
       authHeader: { name: "Authorization", value: "Bearer wrong-token" },
     });
-    expect(result).toMatchObject({ status: "http_error", success: false, httpStatus: 401 });
+    expect(result).toMatchObject({ status: "success", success: true, httpStatus: 401 });
   });
 
   it("attaches a custom api_key header, so an api-key-protected endpoint succeeds", async () => {
@@ -502,12 +566,12 @@ describe("fetchWithGuard — authenticated requests", () => {
     expect(result).toMatchObject({ status: "success", success: true, httpStatus: 200 });
   });
 
-  it("reports http_error 403 when the api_key header is missing", async () => {
+  it("reports a protected endpoint as reachable (httpStatus 403) when the api_key header is missing", async () => {
     const result = await fetchWithGuard(withPort("/require-api-key", port), {
       lookup: testLookup,
       extraCaCert: cert.cert,
     });
-    expect(result).toMatchObject({ status: "http_error", success: false, httpStatus: 403 });
+    expect(result).toMatchObject({ status: "success", success: true, httpStatus: 403 });
   });
 
   it("carries the same auth header across a redirect hop", async () => {

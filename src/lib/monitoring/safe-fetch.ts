@@ -44,6 +44,22 @@ export type CustomLookup = (
   ) => void,
 ) => void;
 
+/**
+ * Final HTTP statuses outside 2xx/3xx that still prove the endpoint is up
+ * and answering: authentication required (401), forbidden (403), method not
+ * allowed (405) and not acceptable (406). MCP Streamable HTTP servers, for
+ * one, commonly answer the probe's plain GET with 405 or 406, and protected
+ * agents with 401/403. A health check measures reachability only — not
+ * that the endpoint accepts this request or works correctly — so these
+ * count as reachable. Every other 4xx (including 400 and 404) and every 5xx
+ * stays a failure.
+ */
+const REACHABLE_ERROR_STATUSES: ReadonlySet<number> = new Set([401, 403, 405, 406]);
+
+function isReachableStatus(status: number): boolean {
+  return (status >= 200 && status < 400) || REACHABLE_ERROR_STATUSES.has(status);
+}
+
 const MAX_REDIRECTS = 5;
 const DEFAULT_CONNECT_TIMEOUT_MS = 5_000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 10_000;
@@ -257,7 +273,7 @@ export async function fetchWithGuard(
       await response.body?.cancel().catch(() => {});
       const latencyMs = performance.now() - start;
 
-      if (response.status >= 200 && response.status < 400) {
+      if (isReachableStatus(response.status)) {
         return outcome("success", true, response.status, latencyMs, null, null);
       }
       return outcome(
