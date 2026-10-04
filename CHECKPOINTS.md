@@ -6,6 +6,34 @@ entry above the previous one, not by editing history.
 
 ---
 
+## CLAUDE DIRECTORY USAGE — FIRST DAY — 2026-10-03
+
+**Dashboard (read 2026-10-03 13:56 UTC, ~22 h after publication).** Portal
+`claude.ai/directory/manage/agenttrust`: Published; directory rank #2,158;
+health "not enough data". Accounts, last 30 days: tried to reach the server
+71 (overstates real use, per Anthropic), finished connecting 71, used a tool
+1, disconnect rate 2.8%. Tool calls and error rate are below the reporting
+threshold; the daily chart lags 2–3 days.
+
+**Cross-checked against our own data (read-only, no hashes or IPs printed).**
+- The one tool-using account is very likely the owner's 2026-10-02 12:47 UTC
+  test (`client_family=claude-user`, before publication); no `claude-user`
+  trust checks since publication.
+- Connections are real: `/api/mcp/public` got 30 requests (27 POST 200) in
+  the only log window available (13:36–13:56 UTC). Connecting and
+  `tools/list` record no telemetry.
+- `trust_check_events` since 2026-10-02 15:45 UTC: two new external MCP
+  clients, `riaa-radariaagent` (3 checks, 10-02 19:37) and `objekts-agent`
+  (1 check, 10-02 18:26), all `not_matched` — genuine third-party agent use;
+  plus 11 web check-page events (`mozilla`) from ~8 callers (7 matched, 4 not),
+  people or crawlers.
+
+**Next.** No change needed. A large connect-to-use gap is expected early: Claude
+calls the tool only when a conversation needs it. Re-check the dashboard once
+calls pass its reporting thresholds.
+
+---
+
 ## GLAMA — REGISTRY 1.0.4 NOT YET PICKED UP — 2026-10-03
 
 **Checked (2026-10-03 13:50 UTC, ~22.5 h after registry 1.0.4, read-only).**
