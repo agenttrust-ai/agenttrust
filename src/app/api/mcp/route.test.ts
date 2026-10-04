@@ -19,10 +19,10 @@ beforeAll(async () => {
  * Regression guard for `/api/mcp`, the endpoint every existing listing
  * (official MCP Registry, Smithery, Glama, directories) points at: its
  * initialize result and full tool list — names, titles, descriptions,
- * schemas, and the absence of annotations — are pinned to a snapshot, so
- * any change to them has to be deliberate.
+ * schemas, and annotations — are pinned to a snapshot, so any change to
+ * them has to be deliberate.
  */
-describe("/api/mcp (unchanged)", () => {
+describe("/api/mcp", () => {
   it("initialize result matches the pinned snapshot (serverInfo agenttrust 1.0.4, instructions)", async () => {
     const { status, body } = await mcpRpc(post, URL_MCP, {
       id: 1,
@@ -35,9 +35,9 @@ describe("/api/mcp (unchanged)", () => {
     await expect(JSON.stringify(result, null, 2)).toMatchFileSnapshot("./__snapshots__/initialize.json");
   });
 
-  it("tools/list matches the pinned snapshot: the same five tools, no annotations", async () => {
+  it("tools/list matches the pinned snapshot: the same five tools, annotations only on check_agent_trust", async () => {
     const { body } = await mcpRpc(post, URL_MCP, { id: 2, method: "tools/list" });
-    const tools = (body.result as { tools: { name: string; annotations?: unknown }[] }).tools;
+    const tools = (body.result as { tools: { name: string; description?: string; annotations?: unknown }[] }).tools;
     expect(tools.map((tool) => tool.name)).toEqual([
       "list_agents",
       "get_agent",
@@ -45,8 +45,27 @@ describe("/api/mcp (unchanged)", () => {
       "send_heartbeat",
       "check_agent_trust",
     ]);
-    expect(tools.some((tool) => tool.annotations !== undefined)).toBe(false);
+    expect(tools.filter((tool) => tool.annotations !== undefined).map((tool) => tool.name)).toEqual([
+      "check_agent_trust",
+    ]);
     await expect(JSON.stringify(body.result, null, 2)).toMatchFileSnapshot("./__snapshots__/tools-list.json");
+  });
+
+  it("describes check_agent_trust like /api/mcp/public, and points list_agents callers without a key to it", async () => {
+    const { body } = await mcpRpc(post, URL_MCP, { id: 5, method: "tools/list" });
+    const tools = (body.result as { tools: { name: string; description: string; annotations?: unknown }[] }).tools;
+    const check = tools.find((tool) => tool.name === "check_agent_trust")!;
+    expect(check.description).toMatch(/^Pre-invocation trust check for an unknown AI agent or MCP server endpoint\./);
+    expect(check.description).not.toMatch(/preferred/i);
+    expect(check.annotations).toEqual({
+      title: "Check Agent Trust",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    });
+    const list = tools.find((tool) => tool.name === "list_agents")!;
+    expect(list.description).toMatch(/Requires an API key; for an anonymous pre-invocation check use check_agent_trust\.$/);
   });
 
   it("still rejects an API-key tool called without a key, as before", async () => {

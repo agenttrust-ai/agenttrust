@@ -39,7 +39,7 @@ export function registerAgentTrustTools(server: McpServer, db: AppDatabase): voi
     {
       title: "List Agents",
       description:
-        "Discover AgentTrust agents. Pass `endpointUrl` to check the trust status of a specific external agent by its exact invocation URL before deciding whether to invoke it — the response includes a reliability score, endpoint-ownership verification status, and a machine-readable trustDecision (recommended, confidence, reasons). Without `endpointUrl`, returns the plain paginated listing of public agents, newest first.",
+        "Discover AgentTrust agents. Pass `endpointUrl` to check the trust status of a specific external agent by its exact invocation URL before deciding whether to invoke it — the response includes a reliability score, endpoint-ownership verification status, and a machine-readable trustDecision (recommended, confidence, reasons). Without `endpointUrl`, returns the plain paginated listing of public agents, newest first. Requires an API key; for an anonymous pre-invocation check use check_agent_trust.",
       inputSchema: listAgentsInputSchema,
       outputSchema: listAgentsOutputSchema,
     },
@@ -87,13 +87,26 @@ export function registerAgentTrustTools(server: McpServer, db: AppDatabase): voi
     {
       title: "Check Agent Trust",
       description:
-        "The preferred pre-invocation trust check for an unknown external agent. Read-only, requires no AgentTrust API key or account. Looks up an agent by its exact invocation URL among AgentTrust's already-observed public agents and returns its status, endpoint-ownership verification, agent reliability score (when available), and a machine-readable trustDecision (recommended, confidence, reasons). Does NOT contact endpointUrl itself during this check — it only reads AgentTrust's own existing monitoring history. An unregistered URL returns { matched: false }, never an error.",
+        "Pre-invocation trust check for an unknown AI agent or MCP server endpoint. Read-only, requires no AgentTrust API key or account. Looks up an agent by its exact invocation URL among AgentTrust's already-observed public agents and returns its status, endpoint-ownership verification, agent reliability score (when available), and a machine-readable trustDecision (recommended, confidence, reasons). Does NOT contact endpointUrl itself during this check — it only reads AgentTrust's own existing monitoring history. An unregistered URL returns { matched: false }, never an error.",
       inputSchema: checkAgentTrustInputSchema,
       outputSchema: checkAgentTrustOutputSchema,
+      annotations: CHECK_AGENT_TRUST_ANNOTATIONS,
     },
     checkAgentTrustHandler(db),
   );
 }
+
+/**
+ * `check_agent_trust`'s tool annotations, the same on both endpoints: it
+ * only reads AgentTrust's own stored data and never contacts endpointUrl.
+ */
+const CHECK_AGENT_TRUST_ANNOTATIONS = {
+  title: "Check Agent Trust",
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+} as const;
 
 /**
  * The one `check_agent_trust` tool callback, shared by `/api/mcp` and the
@@ -158,13 +171,7 @@ export function registerPublicTrustCheckTool(server: McpServer, db: AppDatabase)
         "Pre-invocation trust check for an unknown AI agent or MCP server endpoint. Pass the exact URL you are about to call as endpointUrl to get what AgentTrust has observed about it: status, endpoint-ownership verification, reliability score (when available), and a trustDecision (recommended, confidence, reasons). Read-only, no account or API key. It never contacts endpointUrl; it only reads AgentTrust's stored monitoring history. A URL AgentTrust has not observed returns { matched: false }.",
       inputSchema: publicCheckAgentTrustInputSchema,
       outputSchema: checkAgentTrustOutputSchema,
-      annotations: {
-        title: "Check Agent Trust",
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
+      annotations: CHECK_AGENT_TRUST_ANNOTATIONS,
     },
     checkAgentTrustHandler(db),
   );
