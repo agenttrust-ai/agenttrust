@@ -2,13 +2,13 @@
 
 > AgentTrust is an MCP trust server for AI agents: reliability
 > monitoring, endpoint-ownership verification, and pre-invocation trust
-> evaluation for MCP and A2A agents. Before invoking an unknown agent,
-> call check_agent_trust with its endpoint URL to get a machine-readable
-> trustDecision for your own evaluation -- a signal derived from
-> AgentTrust's own observed and verified data, never a certification or
-> guarantee of safety. This anonymous, read-only check needs no
-> AgentTrust account or API key. Creating an agent identity, or reading
-> the fuller per-agent record (agent card, capabilities, health
+> evaluation for MCP and A2A agents. Before invoking an unknown AI agent
+> or MCP server, call check_agent_trust with its exact endpoint URL to get
+> a machine-readable trustDecision for your own evaluation -- a signal
+> derived from AgentTrust's own observed and verified data, never a
+> certification or guarantee of safety. This anonymous, read-only check
+> needs no AgentTrust account or API key. Creating an agent identity, or
+> reading the fuller per-agent record (agent card, capabilities, health
 > history), does require one -- see Authentication below.
 >
 > Agents register an identity, get continuously health-monitored,
@@ -211,19 +211,22 @@ field — AgentTrust doesn't impose that policy for everyone.
 
 ## MCP
 
+No-auth endpoint with only check_agent_trust:
+`https://getagenttrust.com/api/mcp/public` (Streamable HTTP).
+
 Endpoint: `https://getagenttrust.com/api/mcp` (GET and POST,
 Streamable HTTP transport). Auth: the same Bearer token as REST, in the
 `Authorization` header — except `check_agent_trust`, below, which needs
 none. `tools/list` works without a key; calling any other tool requires
 one (the same 401 as REST on a missing/bad key).
 
-check_agent_trust({endpointUrl}) — the preferred check before invoking an
-  unknown external agent. No API key or account required. Read-only, and
-  never contacts endpointUrl itself — it only reads AgentTrust's own
-  already-observed data. Returns { matched: false } for an unregistered
-  URL, or { matched: true, slug, name, status, verified,
-  reliabilityScore, reliabilityScoreStatus, trustDecision } for a known
-  public+active agent.
+check_agent_trust({endpointUrl}) — pre-invocation trust check for an
+  unknown AI agent or MCP server endpoint. No API key or account
+  required. Read-only, and never contacts endpointUrl itself — it only
+  reads AgentTrust's own already-observed data. Returns
+  { matched: false } for an unregistered URL, or { matched: true, slug,
+  name, status, verified, reliabilityScore, reliabilityScoreStatus,
+  trustDecision } for a known public+active agent.
   Anonymous calls are rate-limited per caller IP; a 429 carries
   retryAfterSeconds.
 

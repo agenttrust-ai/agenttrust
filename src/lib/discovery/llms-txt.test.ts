@@ -28,6 +28,16 @@ describe("llms.txt authentication facts", () => {
     expect(flat()).toContain("Every `/api/v1/*` request requires `Authorization: Bearer <API_KEY>`.");
   });
 
+  it("names the no-auth /api/mcp/public endpoint and describes check_agent_trust like the tool does", () => {
+    expect(flat()).toContain(
+      "No-auth endpoint with only check_agent_trust: `https://getagenttrust.com/api/mcp/public`",
+    );
+    // The summary is a "> " blockquote, so a line break there leaves a "> " in the phrase.
+    expect(flat()).toMatch(/Before invoking an unknown AI agent (> )?or MCP server, call check_agent_trust/);
+    expect(flat()).toContain("pre-invocation trust check for an unknown AI agent or MCP server endpoint");
+    expect(flat()).not.toMatch(/the preferred check/i);
+  });
+
   it("contains no real key or secret values", () => {
     // The documented placeholder (`at_live_` followed only by x's) is fine; anything else isn't.
     expect(text()).not.toMatch(/at_live_(?!x+\b)[A-Za-z0-9_-]{20,}/);

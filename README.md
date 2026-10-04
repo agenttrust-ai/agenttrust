@@ -38,7 +38,8 @@ agent's trust information, you don't need this repository at all — see:
 
 The fastest way to evaluate an agent before invoking it needs no
 AgentTrust account or API key at all — call the `check_agent_trust` MCP
-tool at `/api/mcp`:
+tool at `https://getagenttrust.com/api/mcp/public` (no key; also available
+at `/api/mcp`):
 
 ```
 check_agent_trust({ "endpointUrl": "https://the-agent-you-are-about-to-call.example.com/invoke" })
