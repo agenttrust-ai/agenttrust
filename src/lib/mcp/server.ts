@@ -117,7 +117,7 @@ function checkAgentTrustHandler(db: AppDatabase) {
  * what the server offers, stated as fact — no directions to the client.
  */
 export const PUBLIC_CONNECTOR_INSTRUCTIONS =
-  "AgentTrust offers one read-only tool, check_agent_trust. It looks up an AI agent's exact endpoint URL in AgentTrust's own monitoring data and returns the agent's observed status, endpoint-ownership verification, reliability score (when available), and a trustDecision (recommended, confidence, reasons). The result is a signal derived from AgentTrust's observations, not a certification or guarantee of safety. The tool never contacts the endpoint being checked.";
+  "AgentTrust offers one read-only tool, check_agent_trust, for checking an unknown AI agent or MCP server before calling it. It looks up the endpoint's exact URL in AgentTrust's own monitoring data and returns the agent's observed status, endpoint-ownership verification, reliability score (when available), and a trustDecision (recommended, confidence, reasons). The result is a signal derived from AgentTrust's observations, not a certification or guarantee of safety. The tool never contacts the endpoint being checked.";
 
 function isHttpUrl(value: string): boolean {
   try {
@@ -155,7 +155,7 @@ export function registerPublicTrustCheckTool(server: McpServer, db: AppDatabase)
     {
       title: "Check Agent Trust",
       description:
-        "Looks up an AI agent by its exact invocation URL among the public agents AgentTrust already monitors, and returns its status, endpoint-ownership verification, reliability score (when available), and a trustDecision (recommended, confidence, reasons). Use it to see AgentTrust's observed evidence about an agent endpoint before calling that endpoint. Read-only, and needs no account or API key. It does not contact endpointUrl; it only reads AgentTrust's stored monitoring history. A URL AgentTrust has not observed returns { matched: false }.",
+        "Pre-invocation trust check for an unknown AI agent or MCP server endpoint. Pass the exact URL you are about to call as endpointUrl to get what AgentTrust has observed about it: status, endpoint-ownership verification, reliability score (when available), and a trustDecision (recommended, confidence, reasons). Read-only, no account or API key. It never contacts endpointUrl; it only reads AgentTrust's stored monitoring history. A URL AgentTrust has not observed returns { matched: false }.",
       inputSchema: publicCheckAgentTrustInputSchema,
       outputSchema: checkAgentTrustOutputSchema,
       annotations: {

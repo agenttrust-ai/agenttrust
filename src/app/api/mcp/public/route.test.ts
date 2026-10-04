@@ -90,6 +90,14 @@ describe("/api/mcp/public", () => {
     expect(tool.description).not.toMatch(/preferred/i);
   });
 
+  it("states when the tool applies — an unknown AI agent or MCP server, before calling it — in the description and instructions", async () => {
+    const [tool] = await listTools(publicPost, PUBLIC_URL);
+    expect(tool.description).toMatch(/^Pre-invocation trust check for an unknown AI agent or MCP server endpoint\./);
+    expect(tool.description).toMatch(/exact URL you are about to call as endpointUrl/);
+    expect(tool.description).toMatch(/never contacts endpointUrl/);
+    expect(PUBLIC_CONNECTOR_INSTRUCTIONS).toMatch(/for checking an unknown AI agent or MCP server before calling it\./);
+  });
+
   it("uses exactly the same input and output schemas as /api/mcp's check_agent_trust", async () => {
     const [publicTool] = await listTools(publicPost, PUBLIC_URL);
     const mainTool = (await listTools(mainPost, "https://getagenttrust.com/api/mcp")).find(
