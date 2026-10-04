@@ -217,8 +217,8 @@ export default function DocsPage() {
             requires one (the same 401 as REST on a missing/bad key).
           </p>
           <Callout tone="info" title={<code className="!bg-transparent !px-0 text-sm">check_agent_trust({"{endpointUrl}"})</code>}>
-            The preferred check before invoking an unknown external agent. No
-            API key or account required. Read-only, and never contacts{" "}
+            Pre-invocation trust check for an unknown AI agent or MCP server
+            endpoint. No API key or account required. Read-only, and never contacts{" "}
             <code>endpointUrl</code> itself — it only reads AgentTrust&apos;s
             own already-observed data. Returns{" "}
             <code>{"{ matched: false }"}</code> for an unregistered URL, or{" "}
