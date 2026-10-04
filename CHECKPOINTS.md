@@ -6,6 +6,40 @@ entry above the previous one, not by editing history.
 
 ---
 
+## PUBLIC TOOL WORDING — LEADS WITH WHEN TO USE IT — 2026-10-04
+
+**Why.** A read-only audit of the tool-selection path found the public
+`check_agent_trust` description led with how it works rather than when to
+use it, lacked "unknown" and "pre-invocation", and — like every discovery
+surface — never said "MCP server", although 150 of 152 covered agents are
+MCP servers imported from the MCP Registry.
+
+**What.** `eabe9d7`, on `/api/mcp/public` only (`src/lib/mcp/server.ts`):
+- Tool description (542 → 490 chars) now opens: "Pre-invocation trust
+  check for an unknown AI agent or MCP server endpoint. Pass the exact URL
+  you are about to call as endpointUrl to get what AgentTrust has observed
+  about it: …", keeping read-only, no API key, never contacts endpointUrl,
+  and `{ matched: false }` for unknown URLs.
+- Server instructions now open: "AgentTrust offers one read-only tool,
+  check_agent_trust, for checking an unknown AI agent or MCP server before
+  calling it."
+- No directive wording (the existing test against "preferred" / "only
+  proceed" / "before invoking" still passes); a new test pins the trigger
+  phrasing.
+
+**Unchanged.** Tool name, title, input/output schemas, annotations,
+behavior, `/api/mcp` (its pinned snapshots match). Claude's directory reads
+tools live — no resubmission, as the name is unchanged; no MCP Registry
+version (it stores no tool descriptions). Verified live after deploy
+`dpl_8BmB7713UE6D2L3aJF8PFjRJW7Nf`.
+
+**Deferred.** Aligning `/api/mcp` (drop "The preferred…", add annotations,
+point `list_agents` at `check_agent_trust`) would change its pinned output;
+held until the public change has been observed. No usage effect is
+measurable yet — Claude tool calls remain below the dashboard's threshold.
+
+---
+
 ## CLAUDE DIRECTORY USAGE — FIRST DAY — 2026-10-03
 
 **Dashboard (read 2026-10-03 13:56 UTC, ~22 h after publication).** Portal
