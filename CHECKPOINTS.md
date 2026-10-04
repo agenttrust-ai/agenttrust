@@ -6,6 +6,42 @@ entry above the previous one, not by editing history.
 
 ---
 
+## /api/mcp TOOL WORDING ALIGNED WITH THE PUBLIC TOOL — 2026-10-04
+
+**Why.** A read-only discovery audit found that the two third-party
+listings still on `/api/mcp` showed its old copy: Glama (live, re-read
+daily; disambiguation 2/5) and Smithery (a stored snapshot), both with
+"The preferred …" and no annotations, and with `list_agents` overlapping
+`check_agent_trust`. This is the change deferred in the entry below.
+
+**What.** `969917f`, on `/api/mcp` (`src/lib/mcp/server.ts`):
+- `check_agent_trust` description now opens "Pre-invocation trust check
+  for an unknown AI agent or MCP server endpoint." instead of "The
+  preferred pre-invocation trust check for an unknown external agent."; the
+  rest is unchanged.
+- `check_agent_trust` now carries the same annotations as
+  `/api/mcp/public` (title, readOnlyHint true, destructiveHint false,
+  idempotentHint true, openWorldHint false), from one shared constant.
+- `list_agents` description adds: "Requires an API key; for an anonymous
+  pre-invocation check use check_agent_trust."
+- Pinned `tools-list.json` snapshot updated deliberately; the regression
+  test now allows annotations only on `check_agent_trust`, and a new test
+  pins the wording. 917/917 tests, typecheck, lint, build passed.
+
+**Unchanged.** Tool names, input/output schemas, handlers, auth, rate
+limits, serverInfo (1.0.4) and instructions (`initialize.json` snapshot
+unchanged); the three key-only tools have no annotations;
+`/api/mcp/public` unchanged. No MCP Registry version, no listing edits.
+Verified live via `tools/list` on both endpoints after deploy
+`dpl_5TG63ftgqMzKMyNTaNcNKCeZMHau`.
+
+**Next.** Glama should pick the change up on its next re-read of
+`/api/mcp` — re-check its page and disambiguation score with the pending
+~2026-10-05 Glama check. Smithery keeps its stored copy until re-scanned
+from the owner's Smithery account.
+
+---
+
 ## PUBLIC TOOL WORDING — LEADS WITH WHEN TO USE IT — 2026-10-04
 
 **Why.** A read-only audit of the tool-selection path found the public
