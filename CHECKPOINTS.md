@@ -6,6 +6,50 @@ entry above the previous one, not by editing history.
 
 ---
 
+## llms.txt AND README POINT AT /api/mcp/public — 2026-10-04
+
+**Why.** The discovery audit found that `llms.txt` and the README — what
+an AI reads when it lands on the site or the repo — named only
+`/api/mcp`, never `/api/mcp/public`, never said "MCP server", and
+`llms.txt` still called `check_agent_trust` "the preferred check".
+
+**What.** `747eaca`, docs only:
+- `public/llms.txt` summary: "Before invoking an unknown AI agent or MCP
+  server, call check_agent_trust with its exact endpoint URL …" (was
+  "an unknown agent … with its endpoint URL").
+- `public/llms.txt` MCP section: new first line "No-auth endpoint with
+  only check_agent_trust: `https://getagenttrust.com/api/mcp/public`
+  (Streamable HTTP)."; the `check_agent_trust` entry now reads
+  "pre-invocation trust check for an unknown AI agent or MCP server
+  endpoint" instead of "the preferred check before invoking an unknown
+  external agent".
+- `README.md`: the anonymous-check section now points at
+  `https://getagenttrust.com/api/mcp/public` (no key; also available at
+  `/api/mcp`).
+- `src/lib/discovery/llms-txt.test.ts`: one new test pins these facts.
+  918/918 tests, typecheck, lint, build passed.
+
+**Verified live (read-only).** Deploy `dpl_8zGhB7XMHNumM8HKLaT1UwQPQ1tk`
+READY. `https://getagenttrust.com/llms.txt` returns 200 `text/plain`,
+byte-identical to the committed file, no "preferred" left. GitHub `main`
+is `747eaca`, changing exactly the three files above; its README is
+byte-identical to the committed one. `/api/mcp/public` `tools/list`
+still returns only `check_agent_trust` with the same wording.
+
+**Unchanged.** Code, tool metadata, pinned `/api/mcp` snapshots, schemas,
+auth, registry version, listings, production data. Two old phrasings are
+left deliberately, outside this change: the `/api/mcp` server
+instructions ("Before invoking an unknown agent endpoint, call
+check_agent_trust … Only proceed …", pinned in `initialize.json`) and
+`/docs` ("The preferred check before invoking an unknown external
+agent").
+
+**Measurement.** Weak: request logs count path hits, not user agents.
+Daily `/llms.txt` fetches and the share of `/api/mcp/public` connections
+are rough indicators only.
+
+---
+
 ## /api/mcp TOOL WORDING ALIGNED WITH THE PUBLIC TOOL — 2026-10-04
 
 **Why.** A read-only discovery audit found that the two third-party
