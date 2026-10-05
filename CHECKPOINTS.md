@@ -6,6 +6,71 @@ entry above the previous one, not by editing history.
 
 ---
 
+## CHANGE 1 — FIRST NATURAL MONITORING RUN VERIFIED — 2026-10-05
+
+**Checked (2026-10-05 ~12:50 UTC, read-only).** Production queries ran only
+in read-only transactions; nothing was triggered or written. Change 1
+(`b7a7ca6`: 401/403/405/406 count as reachable) was deployed 2026-10-04;
+this was its first scheduled run.
+
+**The run occurred.** One run on 2026-10-05: 152 pull checks on 152
+agents at 00:44:09–00:44:13 UTC, 112 scores written 00:44:10–00:44:44
+(previous runs: 122/82, 132/92, 142/102). Every agent that existed at run
+time was checked; the 10 active agents without checks were all created
+at 04:25:26 UTC, after the run, as one batch of 10 (the daily discovery
+cap).
+
+**Change 1 worked.**
+- All 110 checks returning 401/403/405/406 counted as reachable
+  (405: 76, 401: 26, 406: 6, 403: 2); in the 10-04 run, 0 of 102 did.
+- 400/404/5xx, timeouts and unknown errors all still failed (404: 8,
+  503: 3, 400: 2, 502: 1, timeout: 2, unknown: 2).
+- Reachable checks: 134/152, up from 23/142.
+- `down` is still 93, by design: an agent that was `down` needs 2
+  consecutive successes (`RECOVERY_THRESHOLD`) to turn `healthy`. Of the
+  102 previously monitored agents now reachable, 80 remain `down` and 22
+  `degraded`. The only status changes were 10 first-time agents,
+  `unknown` → `healthy`. Replaying `deriveAgentStatus` over stored checks
+  reproduces `current_status` for 162/162 agents.
+
+**Freshness (current `classifyReliabilityScore`, replayed on stored
+timestamps).**
+- fresh/stale/none: just before the run 102/0/60; just after 112/0/50;
+  after the 10-min settle window 112/0/50; at 12:51 UTC 112/0/50 (the
+  "none" counts include the 10 agents created later that morning).
+- The fresh → stale flicker is gone: 48 evaluations every 15 minutes from
+  the end of the settle window to 12:51 UTC, 0 status changes across all
+  162 agents. All 112 new scores have `windowEnd` equal to their
+  triggering check from this run; none went stale after scoring.
+- Transitions: fresh → fresh 102, none → fresh 10, none → none 50,
+  fresh → stale 0.
+- 40 agents were checked but got no new score: all have fewer than 5
+  checks in 7 days and no earlier score, so all correctly show `none`.
+
+**trustDecision.** 10 changed, 0 because of freshness. All 10 were first
+scores: 3 healthy agents became recommended (low confidence; scores
+98.48, 100, 80) and 7 `down` agents moved from insufficient_data to
+not recommended (low; scores ~21–23). 86 existing scores changed with the
+rolling 7-day window (84 up, by up to +19.35, mostly from reachable
+checks now counting; 2 down), none changing a decision. The two drops:
+`flux-apex-on-x1-arc` 99.56 → 74.76 from a real timeout in this run (still
+healthy and recommended, low confidence), and
+`skyros-economic-agent-platform` 94.68 → 94.23 with all checks successful
+(older samples aged out of the window).
+
+**Original production agents intact.** `anthropic-status` and
+`support-bot`: active, public, pull, healthy, last check 00:44 UTC HTTP
+200, score 100 fresh, recommended (low confidence, unverified); records
+unmodified since 2026-09-11.
+
+**Anomalies.** None.
+
+**Next.** Change 1's reduction of `down` can only appear after the
+second reachable check, at the next scheduled run (~00:44 UTC
+2026-10-06) — verify read-only then.
+
+---
+
 ## GLAMA PICKED UP /api/mcp WORDING — DISAMBIGUATION 2/5 → 4/5 — 2026-10-04
 
 **Checked (2026-10-04 ~14:20 UTC, read-only page fetch).** Glama's connector
