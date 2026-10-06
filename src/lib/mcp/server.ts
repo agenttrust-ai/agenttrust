@@ -42,6 +42,7 @@ export function registerAgentTrustTools(server: McpServer, db: AppDatabase): voi
         "Discover AgentTrust agents. Pass `endpointUrl` to check the trust status of a specific external agent by its exact invocation URL before deciding whether to invoke it — the response includes a reliability score, endpoint-ownership verification status, and a machine-readable trustDecision (recommended, confidence, reasons). Without `endpointUrl`, returns the plain paginated listing of public agents, newest first. Requires an API key; for an anonymous pre-invocation check use check_agent_trust.",
       inputSchema: listAgentsInputSchema,
       outputSchema: listAgentsOutputSchema,
+      annotations: readOnlyAnnotations("List Agents"),
     },
     async (input, ctx) => mcpListAgents(db, ctx.http?.authInfo?.token, input),
   );
@@ -54,6 +55,7 @@ export function registerAgentTrustTools(server: McpServer, db: AppDatabase): voi
         "Get one AgentTrust agent's public profile by slug, including its structured Agent Card, current reliability score, and a machine-readable trustDecision (recommended, confidence, reasons) for deciding whether to invoke it.",
       inputSchema: getAgentInputSchema,
       outputSchema: getAgentOutputSchema,
+      annotations: readOnlyAnnotations("Get Agent"),
     },
     async (input, ctx) => mcpGetAgent(db, ctx.http?.authInfo?.token, input),
   );
@@ -66,6 +68,7 @@ export function registerAgentTrustTools(server: McpServer, db: AppDatabase): voi
         "Get one agent's current effective health status and monitoring detail — derived from heartbeat freshness for push-mode agents, or the latest pull check otherwise.",
       inputSchema: getAgentHealthInputSchema,
       outputSchema: getAgentHealthOutputSchema,
+      annotations: readOnlyAnnotations("Get Agent Health"),
     },
     async (input, ctx) => mcpGetAgentHealth(db, ctx.http?.authInfo?.token, input),
   );
@@ -78,6 +81,7 @@ export function registerAgentTrustTools(server: McpServer, db: AppDatabase): voi
         "Record a push-style heartbeat for an agent you own, marking it alive right now. The server sets the timestamp; no client-supplied time is accepted.",
       inputSchema: sendHeartbeatInputSchema,
       outputSchema: sendHeartbeatOutputSchema,
+      annotations: SEND_HEARTBEAT_ANNOTATIONS,
     },
     async (input, ctx) => mcpSendHeartbeat(db, ctx.http?.authInfo?.token, input),
   );
@@ -95,6 +99,35 @@ export function registerAgentTrustTools(server: McpServer, db: AppDatabase): voi
     checkAgentTrustHandler(db),
   );
 }
+
+/**
+ * Annotations for the API-key tools that only read AgentTrust's own stored
+ * data: they never write it (beyond the auth layer's rate-limit and
+ * key-usage bookkeeping) and never contact an agent's endpoint.
+ */
+function readOnlyAnnotations(title: string) {
+  return {
+    title,
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  } as const;
+}
+
+/**
+ * `send_heartbeat` writes: each call moves the agent's `lastHeartbeatAt`
+ * forward and adds a push health check and a reliability score, so it's
+ * neither read-only nor idempotent. It deletes nothing, and it only
+ * touches AgentTrust's own data.
+ */
+const SEND_HEARTBEAT_ANNOTATIONS = {
+  title: "Send Heartbeat",
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: false,
+} as const;
 
 /**
  * `check_agent_trust`'s tool annotations, the same on both endpoints: it

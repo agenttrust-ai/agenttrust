@@ -28,6 +28,13 @@
           }
         }
       },
+      "annotations": {
+        "title": "List Agents",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -284,6 +291,13 @@
           "slug"
         ]
       },
+      "annotations": {
+        "title": "Get Agent",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -519,6 +533,13 @@
           "slug"
         ]
       },
+      "annotations": {
+        "title": "Get Agent Health",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -616,6 +637,13 @@
         "required": [
           "slug"
         ]
+      },
+      "annotations": {
+        "title": "Send Heartbeat",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
       },
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
