@@ -4,6 +4,7 @@ import { agents } from "@/lib/db/schema";
 import {
   withUserContext,
   withAnonContext,
+  withServerContext,
   withDbErrorNormalization,
   type AppDatabase,
 } from "@/lib/db/rls";
@@ -204,10 +205,16 @@ function resolveOwnershipColumnsForUpdate(
 
 /**
  * Every function below scopes its query by `ownerId` in the `WHERE` clause
- * (application-level authorization) *and* runs inside `withUserContext`, so
- * Postgres's own RLS policies (supabase/migrations/0001_rls_and_triggers.sql)
- * enforce the same boundary a second, independent way. `ownerId` must come
- * from a verified session (`verifySession()`), never client input.
+ * (application-level authorization). Reads and deletes also run inside
+ * `withUserContext`, so Postgres's own RLS policies
+ * (supabase/migrations/0001_rls_and_triggers.sql) enforce the same boundary
+ * a second, independent way. Creates and updates run in `withServerContext`
+ * instead: they write columns the `authenticated` role deliberately can't
+ * (ownership verification, heartbeat, lifecycle, slug, owner, normalized
+ * endpoint — see drizzle/migrations/0011_*), so a browser holding an
+ * owner's session can't forge them through the Supabase Data API. There the
+ * `ownerId` filter is the ownership check. `ownerId` must come from a
+ * verified session (`verifySession()`), never client input.
  */
 
 export async function createAgent(
@@ -223,7 +230,7 @@ export async function createAgent(
     // someone else already has.
     const slug = await uniqueSlug(db, slugify(input.name));
 
-    return await withUserContext(db, ownerId, async (tx) => {
+    return await withServerContext(db, async (tx) => {
       const [agent] = await tx
         .insert(agents)
         .values({
@@ -299,12 +306,12 @@ export async function updateOwnedAgent(
   input: AgentInput,
 ): Promise<Agent> {
   try {
-    return await withUserContext(db, ownerId, async (tx) => {
+    return await withServerContext(db, async (tx) => {
       // Credential preserve/replace/clear semantics need to know what's
       // *currently* stored, so this reads the row first, inside the same
-      // transaction/RLS context as the update that follows — a non-owner
-      // sees no row here for the same reason they'd see no row on the
-      // update below, and gets the same NOT_FOUND either way.
+      // transaction as the update that follows — a non-owner matches no row
+      // here (the `ownerId` filter) for the same reason they'd match no row
+      // on the update below, and gets the same NOT_FOUND either way.
       const [current] = await tx
         .select({
           authType: agents.authType,
@@ -374,7 +381,7 @@ export async function activateOwnedAgent(
   ownerId: string,
   agentId: string,
 ): Promise<Agent> {
-  return withUserContext(db, ownerId, async (tx) => {
+  return withServerContext(db, async (tx) => {
     const [agent] = await tx
       .update(agents)
       .set({ lifecycleStatus: "active", updatedAt: new Date() })
@@ -401,7 +408,7 @@ export async function startOwnershipVerification(
   const agent = await getOwnedAgent(db, ownerId, agentId);
   if (agent.ownershipVerificationToken) return agent;
 
-  return withUserContext(db, ownerId, async (tx) => {
+  return withServerContext(db, async (tx) => {
     const [updated] = await tx
       .update(agents)
       .set({
@@ -418,7 +425,7 @@ export async function startOwnershipVerification(
 /**
  * Performs one endpoint-ownership check: fetches the agent's well-known
  * verification file and compares it against the stored token. The network
- * call deliberately happens *outside* any `withUserContext` transaction —
+ * call deliberately happens *outside* any database transaction —
  * `getOwnedAgent` (a full, fast, ownership-checked read) resolves first,
  * then the slow outbound fetch runs with no DB transaction held open across
  * it, then a short transaction records the result. This mirrors why
@@ -465,7 +472,7 @@ export async function checkOwnershipVerification(
   const cooldownCutoff = new Date(
     Date.now() - OWNERSHIP_CHECK_COOLDOWN_SECONDS * 1000,
   );
-  const claimed = await withUserContext(db, ownerId, async (tx) => {
+  const claimed = await withServerContext(db, async (tx) => {
     const [row] = await tx
       .update(agents)
       .set({ ownershipLastCheckedAt: new Date() })
@@ -526,7 +533,7 @@ export async function checkOwnershipVerification(
   // row still has exactly the endpoint and token this fetch verified;
   // otherwise a check started against one origin could mark the agent
   // verified for a different one.
-  return withUserContext(db, ownerId, async (tx) => {
+  return withServerContext(db, async (tx) => {
     const [updated] = await tx
       .update(agents)
       .set({ ownershipVerifiedAt: new Date(), updatedAt: new Date() })
@@ -569,7 +576,7 @@ export async function recordAgentHeartbeatBySlug(
   slug: string,
   at: Date,
 ): Promise<Agent> {
-  return withUserContext(db, ownerId, async (tx) => {
+  return withServerContext(db, async (tx) => {
     const [agent] = await tx
       .update(agents)
       .set({ lastHeartbeatAt: at })

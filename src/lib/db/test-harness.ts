@@ -7,6 +7,9 @@ import type { AppDatabase } from "./rls";
 
 const PROJECT_ROOT = path.resolve(__dirname, "../../..");
 
+/** The first drizzle migration production applied after supabase/migrations/0001_rls_and_triggers.sql. */
+const FIRST_MIGRATION_AFTER_RLS_BOOTSTRAP = 11;
+
 /**
  * A real embedded Postgres (via PGlite), bootstrapped with:
  *  1. A minimal stand-in for Supabase's `auth` schema — just enough for
@@ -64,8 +67,16 @@ export async function createTestDb() {
     .readdirSync(migrationsDir)
     .filter((file) => file.endsWith(".sql"))
     .sort();
-  for (const file of migrationFiles) {
-    await client.exec(fs.readFileSync(path.join(migrationsDir, file), "utf8"));
+  const runMigration = (file: string) =>
+    client.exec(fs.readFileSync(path.join(migrationsDir, file), "utf8"));
+
+  // Production order: the RLS bootstrap ran before migration 0011, and
+  // every migration from 0011 on runs after it — some (0011 itself) narrow
+  // the bootstrap's blanket grants, which only holds if they come second.
+  const isAfterRlsBootstrap = (file: string) =>
+    Number.parseInt(file, 10) >= FIRST_MIGRATION_AFTER_RLS_BOOTSTRAP;
+  for (const file of migrationFiles.filter((f) => !isAfterRlsBootstrap(f))) {
+    await runMigration(file);
   }
 
   const rlsPath = path.join(
@@ -73,6 +84,10 @@ export async function createTestDb() {
     "supabase/migrations/0001_rls_and_triggers.sql",
   );
   await client.exec(fs.readFileSync(rlsPath, "utf8"));
+
+  for (const file of migrationFiles.filter(isAfterRlsBootstrap)) {
+    await runMigration(file);
+  }
 
   const db = drizzle(client, { schema }) as unknown as AppDatabase;
   return { client, db };

@@ -48,6 +48,22 @@ export async function withAnonContext<T>(
   });
 }
 
+/**
+ * Runs `fn` in a transaction as the server's own database role — no role
+ * switch, so neither RLS nor the `authenticated` role's column privileges
+ * apply. For the owner-initiated writes to columns `authenticated` may not
+ * write itself (verification, monitoring and lifecycle state, and other
+ * server-derived columns — see drizzle/migrations/0011_*). Nothing here
+ * enforces ownership: every caller must hold a verified session's user id
+ * and scope every statement by `owner_id` itself.
+ */
+export async function withServerContext<T>(
+  db: AppDatabase,
+  fn: (tx: AppDatabase) => Promise<T>,
+): Promise<T> {
+  return runTransaction(db, fn);
+}
+
 async function runTransaction<T>(
   db: AppDatabase,
   fn: (tx: AppDatabase) => Promise<T>,

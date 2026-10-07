@@ -78,6 +78,13 @@
       "when": 1790864944766,
       "tag": "0010_purge_legacy_rate_limit_ip_hashes",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791375157749,
+      "tag": "0011_protect_agent_trust_columns",
+      "breakpoints": true
     }
   ]
 }
