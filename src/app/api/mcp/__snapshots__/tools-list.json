@@ -83,6 +83,13 @@
                 "createdAt": {
                   "type": "string"
                 },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "owner_registered",
+                    "externally_observed"
+                  ]
+                },
                 "agentCard": {
                   "type": "object",
                   "properties": {
@@ -242,6 +249,7 @@
                 "capabilities",
                 "status",
                 "createdAt",
+                "source",
                 "agentCard",
                 "verified",
                 "ownershipVerifiedAt"
@@ -340,6 +348,13 @@
           },
           "createdAt": {
             "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "owner_registered",
+              "externally_observed"
+            ]
           },
           "agentCard": {
             "type": "object",
@@ -500,6 +515,7 @@
           "capabilities",
           "status",
           "createdAt",
+          "source",
           "agentCard",
           "verified",
           "ownershipVerifiedAt",

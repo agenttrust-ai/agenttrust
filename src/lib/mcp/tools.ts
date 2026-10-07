@@ -126,6 +126,8 @@ const publicAgentOutputSchema = z.object({
   capabilities: z.array(z.string()),
   status: agentStatusEnum,
   createdAt: z.string(),
+  // How the agent entered AgentTrust — see `toPublicAgentJson`.
+  source: z.enum(["owner_registered", "externally_observed"]),
   agentCard: agentCardOutputSchema,
   verified: z.boolean(),
   ownershipVerifiedAt: z.string().nullable(),

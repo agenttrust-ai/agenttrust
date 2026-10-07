@@ -26,6 +26,7 @@ import {
   type McpToolResult,
 } from "./tools";
 import { ANONYMOUS_RATE_LIMIT_PER_IP } from "@/lib/api/anonymous-rate-limit";
+import advertisedToolsList from "@/app/api/mcp/__snapshots__/tools-list.json";
 
 const userA = "11111111-1111-1111-1111-111111111111";
 const userB = "22222222-2222-2222-2222-222222222222";
@@ -280,6 +281,130 @@ describe("mcpListAgents", () => {
       expect(found).toBeDefined();
       expect(found!.trustDecision).toBeUndefined();
     });
+  });
+});
+
+/**
+ * The output schemas /api/mcp advertises in `tools/list` (pinned in
+ * tools-list.json, which route.test.ts checks against the live handler).
+ * A client may validate `structuredContent` against these, so every real
+ * result must satisfy them — including `additionalProperties: false`.
+ */
+type JsonSchema = {
+  type?: string | string[];
+  enum?: unknown[];
+  properties?: Record<string, JsonSchema>;
+  required?: string[];
+  additionalProperties?: boolean;
+  items?: JsonSchema;
+};
+
+function advertisedOutputSchema(toolName: string): JsonSchema {
+  const tool = (advertisedToolsList.tools as unknown as Array<{ name: string; outputSchema: JsonSchema }>).find(
+    (t) => t.name === toolName,
+  );
+  expect(tool).toBeDefined();
+  return tool!.outputSchema;
+}
+
+function jsonType(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
+/** Strict check of the JSON Schema keywords these output schemas use. */
+function schemaViolations(schema: JsonSchema, value: unknown, path = "$"): string[] {
+  if (schema.type !== undefined) {
+    const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+    const ok = types.some((t) =>
+      t === "integer" ? Number.isInteger(value) : t === jsonType(value),
+    );
+    if (!ok) return [`${path}: expected ${types.join("|")}, got ${jsonType(value)}`];
+  }
+  if (schema.enum && !schema.enum.includes(value)) return [`${path}: ${String(value)} not in enum`];
+  const violations: string[] = [];
+  if (jsonType(value) === "object") {
+    const record = value as Record<string, unknown>;
+    for (const key of schema.required ?? []) {
+      if (!(key in record)) violations.push(`${path}.${key}: required but missing`);
+    }
+    for (const [key, child] of Object.entries(record)) {
+      const childSchema = schema.properties?.[key];
+      if (childSchema) violations.push(...schemaViolations(childSchema, child, `${path}.${key}`));
+      else if (schema.additionalProperties === false) violations.push(`${path}.${key}: not allowed by the schema`);
+    }
+  }
+  if (jsonType(value) === "array" && schema.items) {
+    (value as unknown[]).forEach((item, i) => violations.push(...schemaViolations(schema.items!, item, `${path}[${i}]`)));
+  }
+  return violations;
+}
+
+describe("advertised output schemas accept the real results", () => {
+  async function seedScoredAgent(rawName: string, endpointUrl: string) {
+    const agent = await createAgent(db, userA, { ...baseInput, name: rawName, endpointUrl });
+    await activate(agent.id);
+    for (let i = 0; i < MIN_SAMPLES_FOR_SCORE; i++) {
+      await recordHealthCheck(db, agent.id, {
+        status: "success",
+        success: true,
+        latencyMs: 90,
+        httpStatus: 200,
+        errorCode: null,
+        errorMessage: null,
+      });
+    }
+    const { computeAndStoreReliabilityScore } = await import("@/lib/db/queries/reliability");
+    await computeAndStoreReliabilityScore(db, agent.id, new Date());
+    return agent;
+  }
+
+  async function makeExternallyObserved(agentId: string) {
+    await client.query(
+      `update public.agents set source = 'externally_observed', owner_id = null, external_registry_id = 'test-registry-id' where id = $1`,
+      [agentId],
+    );
+  }
+
+  it("list_agents (plain listing, both sources): every agent satisfies the schema, source included", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    await seedScoredAgent("Schema Owned Bot", "https://schema-owned.example.com/v1/invoke");
+    const observed = await seedScoredAgent("Schema Observed Bot", "https://schema-observed.example.com/v1/invoke");
+    await makeExternallyObserved(observed.id);
+
+    const data = structured(await mcpListAgents(db, rawKey, {}));
+    const sources = (data.agents as Array<{ source: string }>).map((a) => a.source).sort();
+    expect(sources).toEqual(["externally_observed", "owner_registered"]);
+    expect(schemaViolations(advertisedOutputSchema("list_agents"), data)).toEqual([]);
+  });
+
+  it("list_agents (endpointUrl trust check): the enriched agent satisfies the schema, source included", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    await seedScoredAgent("Schema Lookup Bot", "https://schema-lookup.example.com/v1/invoke");
+
+    const data = structured(
+      await mcpListAgents(db, rawKey, { endpointUrl: "https://schema-lookup.example.com/v1/invoke" }),
+    );
+    const [found] = data.agents as Array<{ source: string; trustDecision?: unknown }>;
+    expect(found.source).toBe("owner_registered");
+    expect(found.trustDecision).toBeDefined();
+    expect(schemaViolations(advertisedOutputSchema("list_agents"), data)).toEqual([]);
+  });
+
+  it("get_agent: the result satisfies the schema, source included", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const agent = await seedScoredAgent("Schema Get Bot", "https://schema-get.example.com/v1/invoke");
+
+    const data = structured(await mcpGetAgent(db, rawKey, { slug: agent.slug }));
+    expect(data.source).toBe("owner_registered");
+    expect(schemaViolations(advertisedOutputSchema("get_agent"), data)).toEqual([]);
+  });
+
+  it("the checker itself rejects a field the schema does not allow", () => {
+    expect(schemaViolations({ type: "object", properties: {}, additionalProperties: false }, { extra: 1 })).toEqual([
+      "$.extra: not allowed by the schema",
+    ]);
   });
 });
 
