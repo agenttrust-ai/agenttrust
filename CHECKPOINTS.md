@@ -6,6 +6,78 @@ entry above the previous one, not by editing history.
 
 ---
 
+## SECURITY — AGENT TRUST FIELDS SERVER-ONLY, MIGRATION 0011 — 2026-10-07
+
+**Finding (read-only audit).** A signed-in owner could write every column
+of their own agent through the Supabase Data API: migration 0001 granted
+`authenticated` table-wide INSERT/UPDATE, the "agents: owners manage" RLS
+policy restricts rows, not columns, and `agents` had no triggers. So
+`ownership_verified_at` (a "verified" badge with no proof),
+`current_status` and `last_heartbeat_at` (forged health), and
+`endpoint_url` (moving a verified agent to another origin while keeping
+"verified") could all be set without the proof-check or monitoring flows.
+The app's own owner writes ran as the same `authenticated` role, so the
+database couldn't tell them apart. API-key revocation could also be undone
+(`revoked_at` set back to null). Scores and health checks were never
+forgeable: those tables have SELECT-only policies. The Data API (PostgREST
+14.5) is enabled and connected, but returned 503 `PGRST002` (schema cache)
+on every request during the audit, so it wasn't exploitable at that
+moment. No agent was verified in production (0 of 172).
+
+**Fix — code (`fc99274`, deploy `dpl_9szCHVLZBwLqvp8MuSaheTXtn6UM`).**
+- New `withServerContext` (`src/lib/db/rls.ts`): a transaction on the
+  server's own connection role, the same path monitoring already used.
+- Owner writes to protected columns moved onto it, each keeping its
+  explicit `owner_id` filter: `createAgent`, `updateOwnedAgent`,
+  `activateOwnedAgent`, `startOwnershipVerification`,
+  `checkOwnershipVerification` (claim and success write),
+  `recordAgentHeartbeatBySlug`. Reads and deletes stay RLS-scoped.
+- Test harness applies migrations from 0011 on after the RLS bootstrap,
+  matching production order (otherwise 0001's blanket GRANT would undo
+  0011 in tests).
+- 42 security tests (`src/lib/db/trust-column-privileges.test.ts`); 29
+  fail with 0011 removed. Full suite 965/965, typecheck, lint, build passed.
+- Deployed before the migration: the previous code wrote these columns as
+  `authenticated`, the new code works under both privilege sets.
+
+**Fix — migration 0011 (`0011_protect_agent_trust_columns`), applied
+2026-10-07 with `npm run db:migrate`.** Pre-flight: the 11 applied
+migrations matched the repo (hash and timestamp); 0011 was the only one
+pending. Verified read-only afterwards:
+- 12 migrations applied; 0011's hash matches the committed file.
+- `agents`: `authenticated` may UPDATE only `agent_card`,
+  `capability_tags`, `description`, `name`, `updated_at`, `version`; no
+  INSERT; no TRUNCATE (also revoked from `anon`). None of the 18 protected
+  columns is updatable by it: `ownership_verified_at`,
+  `ownership_verification_token`, `ownership_last_checked_at`,
+  `current_status`, `last_heartbeat_at`, `next_check_at`,
+  `last_verified_at`, `monitoring_mode`, `source`, `external_registry_id`,
+  `discovered_at`, `owner_id`, `id`, `created_at`, `slug`,
+  `endpoint_url_normalized`, `lifecycle_status`, `endpoint_url`.
+- Trigger `agents_reset_ownership_on_endpoint_change` clears
+  `ownership_verified_at` and `ownership_verification_token` whenever
+  `endpoint_url` changes, by any path.
+- `api_keys`: `authenticated` may UPDATE only `revoked_at`; trigger
+  `api_keys_revocation_is_final` rejects changing it once set, for every
+  role.
+- Trigger functions: EXECUTE revoked from PUBLIC/`anon`/`authenticated`,
+  `search_path` pinned. RLS policies unchanged. No rows modified.
+- App after the migration: `/`, `/docs`, `/a/support-bot`,
+  `/a/anthropic-status`, `/llms.txt`, agent card all 200; MCP `agenttrust`
+  1.0.4, `tools/list` identical to the snapshot.
+
+**Not exercised in production yet.** The newly guarded write paths
+(create, update, activate, ownership start/check, heartbeat) are covered by
+tests against the same migration; their first production use will be the
+ownership-verification E2E on `support-bot`.
+
+**Remaining.** Re-running 0001's blanket GRANT would undo 0011 (noted in the
+migration). Owners can still insert `api_keys` rows (unusable without the
+server-side pepper) and hard-delete their own keys. Disabling or narrowing
+the Data API remains a useful extra layer — the app doesn't use it.
+
+---
+
 ## CHANGE 1 — FIRST NATURAL MONITORING RUN VERIFIED — 2026-10-05
 
 **Checked (2026-10-05 ~12:50 UTC, read-only).** Production queries ran only
