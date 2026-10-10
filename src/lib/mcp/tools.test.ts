@@ -572,6 +572,35 @@ describe("mcpSendHeartbeat", () => {
     expect(recorded).toBeLessThanOrEqual(after);
   });
 
+  it("behaves like the REST endpoint: a pull-mode agent's heartbeat writes no health check, a push-mode agent's writes one", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const pullAgent = await createAgent(db, userA, { ...baseInput, name: "Pull Bot" });
+    const pushAgent = await createAgent(db, userA, {
+      ...baseInput,
+      name: "Push Bot",
+      endpointUrl: "https://push-agent.acme.internal/v1/invoke",
+    });
+    await activate(pullAgent.id);
+    await activate(pushAgent.id);
+    await setMonitoringMode(pushAgent.id, "push");
+
+    for (const agent of [pullAgent, pullAgent, pushAgent, pushAgent]) {
+      const result = await mcpSendHeartbeat(db, rawKey, { slug: agent.slug });
+      expect(result.isError).toBeUndefined();
+      expect(Object.keys(structured(result)).sort()).toEqual(["lastHeartbeatAt", "slug", "status"]);
+    }
+
+    const { rows } = await client.query<{ agent_id: string; method: string; n: number }>(
+      `select agent_id, method, count(*)::int as n from public.health_checks group by agent_id, method`,
+    );
+    expect(rows).toEqual([{ agent_id: pushAgent.id, method: "push", n: 2 }]);
+    const { rows: heartbeats } = await client.query<{ id: string; last_heartbeat_at: Date | null }>(
+      `select id, last_heartbeat_at from public.agents where id = any($1)`,
+      [[pullAgent.id, pushAgent.id]],
+    );
+    expect(heartbeats.every((row) => row.last_heartbeat_at !== null)).toBe(true);
+  });
+
   it("ignores any client-supplied timestamp field — there isn't one in the schema to begin with", () => {
     // The input schema only ever accepts `slug`; passing anything else is
     // simply dropped by zod's default (non-strict) object parsing, proving

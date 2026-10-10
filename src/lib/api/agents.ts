@@ -200,29 +200,15 @@ export async function handleHeartbeat(
     const now = new Date();
     const agent = await recordAgentHeartbeatBySlug(db, verified.ownerId, slug, now);
 
-    // Lands in the same table pull checks do, so "last checked" summaries
-    // on the dashboard and public profile reflect the heartbeat for free.
-    await recordHealthCheck(
-      db,
-      agent.id,
-      {
-        status: "success",
-        success: true,
-        latencyMs: null,
-        httpStatus: null,
-        errorCode: null,
-        errorMessage: null,
-      },
-      "push",
-      now,
-    );
-
-    // Best-effort, same as the pull cron's equivalent call — a scoring
-    // failure must never fail the heartbeat itself.
-    try {
-      await computeAndStoreReliabilityScore(db, agent.id, now);
-    } catch (error) {
-      console.error("Reliability score computation failed:", error);
+    // A pull-mode agent's health is whatever AgentTrust's own probes
+    // observe. Its owner's heartbeat is still accepted (and recorded in
+    // lastHeartbeatAt), but it isn't evidence: recording it as a check would
+    // let the owner interleave successes between failing probes — breaking
+    // the consecutive-failure streak that marks an agent down, and lifting
+    // its uptime and score. So nothing the status derivation, scoring,
+    // freshness or "last checked" reads is written.
+    if (agent.monitoringMode === "push") {
+      await recordPushHeartbeatEvidence(db, agent.id, now);
     }
 
     return apiSuccess({
@@ -231,4 +217,34 @@ export async function handleHeartbeat(
       lastHeartbeatAt: agent.lastHeartbeatAt,
     });
   });
+}
+
+/**
+ * A push-mode agent's heartbeat is its health evidence: it lands in the
+ * same table pull checks do, so "last checked" summaries on the dashboard
+ * and public profile reflect it for free, and its score is recomputed.
+ */
+async function recordPushHeartbeatEvidence(db: AppDatabase, agentId: string, now: Date) {
+  await recordHealthCheck(
+    db,
+    agentId,
+    {
+      status: "success",
+      success: true,
+      latencyMs: null,
+      httpStatus: null,
+      errorCode: null,
+      errorMessage: null,
+    },
+    "push",
+    now,
+  );
+
+  // Best-effort, same as the pull cron's equivalent call — a scoring
+  // failure must never fail the heartbeat itself.
+  try {
+    await computeAndStoreReliabilityScore(db, agentId, now);
+  } catch (error) {
+    console.error("Reliability score computation failed:", error);
+  }
 }

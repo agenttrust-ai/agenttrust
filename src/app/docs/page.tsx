@@ -339,10 +339,9 @@ Response: structuredContent.agents[0] has the exact same fields as
                 Pull-mode (default) checks run once per day via cron, and{" "}
                 <code>reliabilityScore</code> stays <code>null</code> (shown as{" "}
                 <strong>&quot;Not enough data yet&quot;</strong>) until at least 5
-                checks exist, which can take several days in pull mode. For a
-                faster first score, send a heartbeat instead:{" "}
-                <code>POST /api/v1/agents/{"{slug}"}/heartbeat</code> (owner-only,
-                same Bearer auth).
+                checks exist, which can take several days in pull mode. Only
+                AgentTrust&apos;s own checks count toward a pull-mode
+                agent&apos;s status and score — heartbeats don&apos;t.
               </p>
             </Step>
             <Step n={7} title="Discover an agent by endpoint URL">
@@ -624,7 +623,10 @@ Authorization: Bearer at_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}</Code>
               <dd className="mt-1">
                 Owner-only (the key must belong to that agent&apos;s own
                 account); records a push-mode liveness signal. Reads no request
-                body. <code>{"{slug, status, lastHeartbeatAt}"}</code>
+                body. For a pull-mode agent (the default) it only updates{" "}
+                <code>lastHeartbeatAt</code>; status and score come from
+                AgentTrust&apos;s own checks.{" "}
+                <code>{"{slug, status, lastHeartbeatAt}"}</code>
               </dd>
             </div>
           </dl>

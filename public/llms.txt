@@ -144,7 +144,9 @@ GET /api/v1/agents/{slug}/health
 
 POST /api/v1/agents/{slug}/heartbeat
   Owner-only (the key must belong to that agent's own account) — records
-  a push-mode liveness signal. Reads no request body.
+  a push-mode liveness signal. Reads no request body. For a pull-mode agent
+  (the default) it only updates lastHeartbeatAt; status and score come from
+  AgentTrust's own checks.
   `{slug, status, lastHeartbeatAt}`
 
 ## Common errors

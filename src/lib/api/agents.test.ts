@@ -4,7 +4,8 @@ import { createTestDb, seedUser } from "@/lib/db/test-harness";
 import type { AppDatabase } from "@/lib/db/rls";
 import { createAgent } from "@/lib/db/queries/agents";
 import { createApiKey, revokeApiKey, listApiKeysForOwner } from "@/lib/db/queries/api-keys";
-import { recordHealthCheck } from "@/lib/db/queries/health-checks";
+import { getRecentChecksForStatus, recordHealthCheck } from "@/lib/db/queries/health-checks";
+import { deriveAgentStatus } from "@/lib/monitoring/status";
 import type { AgentInput } from "@/lib/validation/agent";
 import {
   handleGetAgent,
@@ -675,10 +676,11 @@ describe("handleHeartbeat", () => {
     expect(recorded).toBeLessThanOrEqual(after);
   });
 
-  it("records a health_checks row with method 'push'", async () => {
+  it("records a health_checks row with method 'push' for a push-mode agent", async () => {
     const { rawKey } = await createApiKey(db, userA, { name: "k" });
     const agent = await createAgent(db, userA, baseInput);
     await activate(agent.id);
+    await setMonitoringMode(client, agent.id, "push");
 
     await handleHeartbeat(db, postTo(`/api/v1/agents/${agent.slug}/heartbeat`, rawKey), agent.slug);
 
@@ -781,6 +783,98 @@ describe("handleHeartbeat", () => {
     const body = await bodyOf(healthRes);
     // Still the pull-cached status, not a heartbeat-freshness derivation.
     expect(body.data.status).toBe("healthy");
+  });
+});
+
+describe("heartbeats can't lift a pull-mode agent's status or score", () => {
+  /** A pull-mode agent the cron has marked down, with a low score from its own failing pull checks. */
+  async function failingPullAgent() {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const agent = await createAgent(db, userA, baseInput);
+    await activate(agent.id);
+    const start = Date.now() - 60 * 60 * 1000;
+    for (let i = 0; i < MIN_SAMPLES_FOR_SCORE; i++) {
+      await recordHealthCheck(
+        db,
+        agent.id,
+        { status: "timeout", success: false, latencyMs: null, httpStatus: null, errorCode: "TIMEOUT", errorMessage: "Timed out." },
+        "pull",
+        new Date(start + i * 60_000),
+      );
+    }
+    await computeAndStoreReliabilityScore(db, agent.id, new Date(start + MIN_SAMPLES_FOR_SCORE * 60_000));
+    await client.query(`update public.agents set current_status = 'down' where id = $1`, [agent.id]);
+    return { rawKey, agent };
+  }
+
+  async function countRows(table: "health_checks" | "reliability_scores", agentId: string) {
+    const { rows } = await client.query<{ n: number }>(
+      `select count(*)::int as n from public.${table} where agent_id = $1`,
+      [agentId],
+    );
+    return rows[0].n;
+  }
+
+  it("repeated heartbeats leave a failing pull agent down, with the same score and no recommendation", async () => {
+    const { rawKey, agent } = await failingPullAgent();
+    const scoreBefore = (await bodyOf(await handleGetAgentHealth(db, requestTo(`/api/v1/agents/${agent.slug}/health`, rawKey), agent.slug))).data;
+    expect(scoreBefore.reliabilityScore).toBeLessThan(50);
+
+    for (let i = 0; i < 10; i++) {
+      const res = await handleHeartbeat(db, postTo(`/api/v1/agents/${agent.slug}/heartbeat`, rawKey), agent.slug);
+      expect(res.status).toBe(200);
+    }
+
+    // Nothing the cron or the trust check reads was written.
+    expect(await countRows("health_checks", agent.id)).toBe(MIN_SAMPLES_FOR_SCORE);
+    expect(await countRows("reliability_scores", agent.id)).toBe(1);
+
+    const health = (await bodyOf(await handleGetAgentHealth(db, requestTo(`/api/v1/agents/${agent.slug}/health`, rawKey), agent.slug))).data;
+    expect(health).toMatchObject({
+      status: "down",
+      reliabilityScore: scoreBefore.reliabilityScore,
+      reliabilityScoreStatus: "fresh",
+      lastCheckedAt: scoreBefore.lastCheckedAt,
+      checkStatus: "timeout",
+    });
+    const profile = (await bodyOf(await handleGetAgent(db, requestTo(`/api/v1/agents/${agent.slug}`, rawKey), agent.slug))).data;
+    expect(profile.trustDecision.recommended).toBe(false);
+
+    // The next monitoring run derives status and score from the same pull history.
+    expect(deriveAgentStatus("down", await getRecentChecksForStatus(db, agent.id))).toBe("down");
+    expect((await computeAndStoreReliabilityScore(db, agent.id, new Date()))?.score).toBe(scoreBefore.reliabilityScore);
+  });
+
+  it("still accepts the heartbeat: same response shape, and lastHeartbeatAt moves forward", async () => {
+    const { rawKey, agent } = await failingPullAgent();
+    const before = Date.now();
+    const res = await handleHeartbeat(db, postTo(`/api/v1/agents/${agent.slug}/heartbeat`, rawKey), agent.slug);
+    const body = await bodyOf(res);
+
+    expect(res.status).toBe(200);
+    expect(Object.keys(body.data).sort()).toEqual(["lastHeartbeatAt", "slug", "status"]);
+    expect(body.data).toMatchObject({ slug: agent.slug, status: "down" });
+    expect(new Date(body.data.lastHeartbeatAt).getTime()).toBeGreaterThanOrEqual(before);
+  });
+
+  it("push-mode agents are unaffected: each heartbeat is still a push check, and they still score from them", async () => {
+    const { rawKey } = await createApiKey(db, userA, { name: "k" });
+    const agent = await createAgent(db, userA, baseInput);
+    await activate(agent.id);
+    await setMonitoringMode(client, agent.id, "push");
+
+    for (let i = 0; i < MIN_SAMPLES_FOR_SCORE; i++) {
+      await handleHeartbeat(db, postTo(`/api/v1/agents/${agent.slug}/heartbeat`, rawKey), agent.slug);
+    }
+
+    const { rows } = await client.query<{ method: string; n: number }>(
+      `select method, count(*)::int as n from public.health_checks where agent_id = $1 group by method`,
+      [agent.id],
+    );
+    expect(rows).toEqual([{ method: "push", n: MIN_SAMPLES_FOR_SCORE }]);
+    const health = (await bodyOf(await handleGetAgentHealth(db, requestTo(`/api/v1/agents/${agent.slug}/health`, rawKey), agent.slug))).data;
+    expect(health).toMatchObject({ status: "healthy", reliabilityScoreStatus: "fresh" });
+    expect(typeof health.reliabilityScore).toBe("number");
   });
 });
 
