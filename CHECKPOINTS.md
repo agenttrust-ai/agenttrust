@@ -6,6 +6,65 @@ entry above the previous one, not by editing history.
 
 ---
 
+## MCP COST FIX — LISTEN STREAMS REFUSED, 30 s CAP — 2026-10-11
+
+**Finding (read-only audit).** The 2026-10-09 suspension was an unpaid
+invoice (`UNPAID_INVOICE`), not overuse — total usage 2026-10-08…11 was
+$4.51, $0.00 billed. But ~99.7% of function GB-hours came from one
+pattern: `POST /api/mcp/public` from Claude's connector (`Claude-User`),
+where ~5% of requests stayed open 470–600 s. `mcp-handler` 2.1.1 accepts up
+to 1,024 `subscriptions/listen` streams by default, and the SDK holds each
+open (SSE keep-alive) until the client disconnects or the function times
+out; the routes set no `maxDuration`. AgentTrust's tool list never changes
+at runtime, so those streams never carried a notification. Likely also why
+the Hobby plan's memory allowance ran out before the move to Pro
+(hypothesis; not verified).
+
+**Fix (`dffeae3864f2909e8d7ef433ca4c81f557e670ea`, deploy
+`dpl_Fuzr6uptxGYYELdsrndisg5aFoVn`, READY 2026-10-11 ~12:18 UTC).** On
+`/api/mcp` and `/api/mcp/public`:
+- `maxSubscriptions: 0` — `subscriptions/listen` is refused at once with
+  JSON-RPC `-32603 "Subscription limit reached"` (HTTP 200,
+  `application/json`), no stream.
+- `export const maxDuration = 30` — backstop for any request that would
+  hold a function open.
+- Tools, schemas, instructions, auth and the MCP contract unchanged (pinned
+  `initialize`/`tools-list` snapshots identical). 8 new tests
+  (`src/app/api/mcp/subscriptions.test.ts`; 6 fail without the fix). MCP
+  route and affected files 292/292, typecheck, lint, build passed; the full
+  suite was not re-run after the fix (local machine out of memory).
+- Smoke test after deploy: `initialize`/`tools/list` 200 and identical to
+  the snapshots; `subscriptions/listen` refused in ~170 ms on both routes.
+
+**Observed after deploy** (`POST /api/mcp/public`, new deployment only,
+12:17:30–12:53:45 UTC, vs all of 2026-10-08):
+- Average duration 38,582 ms → 25 ms; p95 469,324 ms → 65 ms; longest
+  600,264 ms → 638 ms. No long-running streams on the new deployment (the
+  only 300 s requests after the switch were old-deployment streams ending
+  ~12:20).
+- GB-hours 58.49/day → 0.0014 in 0.6 h (≈0.057/day): **≈99.9% lower**.
+- No retry loop: `Claude-User` 129/h vs 94.8/h average (hourly range
+  90–296) before.
+- 5xx 0.0%; 4xx 4.9% (406s from probers with a wrong `Accept`, same pattern
+  as before, 4.0%).
+
+**Savings — projection only.** From a 36-minute window, at the effective
+rate billed on 2026-10-08 (≈$0.0143 per GB-hour): usage-based cost ≈$0.90/day
+(≈$27/month) → ≈$0.05/day (≈$1.5/month), **≈$25/month saved (projected)**.
+The $20/month Pro base is unaffected. Confirm against 24 h of billing.
+
+**Remaining checks.**
+- A real `check_agent_trust` call through the Claude connector (traffic
+  and a direct MCP call look healthy; not yet tested from inside Claude).
+- Monitoring recovery at the next scheduled health-check run, ~00:44 UTC
+  2026-10-12 (all 152 scored agents still stale until then).
+- 24-hour Vercel usage/billing for 2026-10-12, to confirm the projection.
+- The server still advertises `tools.listChanged: true`, so clients keep
+  trying to subscribe and are refused cheaply (~25 ms); left unchanged to
+  keep the published contract.
+
+---
+
 ## HEARTBEAT FIX LIVE; VERCEL OUTAGE 2026-10-09–11 LEFT ALL SCORES STALE — 2026-10-11
 
 **Heartbeat fix (`ddb3b22`, "fix: prevent pull-mode heartbeat score
