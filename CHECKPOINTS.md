@@ -6,6 +6,75 @@ entry above the previous one, not by editing history.
 
 ---
 
+## HEARTBEAT FIX LIVE; VERCEL OUTAGE 2026-10-09–11 LEFT ALL SCORES STALE — 2026-10-11
+
+**Heartbeat fix (`ddb3b22`, "fix: prevent pull-mode heartbeat score
+manipulation").** A heartbeat to a pull-mode agent wrote a push health
+check and recomputed its score, so an owner could interleave successes
+between failing probes — breaking the 4-failure streak that marks an agent
+`down` and lifting uptime/score (`/docs` even advised heartbeats for "a
+faster first score"). Now `handleHeartbeat` records a check and rescores
+only for push-mode agents; a pull-mode heartbeat is still accepted (same
+`{slug, status, lastHeartbeatAt}` response) and only updates
+`lastHeartbeatAt`. REST and MCP share the handler. `/docs` and `llms.txt`
+corrected. 4 new tests (the abuse test fails without the fix); one test
+that asserted the vulnerable behavior now uses a push-mode agent. Full
+suite 969/969, typecheck, lint, build passed. No migration. Owners can't
+select push mode, so heartbeats now affect status/score for no
+owner-registered agent; 0 push checks were seen in production [since
+2026-10-02].
+
+**Vercel outage.** The Vercel team was blocked on 2026-10-09 13:59 UTC
+(`softBlock.reason = UNPAID_INVOICE`, Pro subscription showing `canceled`).
+The push of `ddb3b22` on 2026-10-10 got GitHub status "Vercel: failure —
+Account is blocked." and no deployment; `getagenttrust.com`, `/api/mcp`
+and `agenttrust-umber.vercel.app` all returned HTTP 402 "Payment
+required". After the owner restored billing (block cleared, Pro `active`),
+`ddb3b22` was deployed to production from the GitHub commit (`gitSource`,
+no local upload): `dpl_6QsWT8oUBvqJ7yD3hYFQ7ik4nRzi`, READY, aliased to
+`getagenttrust.com` and `agenttrust-umber.vercel.app`.
+
+**Post-deploy verification (2026-10-11, read-only).**
+- `/`, `/docs`, `/llms.txt`, `agenttrust-umber.vercel.app` all 200;
+  `llms.txt` has the new heartbeat wording, `/docs` no longer has "faster
+  first score".
+- MCP `/api/mcp`: `initialize` 200 (protocol `2025-06-18`, `agenttrust`
+  1.0.4, `{tools:{listChanged:true}}`), `notifications/initialized` 202,
+  `tools/list` 200 with the same 5 tools; `tools/list` and `initialize`
+  identical to the committed snapshots. `/api/mcp/public` lists only
+  `check_agent_trust`.
+- Vercel crons registered and enabled on the new deployment
+  (`run-health-checks` `0 0 * * *`, `discover-mcp-agents` `30 3 * * *`).
+
+**Monitoring gap.** Scheduled runs simply didn't happen while blocked — no
+health checks, scores or discovery on 2026-10-10 and 2026-10-11 (daily runs
+2026-10-06…09: 162/172/182/192 checks, 0 HTTP 402). So no false failures
+were recorded, but every score aged past the 50-hour limit at 2026-10-11
+02:44 UTC: all **152 scored agents (of 202) are `stale`**, 50 have none, so
+no agent can be `recommended` — every matched `check_agent_trust` returns
+`insufficient_data`. Statuses are frozen at the 2026-10-09 run (173
+healthy, 18 down, 1 degraded, 10 unknown). `support-bot` (verified
+2026-10-07, last check 2026-10-09 HTTP 200, score 100) shows `recommended:
+false, insufficient_data` until rescored.
+
+**Next.** The next scheduled health-check run, ~00:44 UTC 2026-10-12, should
+make every scored agent fresh again (`support-bot` back to recommended,
+high confidence) — verify read-only then. Not triggered manually (standing
+no-manual-cron rule).
+
+**Remaining risks and follow-ups.**
+- Billing is a single point of failure for the site, MCP and monitoring;
+  add a billing alert or a backup payment method.
+- 2026-10-10/11 monitoring and discovery are lost, not backfilled.
+- Possible pre-2026-10-02 push rows on pull agents still count until they
+  age out of the 7-day/last-10 windows — a read-only count would confirm.
+- `send_heartbeat`'s MCP description ("marking it alive right now") is
+  imprecise for pull agents; left unchanged to keep the published contract.
+- `support-bot` heartbeat E2E still pending (would now only update
+  `last_heartbeat_at`).
+
+---
+
 ## SECURITY — AGENT TRUST FIELDS SERVER-ONLY, MIGRATION 0011 — 2026-10-07
 
 **Finding (read-only audit).** A signed-in owner could write every column
