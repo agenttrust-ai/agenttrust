@@ -6,6 +6,34 @@ entry above the previous one, not by editing history.
 
 ---
 
+## MCP COST FIX — +60-MINUTE VERIFICATION PASS — 2026-10-11
+
+**Checked (read-only Vercel metrics, `POST /api/mcp/public`,
+12:17:30–13:18:00 UTC, ~1 h after the `dffeae3` deploy), split by
+deployment.** The docs-only push `0b1c33a` created
+`dpl_HtWy3QCWhBxP2Zq77H1KHHPYCLRM` at 13:05 UTC with identical code, so two
+deployments carry the fix:
+- Fixed deployments (`dpl_Fuzr6upt…` 118 + `dpl_HtWy3QCW…` 31): **149
+  requests**, average 23–44 ms, p95 65–338 ms, **longest 647 ms**, **0.0023
+  GB-hours** (≈0.055/day vs 58.49/day on 2026-10-08: **≈99.9% lower**).
+- Old pre-fix deployment `dpl_b8Eczns8…`: 2 requests, 300 s each, 0.3394
+  GB-hours — subscription streams opened before the switch, ended ~12:20.
+- **5xx 0.0%**; 4xx 4.7% (5 × 406, 2 × 400, probers; 4.0% before).
+- `Claude-User` 115 requests in ~1 h (≈114/h vs 94.8/h average, hourly
+  range 90–296, before): **no retry loop**; no client near 1,000/h.
+- `/api/mcp`: 68 requests, 0.0% 5xx, longest 893 ms, 0.0013 GB-hours (its
+  4xx are 406s from probers, as before).
+
+**Result: PASS — rollback not required.** None of the rollback triggers
+(connector failures, >1,000 requests/h sustained, >5% errors) occurred.
+
+**Savings remain a projection** (≈$25/month, from ~1 h of metrics) until
+verified against 24 hours of Vercel billing for 2026-10-12. Still open: a
+real `check_agent_trust` call from inside Claude, and the scheduled
+health-check run ~00:44 UTC 2026-10-12.
+
+---
+
 ## MCP COST FIX — LISTEN STREAMS REFUSED, 30 s CAP — 2026-10-11
 
 **Finding (read-only audit).** The 2026-10-09 suspension was an unpaid
