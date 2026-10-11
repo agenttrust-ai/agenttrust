@@ -5,6 +5,10 @@ import { registerAgentTrustTools } from "@/lib/mcp/server";
 
 export const dynamic = "force-dynamic";
 
+// Every MCP request here answers in well under a second; this only bounds
+// a request that would otherwise hold a function (and its memory) open.
+export const maxDuration = 30;
+
 /**
  * Pure plumbing, not a gate: `withMcpAuth` already extracts the bearer
  * token from the `Authorization` header before calling this, so all this
@@ -26,6 +30,11 @@ const handler = createMcpHandler(
   },
   {
     serverInfo: { name: "agenttrust", version: "1.0.4" },
+    // Refuse `subscriptions/listen` at once (a JSON-RPC error, no SSE
+    // stream). The tool list never changes at runtime, so a listen stream
+    // would never carry a notification — it only kept a function open,
+    // up to ~10 minutes per client connection.
+    maxSubscriptions: 0,
     // Sent to every client during initialize — the standard MCP mechanism
     // for "how to use this server", read once up front rather than
     // inferred solely from individual tool descriptions.
