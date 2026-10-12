@@ -8,7 +8,15 @@ vi.mock("@/lib/discovery/import-mcp-registry-agents", async () => {
   return { ...actual, importMcpRegistryAgents: vi.fn() };
 });
 
+vi.mock("@/lib/coverage/observation", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/coverage/observation")>(
+    "@/lib/coverage/observation",
+  );
+  return { ...actual, isDemandCoverageEnabled: vi.fn(() => false), processObservationQueue: vi.fn() };
+});
+
 import { importMcpRegistryAgents } from "@/lib/discovery/import-mcp-registry-agents";
+import { isDemandCoverageEnabled, processObservationQueue } from "@/lib/coverage/observation";
 import { env } from "@/lib/config.server";
 import { GET } from "./route";
 
@@ -112,5 +120,60 @@ describe("GET /api/internal/cron/discover-mcp-agents — response shape", () => 
     });
     const raw = JSON.stringify(body);
     expect(raw).not.toContain("should-not-appear");
+  });
+});
+
+describe("GET /api/internal/cron/discover-mcp-agents — demand coverage", () => {
+  const observationSummary = {
+    enabled: true,
+    considered: 3,
+    lookups: 2,
+    lookupErrors: 0,
+    observing: 1,
+    linkedExisting: 0,
+    notInRegistry: 2,
+    deferredByCap: 0,
+    expiredDeleted: 0,
+  };
+
+  it("runs the observation queue before the import, within the same daily cap, and reports counts only", async () => {
+    vi.mocked(isDemandCoverageEnabled).mockReturnValueOnce(true);
+    const order: string[] = [];
+    vi.mocked(processObservationQueue).mockImplementationOnce(async (_db, options) => {
+      order.push("observation");
+      expect(options?.insertLimit).toBe(10);
+      return observationSummary;
+    });
+    mockedImport.mockImplementationOnce(async () => {
+      order.push("import");
+      return {
+        sourceCandidates: 0, validCandidates: 0, inserted: [], rejected: [], duplicatesSkipped: [],
+        cappedBeforeInsert: [], errors: [], pagesRead: 0, stoppedReason: "end_of_registry", progressSaved: true,
+      };
+    });
+
+    const res = await GET(requestWith(`Bearer ${env.CRON_SECRET}`));
+    const body = await res.json();
+
+    expect(order).toEqual(["observation", "import"]);
+    expect(body.ok).toBe(true);
+    expect(body.observation).toEqual(observationSummary);
+  });
+
+  it("still runs the import when the observation queue fails", async () => {
+    vi.mocked(isDemandCoverageEnabled).mockReturnValueOnce(true);
+    vi.mocked(processObservationQueue).mockRejectedValueOnce(new Error("registry down"));
+    const res = await GET(requestWith(`Bearer ${env.CRON_SECRET}`));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body).not.toHaveProperty("observation");
+    expect(mockedImport).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't touch the queue while demand coverage is off", async () => {
+    const res = await GET(requestWith(`Bearer ${env.CRON_SECRET}`));
+    expect((await res.json()).ok).toBe(true);
+    expect(processObservationQueue).not.toHaveBeenCalled();
   });
 });

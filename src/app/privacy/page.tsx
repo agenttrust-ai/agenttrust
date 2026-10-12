@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { GLOBAL_RETENTION_MS } from "@/lib/api/anonymous-rate-limit";
 import { CALLER_KEY_PERIOD_DAYS, TELEMETRY_RETENTION_DAYS } from "@/lib/telemetry/trust-check-events";
+import { OBSERVATION_RETENTION_DAYS } from "@/lib/coverage/observation";
 import { SUPPORT_EMAIL } from "@/lib/contact";
 
 export const metadata: Metadata = {
@@ -71,6 +72,13 @@ export default function PrivacyPage() {
         <p>
           We do not store the raw IP address, the full URL, query strings, request bodies, or any other header.
           Usage events are deleted after {TELEMETRY_RETENTION_DAYS} days.
+        </p>
+        <p>
+          When a check finds no match, we may also keep that same hostname and keyed hash in a lookup queue.
+          Once a day we compare it with the URLs servers publish in the official MCP Registry: if a registry
+          server publishes that exact URL, we list and monitor that server like any other registry server (see
+          below). We never store the URL you sent, and an endpoint that isn&apos;t in the registry is not
+          monitored. Queue entries nobody has asked about for {OBSERVATION_RETENTION_DAYS} days are deleted.
         </p>
       </Section>
 

@@ -7,6 +7,11 @@ import {
   importMcpRegistryAgents,
   MCP_DISCOVERY_DAILY_INSERT_CAP,
 } from "@/lib/discovery/import-mcp-registry-agents";
+import {
+  isDemandCoverageEnabled,
+  processObservationQueue,
+  type ObservationProcessSummary,
+} from "@/lib/coverage/observation";
 
 // Never statically rendered/cached — this is invoked by Vercel Cron, not a browser.
 export const dynamic = "force-dynamic";
@@ -41,6 +46,21 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Demand first, within the same daily cap the import below then counts
+  // against: endpoints callers asked about are looked up before discovery
+  // continues paging. Off unless enabled; its failure never blocks the import.
+  let observation: ObservationProcessSummary | null = null;
+  if (isDemandCoverageEnabled()) {
+    try {
+      observation = await processObservationQueue(db, { insertLimit: MCP_DISCOVERY_DAILY_INSERT_CAP });
+    } catch (error) {
+      console.error(
+        "Observation queue processing failed:",
+        error instanceof Error ? error.name : "unknown error",
+      );
+    }
+  }
+
   try {
     const summary = await importMcpRegistryAgents(db, {
       fetchLimit: FETCH_LIMIT,
@@ -58,6 +78,9 @@ export async function GET(request: NextRequest) {
       pagesRead: summary.pagesRead,
       stoppedReason: summary.stoppedReason,
       progressSaved: summary.progressSaved,
+      // Present only when the queue processor ran, so the response is
+      // unchanged while demand coverage is off. Counts only.
+      ...(observation ? { observation } : {}),
     });
   } catch (error) {
     console.error("MCP agent discovery cron run failed:", error);

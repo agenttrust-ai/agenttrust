@@ -785,6 +785,27 @@
               "reasons"
             ],
             "additionalProperties": false
+          },
+          "observation": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "observing",
+                  "not_in_registry"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "message"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

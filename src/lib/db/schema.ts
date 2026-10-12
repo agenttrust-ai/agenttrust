@@ -455,3 +455,47 @@ export const trustCheckEvents = pgTable(
     ),
   ],
 );
+
+// Demand for an endpoint `check_agent_trust` didn't know — see
+// src/lib/coverage/observation.ts. Holds the same privacy-safe pair as an
+// unmatched trust_check_events row: a sanitized public hostname and the
+// keyed hash of the URL without query/fragment — never the URL itself. The
+// daily discovery run matches that hash against the public URLs servers
+// publish in the official MCP Registry; only a registry server ever becomes
+// an observed agent. Server-written only: RLS is enabled with no policies.
+export const observationRequests = pgTable(
+  "observation_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    endpointKey: text("endpoint_key").notNull().unique(),
+    endpointHost: text("endpoint_host").notNull(),
+    // pending: waiting for a registry lookup. observing: a registry server
+    // publishes this URL and is now an observed agent. not_in_registry: no
+    // registry server publishes it, so it isn't observed.
+    status: text("status").notNull().default("pending"),
+    agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
+    requestCount: integer("request_count").notNull().default(1),
+    lookupAttempts: integer("lookup_attempts").notNull().default(0),
+    firstRequestedAt: timestamp("first_requested_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastRequestedAt: timestamp("last_requested_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("observation_requests_status_first_requested_idx").on(
+      table.status,
+      table.firstRequestedAt,
+    ),
+    check(
+      "observation_requests_status_valid",
+      sql`${table.status} in ('pending', 'observing', 'not_in_registry')`,
+    ),
+    check(
+      "observation_requests_endpoint_host_length",
+      sql`char_length(${table.endpointHost}) <= 253`,
+    ),
+  ],
+);

@@ -34,7 +34,7 @@ export const MCP_DISCOVERY_DAILY_INSERT_CAP = 10;
  * costs nothing and rules out a future collision with the A2A Registry
  * pipeline's own (unprefixed, opaque) ids in `src/lib/discovery/a2a-registry.ts`.
  */
-const REGISTRY_SOURCE_PREFIX = "mcp-registry:";
+export const REGISTRY_SOURCE_PREFIX = "mcp-registry:";
 
 /**
  * Most registry pages one run reads (x `fetchLimit` servers each). Bounds
@@ -135,7 +135,7 @@ function isRejectedCursor(error: unknown, cursor: string | null): boolean {
  * Never derives a URL from the server's name, repository, or description —
  * only ever the registry's own explicit `remotes[].url`.
  */
-function candidateUrlsFor(
+export function candidateUrlsFor(
   entry: McpRegistryEntry,
 ): { url: string; registryId: string }[] {
   const remotes = entry.server.remotes ?? [];

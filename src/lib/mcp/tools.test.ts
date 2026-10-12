@@ -1362,3 +1362,82 @@ describe("check_agent_trust usage telemetry", () => {
     fetchSpy.mockRestore();
   });
 });
+
+describe("check_agent_trust demand coverage (observation)", () => {
+  const KEY = "o".repeat(48);
+  const UNKNOWN = "https://mcp.unknown-vendor.dev/mcp";
+
+  function anonRequest(ip: string): Request {
+    return new Request("https://getagenttrust.com/api/mcp/public", {
+      headers: { "x-vercel-forwarded-for": ip },
+    });
+  }
+
+  async function queuedRows() {
+    const { rows } = await client.query<{ status: string; request_count: number }>(
+      "select status, request_count from public.observation_requests",
+    );
+    return rows;
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("is backward compatible while off: an unknown URL returns exactly { matched: false } and queues nothing", async () => {
+    vi.stubEnv("TELEMETRY_HASH_KEY", KEY);
+    const result = await mcpCheckAgentTrust(db, anonRequest("203.0.113.50"), { endpointUrl: UNKNOWN }, { scheduleTelemetry: () => {} });
+    expect(structured(result)).toEqual({ matched: false });
+    expect(await queuedRows()).toHaveLength(0);
+  });
+
+  it("when on, reports the pending observation for an eligible unknown endpoint, with no score or verification", async () => {
+    vi.stubEnv("TELEMETRY_HASH_KEY", KEY);
+    vi.stubEnv("DEMAND_COVERAGE_ENABLED", "true");
+    const result = await mcpCheckAgentTrust(db, anonRequest("203.0.113.51"), { endpointUrl: UNKNOWN }, { scheduleTelemetry: () => {} });
+
+    const data = structured(result);
+    expect(data).toEqual({
+      matched: false,
+      observation: { status: "pending", message: expect.stringContaining("No score or verification exists yet") },
+    });
+    expect(checkAgentTrustOutputSchema.safeParse(data).success).toBe(true);
+    expect(await queuedRows()).toEqual([{ status: "pending", request_count: 1 }]);
+  });
+
+  it("when on, still returns plain { matched: false } for an unsafe or reserved URL, and queues nothing", async () => {
+    vi.stubEnv("TELEMETRY_HASH_KEY", KEY);
+    vi.stubEnv("DEMAND_COVERAGE_ENABLED", "true");
+    for (const endpointUrl of ["https://169.254.169.254/latest", "https://10.1.2.3/mcp", "http://mcp.unknown-vendor.dev/mcp", "https://never-registered.example.com/x"]) {
+      const result = await mcpCheckAgentTrust(db, anonRequest("203.0.113.52"), { endpointUrl }, { scheduleTelemetry: () => {} });
+      expect(structured(result)).toEqual({ matched: false });
+    }
+    expect(await queuedRows()).toHaveLength(0);
+  });
+
+  it("leaves successful lookups exactly as they were — no observation on a match", async () => {
+    vi.stubEnv("TELEMETRY_HASH_KEY", KEY);
+    vi.stubEnv("DEMAND_COVERAGE_ENABLED", "true");
+    const agent = await createAgent(db, userA, { ...baseInput, name: "Known Vendor", endpointUrl: "https://mcp.known-vendor.dev/mcp" });
+    await activate(agent.id);
+
+    const result = await mcpCheckAgentTrust(db, anonRequest("203.0.113.53"), { endpointUrl: "https://mcp.known-vendor.dev/mcp" }, { scheduleTelemetry: () => {} });
+    const data = structured(result);
+    expect(data.matched).toBe(true);
+    expect(data).not.toHaveProperty("observation");
+    expect(await queuedRows()).toHaveLength(0);
+  });
+
+  it("is behind the anonymous rate limit: a rate-limited check records no demand", async () => {
+    vi.stubEnv("TELEMETRY_HASH_KEY", KEY);
+    vi.stubEnv("DEMAND_COVERAGE_ENABLED", "true");
+    const ip = "203.0.113.54";
+    for (let i = 0; i < ANONYMOUS_RATE_LIMIT_PER_IP; i++) {
+      await mcpCheckAgentTrust(db, anonRequest(ip), { endpointUrl: UNKNOWN }, { scheduleTelemetry: () => {} });
+    }
+    const limited = await mcpCheckAgentTrust(db, anonRequest(ip), { endpointUrl: "https://mcp.another-vendor.dev/mcp" }, { scheduleTelemetry: () => {} });
+    expect(limited.isError).toBe(true);
+    // Only the first URL was ever recorded; the rate-limited one wasn't.
+    expect(await queuedRows()).toEqual([{ status: "pending", request_count: ANONYMOUS_RATE_LIMIT_PER_IP }]);
+  });
+});

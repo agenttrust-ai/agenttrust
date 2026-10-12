@@ -14,6 +14,7 @@ import { apiError } from "@/lib/api/response";
 import { AppError, ErrorCode } from "@/lib/errors";
 import { DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from "@/lib/validation/pagination";
 import { RELIABILITY_SCORE_STATUSES } from "@/lib/reliability/freshness";
+import { OBSERVATION_STATUSES, observeUnknownEndpoint } from "@/lib/coverage/observation";
 import {
   trackTrustCheck,
   type TelemetryScheduler,
@@ -328,6 +329,14 @@ export const checkAgentTrustOutputSchema = z.object({
   reliabilityScore: z.number().nullable().optional(),
   reliabilityScoreStatus: reliabilityScoreStatusEnum.optional(),
   trustDecision: trustDecisionOutputSchema.optional(),
+  // Only on some unmatched results: what AgentTrust will do about an
+  // endpoint it doesn't know yet — see src/lib/coverage/observation.ts.
+  observation: z
+    .object({
+      status: z.enum(OBSERVATION_STATUSES),
+      message: z.string(),
+    })
+    .optional(),
 });
 
 /**
@@ -379,6 +388,12 @@ export async function mcpCheckAgentTrust(
   const page = await listPublicAgents(db, { limit: 1, endpointUrl: input.endpointUrl });
   const agent = page.agents[0];
   if (!agent) {
+    // Demand coverage (off unless enabled): records a privacy-safe request
+    // for this endpoint — a database write only, never a request to the URL
+    // — so the daily discovery run can look it up in the MCP Registry.
+    // Null when off, ineligible, capped or failed: then the answer is the
+    // plain `{ matched: false }` it always was.
+    const observation = await observeUnknownEndpoint(db, input.endpointUrl);
     // Best-effort usage telemetry, recorded after the response is sent —
     // never awaited, never able to change or fail this result, and never a
     // trigger for crawling, registration, monitoring or contacting the URL.
@@ -387,7 +402,7 @@ export async function mcpCheckAgentTrust(
       { surface, request, endpointUrl: input.endpointUrl, outcome: "not_matched" },
       options.scheduleTelemetry,
     );
-    return toSuccessResult({ matched: false });
+    return toSuccessResult(observation ? { matched: false, observation } : { matched: false });
   }
 
   const enriched = await toTrustEnrichedAgentJson(db, agent);

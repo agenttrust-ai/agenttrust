@@ -71,9 +71,12 @@ export type McpRegistryPage = {
 export async function fetchMcpRegistryServers(
   limit: number,
   cursor?: string,
+  /** The registry's own `search` filter: a substring match on server names. */
+  search?: string,
 ): Promise<McpRegistryPage> {
   const params = new URLSearchParams({ limit: String(limit), version: "latest" });
   if (cursor) params.set("cursor", cursor);
+  if (search) params.set("search", search);
   const url = `${MCP_REGISTRY_BASE_URL}/v0/servers?${params.toString()}`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
