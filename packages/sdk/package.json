@@ -1,0 +1,53 @@
+{
+  "name": "@getagenttrust/sdk",
+  "version": "0.1.0",
+  "description": "Check an AI agent or MCP server endpoint with AgentTrust before you connect to it.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai-agents",
+    "trust",
+    "agenttrust"
+  ],
+  "homepage": "https://getagenttrust.com/docs",
+  "bugs": {
+    "url": "https://github.com/agenttrust-ai/agenttrust/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agenttrust-ai/agenttrust.git",
+    "directory": "packages/sdk"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
