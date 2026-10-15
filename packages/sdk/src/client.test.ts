@@ -113,6 +113,52 @@ describe("checkAgentTrust", () => {
     },
   );
 
+  it.each([
+    "https://user:s3cret-token@agent.acme.dev/mcp",
+    "https://s3cret-token@agent.acme.dev/mcp",
+    "https://:s3cret-token@agent.acme.dev/mcp",
+  ])("rejects a URL with embedded credentials (%s) locally, without sending or echoing them", async (url) => {
+    const stub = fetchStub();
+    const error = await client(stub).checkAgentTrust(url).catch((e) => e);
+    expect(error).toMatchObject({ code: "INVALID_URL" });
+    expect(String(error.message)).not.toContain("s3cret-token");
+    expect(stub.calls).toHaveLength(0);
+  });
+
+  it("reports HTTP 429 as RATE_LIMITED with the Retry-After seconds, and does not retry on its own", async () => {
+    const stub = fetchStub(new Response("Too many requests", { status: 429, headers: { "retry-after": "17" } }));
+    const error = await client(stub).checkAgentTrust("https://agent.acme.dev/mcp").catch((e) => e);
+    expect(error).toBeInstanceOf(AgentTrustError);
+    expect(error).toMatchObject({ code: "RATE_LIMITED", status: 429, retryAfterSeconds: 17 });
+    expect(error.message).toBe("AgentTrust's rate limit was reached; try again in 17s.");
+    expect(stub.calls).toHaveLength(1);
+  });
+
+  it("reads an HTTP-date Retry-After on a 429 as seconds from now", async () => {
+    const retryAt = new Date(Date.now() + 90_000).toUTCString();
+    const stub = fetchStub(new Response(null, { status: 429, headers: { "retry-after": retryAt } }));
+    const error = await client(stub).checkAgentTrust("https://agent.acme.dev/mcp").catch((e) => e);
+    expect(error.code).toBe("RATE_LIMITED");
+    expect(error.retryAfterSeconds).toBeGreaterThanOrEqual(88);
+    expect(error.retryAfterSeconds).toBeLessThanOrEqual(91);
+  });
+
+  it.each([
+    ["missing", undefined, undefined],
+    ["an HTTP-date in the past", "Wed, 21 Oct 2015 07:28:00 GMT", 0],
+    ["negative", "-5", undefined],
+    ["fractional", "1.5", undefined],
+    ["garbage", "soon", undefined],
+    ["a loosely formatted date", "2030-01-01", undefined],
+    ["out of range", "9".repeat(400), undefined],
+  ])("treats a 429 with a Retry-After that is %s safely", async (_label, header, expected) => {
+    const headers: Record<string, string> = header === undefined ? {} : { "retry-after": header };
+    const stub = fetchStub(new Response(null, { status: 429, headers }));
+    const error = await client(stub).checkAgentTrust("https://agent.acme.dev/mcp").catch((e) => e);
+    expect(error).toMatchObject({ code: "RATE_LIMITED", status: 429 });
+    expect(error.retryAfterSeconds).toBe(expected);
+  });
+
   it("reports AgentTrust's rate limit with retryAfterSeconds, and does not retry on its own", async () => {
     const stub = fetchStub(
       toolResult(
@@ -124,6 +170,19 @@ describe("checkAgentTrust", () => {
     expect(error).toBeInstanceOf(AgentTrustError);
     expect(error).toMatchObject({ code: "RATE_LIMITED", retryAfterSeconds: 42 });
     expect(stub.calls).toHaveLength(1);
+  });
+
+  it.each([
+    [{ retryAfterSeconds: null }, undefined],
+    [{ retryAfterSeconds: -3 }, undefined],
+    [{ retryAfterSeconds: "" }, undefined],
+    [{ retryAfterSeconds: "30" }, 30],
+    [{ retryAfterSeconds: null, details: { retryAfterSeconds: 12 } }, 12],
+  ])("reads a tool-level rate limit's retryAfterSeconds %j safely", async (fields, expected) => {
+    const stub = fetchStub(toolResult({ error: { code: "RATE_LIMITED", message: "Checking too often.", ...fields } }, { isError: true }));
+    const error = await client(stub).checkAgentTrust("https://agent.acme.dev/mcp").catch((e) => e);
+    expect(error.code).toBe("RATE_LIMITED");
+    expect(error.retryAfterSeconds).toBe(expected);
   });
 
   it("reports a server-side input rejection as TOOL_ERROR with the server's message", async () => {
@@ -265,6 +324,61 @@ describe("assertTrusted / evaluatePolicy", () => {
     expect(stub.calls).toHaveLength(0);
   });
 
+  describe("boolean policy options must be booleans (no fail-open from truthy or falsy values)", () => {
+    const invalid: unknown[] = ["false", "true", "0", "1", "", "no", 0, 1, Number.NaN, null, {}, [], () => true];
+    const cases = (["allowUnknown", "requireRecommended", "requireVerified"] as const).flatMap((field) =>
+      invalid.map((value) => [field, value] as const),
+    );
+
+    it.each(cases)("rejects policy.%s = %j with TypeError in evaluatePolicy", (field, value) => {
+      const policy = { [field]: value } as never;
+      expect(() => evaluatePolicy({ matched: false }, policy)).toThrow(new TypeError(`policy.${field} must be true or false.`));
+      expect(() => evaluatePolicy(matched, policy)).toThrow(TypeError);
+    });
+
+    it.each(cases)("rejects policy.%s = %j in assertTrusted before any request", async (field, value) => {
+      const stub = fetchStub(toolResult({ matched: false }));
+      await expect(
+        client(stub).assertTrusted("https://unknown.acme.dev/mcp", { [field]: value } as never),
+      ).rejects.toBeInstanceOf(TypeError);
+      expect(stub.calls).toHaveLength(0);
+    });
+
+    it("never lets a string 'false' accept an unknown or not-recommended endpoint", () => {
+      const notRecommendedResult = { ...matched, trustDecision: { recommended: false, confidence: "low" as const, reasons: [] } };
+      for (const [result, policy] of [
+        [{ matched: false } as TrustCheckResult, { allowUnknown: "false" }],
+        [notRecommendedResult, { requireRecommended: "" }],
+        [notRecommendedResult, { requireRecommended: 0 }],
+      ] as const) {
+        let failures: string[] | undefined;
+        try {
+          failures = evaluatePolicy(result, policy as never);
+        } catch (error) {
+          expect(error).toBeInstanceOf(TypeError);
+        }
+        expect(failures).toBeUndefined();
+      }
+    });
+
+    it("still accepts true, false and undefined", () => {
+      expect(evaluatePolicy({ matched: false }, { allowUnknown: true })).toEqual([]);
+      expect(evaluatePolicy({ matched: false }, { allowUnknown: false })).toHaveLength(1);
+      expect(evaluatePolicy({ matched: false }, { allowUnknown: undefined })).toHaveLength(1);
+      expect(evaluatePolicy(notRecommended, { requireRecommended: undefined })).toHaveLength(1);
+      expect(evaluatePolicy(notRecommended, { requireRecommended: true })).toHaveLength(1);
+      expect(evaluatePolicy({ ...matched, verified: false }, { requireVerified: false })).toEqual([]);
+      expect(evaluatePolicy({ ...matched, verified: false }, { requireVerified: undefined })).toEqual([]);
+    });
+  });
+
+  it.each([[null], ["strict"], [42], [[]]])("rejects a policy that isn't an object (%j)", async (policy) => {
+    expect(() => evaluatePolicy(matched, policy as never)).toThrow(new TypeError("policy must be an object."));
+    const stub = fetchStub(toolResult(matched));
+    await expect(client(stub).assertTrusted("https://agent.acme.dev/mcp", policy as never)).rejects.toBeInstanceOf(TypeError);
+    expect(stub.calls).toHaveLength(0);
+  });
+
   it("calls the global fetch bound to globalThis when no fetch is passed", async () => {
     const original = globalThis.fetch;
     const spy = vi.fn(async () => toolResult(matched));
@@ -283,5 +397,55 @@ describe("assertTrusted / evaluatePolicy", () => {
     expect(error).toBeInstanceOf(AgentTrustError);
     expect(error).not.toBeInstanceOf(NotTrustedError);
     expect(error.code).toBe("NETWORK_ERROR");
+  });
+});
+
+describe("client options", () => {
+  it.each([
+    ["options", null],
+    ["options", "https://agenttrust.test"],
+    ["options.endpoint", { endpoint: "not a url" }],
+    ["options.endpoint", { endpoint: "ftp://agenttrust.test/mcp" }],
+    ["options.endpoint", { endpoint: "" }],
+    ["options.endpoint", { endpoint: 42 }],
+    ["options.endpoint", { endpoint: "https://user:pass@agenttrust.test/mcp" }],
+    ["options.timeoutMs", { timeoutMs: 0 }],
+    ["options.timeoutMs", { timeoutMs: -5 }],
+    ["options.timeoutMs", { timeoutMs: Number.NaN }],
+    ["options.timeoutMs", { timeoutMs: Number.POSITIVE_INFINITY }],
+    ["options.timeoutMs", { timeoutMs: 2 ** 31 }],
+    ["options.timeoutMs", { timeoutMs: "1000" }],
+    ["options.fetch", { fetch: 42 }],
+    ["options.userAgent", { userAgent: 42 }],
+    ["options.userAgent", { userAgent: "agent\r\nX-Injected: 1" }],
+    ["options.userAgent", { userAgent: "agent-🤖" }],
+  ])("rejects invalid %s %j when the client is created", (name, options) => {
+    expect(() => createAgentTrustClient(options as never)).toThrow(TypeError);
+    expect(() => createAgentTrustClient(options as never)).toThrow(name);
+  });
+
+  it("accepts every valid option, including the longest timeout setTimeout supports", async () => {
+    const stub = fetchStub(toolResult(matched));
+    const c = createAgentTrustClient({ endpoint: "http://localhost:3000/api/mcp/public", fetch: stub.impl, timeoutMs: 2 ** 31 - 1, userAgent: "my-agent/1.0 (+https://example.com)" });
+    await expect(c.checkAgentTrust("https://agent.acme.dev/mcp")).resolves.toEqual(matched);
+    expect(stub.calls[0].url).toBe("http://localhost:3000/api/mcp/public");
+    expect(() => createAgentTrustClient()).not.toThrow();
+    expect(() => createAgentTrustClient({})).not.toThrow();
+    // Latin-1 is a valid header value, as it was in 0.1.1.
+    expect(() => createAgentTrustClient({ userAgent: "café-agent/1.0" })).not.toThrow();
+  });
+
+  it.each([
+    [{ timeoutMs: 0 }],
+    [{ timeoutMs: Number.NaN }],
+    [{ timeoutMs: -1 }],
+    [{ signal: "abort" }],
+    [{ signal: { aborted: false } }],
+    [null],
+  ])("rejects invalid per-call options %j with TypeError before any request", async (options) => {
+    const stub = fetchStub(toolResult(matched));
+    await expect(client(stub).checkAgentTrust("https://agent.acme.dev/mcp", options as never)).rejects.toBeInstanceOf(TypeError);
+    await expect(client(stub).assertTrusted("https://agent.acme.dev/mcp", {}, options as never)).rejects.toBeInstanceOf(TypeError);
+    expect(stub.calls).toHaveLength(0);
   });
 });

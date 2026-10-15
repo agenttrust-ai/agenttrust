@@ -12,7 +12,7 @@ AgentTrust monitors AI agents and MCP servers and returns a trust decision for a
 npm install @getagenttrust/sdk
 ```
 
-No dependencies. ESM only.
+No dependencies. An ES module: use `import`, or `require()` on Node.js 20.19+ or 22.12+, which can load ES modules.
 
 ### Supported runtimes
 
@@ -70,6 +70,8 @@ try {
 | `minReliabilityScore` | — | Minimum reliability score (0–100); a missing or stale score fails it. |
 | `allowUnknown` | `false` | Accept an endpoint AgentTrust has no data for. |
 
+The boolean options must be `true` or `false`: any other value, such as the string `"false"` from an environment variable, throws `TypeError` instead of being guessed at. So does any other invalid policy, before a request is made.
+
 A full trust gate in front of an MCP connection is in [`examples/check-before-connect.ts`](https://github.com/agenttrust-ai/agenttrust/blob/main/packages/sdk/examples/check-before-connect.ts).
 
 ## Options
@@ -93,14 +95,16 @@ Everything the SDK throws is an `AgentTrustError` with a `code`:
 
 | `code` | When |
 |---|---|
-| `INVALID_URL` | Not an absolute `http://` or `https://` URL. No request is made. |
-| `RATE_LIMITED` | AgentTrust's anonymous limit (10 checks/minute per IP) was reached. `retryAfterSeconds` says when to retry. The SDK never retries on its own. |
+| `INVALID_URL` | Not an absolute `http://` or `https://` URL, or it contains a username or password. No request is made. |
+| `RATE_LIMITED` | AgentTrust's anonymous limit (10 checks/minute per IP) was reached. `retryAfterSeconds` says when to retry, when known. The SDK never retries on its own. |
 | `TIMEOUT` / `ABORTED` | The timeout elapsed, or your `signal` aborted. |
 | `NETWORK_ERROR` | AgentTrust couldn't be reached. |
 | `HTTP_ERROR` | A non-2xx response; see `status`. |
 | `PROTOCOL_ERROR` | The response wasn't a valid MCP / `check_agent_trust` result. |
 | `TOOL_ERROR` | The tool reported an error (e.g. input the server rejected). |
 | `NOT_TRUSTED` | `NotTrustedError` from `assertTrusted`; see `failures` and `result`. |
+
+Invalid client options, per-call options or policies are programming errors: they throw a plain `TypeError`, not an `AgentTrustError`.
 
 ## Unknown endpoints
 
@@ -111,5 +115,7 @@ AgentTrust only has data for endpoints it monitors. For any other URL, `checkAge
 A `trustDecision` is a signal derived from AgentTrust's own monitoring (reachability checks, a reliability score over the last 7 days, and ownership verification). It is not a certification, a security audit or a guarantee of safety. Most endpoints are not ownership-verified, so `confidence` is often `"low"` even when `recommended` is `true`.
 
 ## How it works
+
+The endpoint URL you pass, including any query string, is sent to AgentTrust to be looked up, so remove secrets such as API keys from it first. URLs with a username or password are rejected.
 
 The SDK sends one [MCP](https://modelcontextprotocol.io) `tools/call` for AgentTrust's `check_agent_trust` tool to `https://getagenttrust.com/api/mcp/public` over stateless Streamable HTTP, and validates the result. The same tool is available to MCP clients directly — see [getagenttrust.com/docs](https://getagenttrust.com/docs).

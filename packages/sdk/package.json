@@ -1,6 +1,6 @@
 {
   "name": "@getagenttrust/sdk",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Check an AI agent or MCP server endpoint with AgentTrust before you connect to it.",
   "license": "MIT",
   "type": "module",
@@ -9,7 +9,8 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./package.json": "./package.json"
   },

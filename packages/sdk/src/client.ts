@@ -8,11 +8,13 @@ import type {
   UnmatchedTrustResult,
 } from "./types.js";
 
-export const SDK_VERSION = "0.1.1";
+export const SDK_VERSION = "0.1.2";
 export const DEFAULT_ENDPOINT = "https://getagenttrust.com/api/mcp/public";
 export const DEFAULT_TIMEOUT_MS = 10_000;
 /** The MCP protocol revision this client speaks (stateless Streamable HTTP). */
 const MCP_PROTOCOL_VERSION = "2025-06-18";
+/** setTimeout's limit: a longer delay fires immediately instead. */
+const MAX_TIMEOUT_MS = 2_147_483_647;
 
 const CONFIDENCE_RANK: Record<string, number> = { insufficient_data: 0, low: 1, medium: 2, high: 3 };
 /** An unexpected confidence value ranks lowest, so a `minConfidence` check fails closed. */
@@ -20,8 +22,31 @@ function confidenceRank(confidence: string): number {
   return CONFIDENCE_RANK[confidence] ?? 0;
 }
 
+/**
+ * Throws if `value` is set but isn't a boolean. Truthiness would turn a
+ * string like "false" (say, from an environment variable) into `true` and
+ * make the policy fail open.
+ */
+function validateOptionalBoolean(value: unknown, name: string): void {
+  if (value !== undefined && typeof value !== "boolean") {
+    throw new TypeError(`${name} must be true or false.`);
+  }
+}
+
+function validateTimeout(value: unknown, name: string): void {
+  if (value !== undefined && !(typeof value === "number" && Number.isFinite(value) && value > 0 && value <= MAX_TIMEOUT_MS)) {
+    throw new TypeError(`${name} must be a number of milliseconds greater than 0.`);
+  }
+}
+
 /** Throws on a policy that can't be applied as written, instead of silently ignoring it. */
 function validatePolicy(policy: TrustPolicy): void {
+  if (!isRecord(policy as unknown)) {
+    throw new TypeError("policy must be an object.");
+  }
+  validateOptionalBoolean(policy.requireRecommended, "policy.requireRecommended");
+  validateOptionalBoolean(policy.requireVerified, "policy.requireVerified");
+  validateOptionalBoolean(policy.allowUnknown, "policy.allowUnknown");
   if (policy.minConfidence !== undefined && !["low", "medium", "high"].includes(policy.minConfidence)) {
     throw new TypeError('policy.minConfidence must be "low", "medium" or "high".');
   }
@@ -46,13 +71,37 @@ export interface AgentTrustClient {
   ): Promise<TrustCheckResult>;
 }
 
-function isHttpUrl(value: string): boolean {
+/** The parsed URL when `value` is an absolute http:// or https:// URL, otherwise null. */
+function parseHttpUrl(value: string): URL | null {
   try {
-    const { protocol } = new URL(value);
-    return protocol === "https:" || protocol === "http:";
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+function hasCredentials(url: URL): boolean {
+  return url.username !== "" || url.password !== "";
+}
+
+/** A non-negative number of seconds, or undefined. */
+function toRetryAfterSeconds(value: unknown): number | undefined {
+  const seconds = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
+  return typeof seconds === "number" && Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined;
+}
+
+/**
+ * Seconds to wait from a Retry-After header: delay-seconds, or an HTTP-date
+ * (IMF-fixdate) counted from now. Anything else is ignored.
+ */
+function parseRetryAfter(header: string | null, now = Date.now()): number | undefined {
+  const value = header?.trim();
+  if (!value) return undefined;
+  if (/^\d+$/.test(value)) return toRetryAfterSeconds(value);
+  if (!/^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(value)) return undefined;
+  const date = Date.parse(value);
+  return Number.isNaN(date) ? undefined : Math.max(0, Math.ceil((date - now) / 1000));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -127,9 +176,8 @@ function toolError(result: Record<string, unknown>): AgentTrustError {
     const message = typeof structured.message === "string" ? structured.message : "check_agent_trust failed.";
     if (structured.code === "RATE_LIMITED") {
       const details = isRecord(structured.details) ? structured.details : {};
-      const retryAfter = Number(structured.retryAfterSeconds ?? details.retryAfterSeconds);
       return new AgentTrustError("RATE_LIMITED", message, {
-        retryAfterSeconds: Number.isFinite(retryAfter) ? retryAfter : undefined,
+        retryAfterSeconds: toRetryAfterSeconds(structured.retryAfterSeconds) ?? toRetryAfterSeconds(details.retryAfterSeconds),
       });
     }
     return new AgentTrustError("TOOL_ERROR", message);
@@ -147,14 +195,14 @@ function toolError(result: Record<string, unknown>): AgentTrustError {
 export function evaluatePolicy(result: TrustCheckResult, policy: TrustPolicy = {}): string[] {
   validatePolicy(policy);
   if (!result.matched) {
-    if (policy.allowUnknown) return [];
+    if (policy.allowUnknown === true) return [];
     const observation = result.observation ? ` (${result.observation.status})` : "";
     return [`AgentTrust has no data for this endpoint${observation}`];
   }
 
   const failures: string[] = [];
   const decision = result.trustDecision;
-  if ((policy.requireRecommended ?? true) && !decision.recommended) {
+  if (policy.requireRecommended !== false && !decision.recommended) {
     failures.push(
       `not recommended by AgentTrust${decision.reasons.length ? `: ${decision.reasons.join(" ")}` : ""}`,
     );
@@ -162,7 +210,7 @@ export function evaluatePolicy(result: TrustCheckResult, policy: TrustPolicy = {
   if (policy.minConfidence && confidenceRank(decision.confidence) < confidenceRank(policy.minConfidence)) {
     failures.push(`confidence is ${decision.confidence}, below ${policy.minConfidence}`);
   }
-  if (policy.requireVerified && !result.verified) {
+  if (policy.requireVerified === true && !result.verified) {
     failures.push("endpoint ownership is not verified");
   }
   if (policy.minReliabilityScore !== undefined) {
@@ -175,19 +223,64 @@ export function evaluatePolicy(result: TrustCheckResult, policy: TrustPolicy = {
   return failures;
 }
 
+/** Throws on client options that could never work, instead of failing on every check. */
+function validateClientOptions(options: AgentTrustClientOptions): void {
+  if (!isRecord(options as unknown)) {
+    throw new TypeError("options must be an object.");
+  }
+  if (options.endpoint !== undefined) {
+    const url = typeof options.endpoint === "string" ? parseHttpUrl(options.endpoint) : null;
+    if (!url) throw new TypeError("options.endpoint must be an absolute http:// or https:// URL.");
+    if (hasCredentials(url)) throw new TypeError("options.endpoint must not contain a username or password.");
+  }
+  validateTimeout(options.timeoutMs, "options.timeoutMs");
+  if (options.fetch !== undefined && typeof options.fetch !== "function") {
+    throw new TypeError("options.fetch must be a function.");
+  }
+  // The values fetch would reject on every check: a header value can't hold
+  // line breaks or NUL, or characters outside Latin-1.
+  if (options.userAgent !== undefined && !(typeof options.userAgent === "string" && /^[^\0\r\n\u0100-\uffff]*$/.test(options.userAgent))) {
+    throw new TypeError("options.userAgent must be a string without line breaks or characters outside Latin-1.");
+  }
+}
+
+function validateCheckOptions(check: CheckOptions): void {
+  if (!isRecord(check as unknown)) {
+    throw new TypeError("options must be an object.");
+  }
+  validateTimeout(check.timeoutMs, "options.timeoutMs");
+  const signal: unknown = check.signal;
+  if (
+    signal !== undefined &&
+    !(isRecord(signal) && typeof signal.aborted === "boolean" && typeof signal.addEventListener === "function")
+  ) {
+    throw new TypeError("options.signal must be an AbortSignal.");
+  }
+}
+
 export function createAgentTrustClient(options: AgentTrustClientOptions = {}): AgentTrustClient {
+  validateClientOptions(options);
   const endpoint = options.endpoint ?? DEFAULT_ENDPOINT;
   const defaultTimeout = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const userAgent = options.userAgent ?? `agenttrust-sdk/${SDK_VERSION}`;
   let nextId = 1;
 
   async function checkAgentTrust(endpointUrl: string, check: CheckOptions = {}): Promise<TrustCheckResult> {
-    if (typeof endpointUrl !== "string" || !isHttpUrl(endpointUrl.trim())) {
+    const url = typeof endpointUrl === "string" ? parseHttpUrl(endpointUrl.trim()) : null;
+    if (!url) {
       throw new AgentTrustError(
         "INVALID_URL",
         "endpointUrl must be an absolute http:// or https:// URL, such as https://agent.example.com/mcp.",
       );
     }
+    // Never send a password or token embedded in the URL to AgentTrust.
+    if (hasCredentials(url)) {
+      throw new AgentTrustError(
+        "INVALID_URL",
+        "endpointUrl must not contain a username or password; remove them before checking the endpoint.",
+      );
+    }
+    validateCheckOptions(check);
     // The global fetch is called through globalThis: some runtimes throw
     // "Illegal invocation" when it's called detached.
     const fetchImpl: typeof fetch | undefined =
@@ -241,6 +334,16 @@ export function createAgentTrustClient(options: AgentTrustClientOptions = {}): A
         throw new AgentTrustError("NETWORK_ERROR", "The response from AgentTrust was interrupted.", { cause: error });
       }
 
+      if (response.status === 429) {
+        const retryAfterSeconds = parseRetryAfter(response.headers.get("retry-after"));
+        throw new AgentTrustError(
+          "RATE_LIMITED",
+          retryAfterSeconds === undefined
+            ? "AgentTrust's rate limit was reached."
+            : `AgentTrust's rate limit was reached; try again in ${retryAfterSeconds}s.`,
+          { status: 429, retryAfterSeconds },
+        );
+      }
       if (!response.ok) {
         throw new AgentTrustError("HTTP_ERROR", `AgentTrust responded with HTTP ${response.status}.`, {
           status: response.status,
