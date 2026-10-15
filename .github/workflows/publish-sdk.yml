@@ -1,0 +1,115 @@
+# Publishes @getagenttrust/sdk (packages/sdk) to npm.
+#
+# Authenticates with npm Trusted Publishing: npm exchanges this run's GitHub
+# Actions OIDC token for a short-lived publish credential, so no npm token or
+# other stored credential is involved. Requires a trusted publisher on the
+# package's npm settings: repository agenttrust-ai/agenttrust, workflow
+# "publish-sdk.yml". Provenance is attached to every release.
+#
+# Manual only (Actions tab -> "Publish SDK to npm" -> Run workflow), and only
+# from main. Bump "version" in packages/sdk/package.json and add a
+# CHANGELOG.md entry first, then enter that exact version when running — a
+# mismatch, or a version npm already has, stops the run before publishing.
+name: Publish SDK to npm
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish — must equal packages/sdk/package.json (e.g. 0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write # the OIDC token npm exchanges for a publish credential; nothing else
+
+concurrency:
+  group: publish-sdk
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+
+      - name: Ensure npm supports Trusted Publishing (>= 11.5.1)
+        run: |
+          current="$(npm --version)"
+          if ! node -e 'const [a,b,c]=process.argv[1].split(".").map(Number); process.exit(a>11||(a===11&&(b>5||(b===5&&c>=1)))?0:1)' "$current"; then
+            echo "npm $current is too old for Trusted Publishing; installing npm 11.16.0"
+            npm install --global npm@11.16.0
+          fi
+          npm --version
+
+      - name: Check the requested version matches package.json
+        working-directory: packages/sdk
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          private="$(node -p "String(require('./package.json').private === true)")"
+          if [ "$name" != "@getagenttrust/sdk" ]; then
+            echo "::error::Unexpected package name: $name"; exit 1
+          fi
+          if [ "$private" = "true" ]; then
+            echo "::error::packages/sdk/package.json is marked private"; exit 1
+          fi
+          if [ "$version" != "$REQUESTED_VERSION" ]; then
+            echo "::error::Requested $REQUESTED_VERSION but package.json is $version"; exit 1
+          fi
+          if ! grep -q "^## $version\$" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## $version' entry"; exit 1
+          fi
+          echo "Publishing $name@$version"
+
+      - name: Refuse a version that is already on npm
+        working-directory: packages/sdk
+        run: |
+          spec="$(node -p "const p=require('./package.json'); p.name + '@' + p.version")"
+          if out="$(npm view "$spec" version 2>&1)"; then
+            if [ -n "$out" ]; then
+              echo "::error::$spec is already published on npm"; exit 1
+            fi
+          elif ! grep -q "E404" <<<"$out"; then
+            # Not a plain "not found": fail closed rather than guess.
+            echo "::error::Couldn't check npm for $spec"; echo "$out"; exit 1
+          fi
+          echo "$spec is not on npm yet"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck the SDK
+        run: npx tsc -p packages/sdk/tsconfig.json --noEmit
+
+      - name: Lint the SDK
+        run: npx eslint packages/sdk
+
+      - name: Test the SDK
+        run: npx vitest run packages/sdk/
+
+      - name: Show the package contents
+        working-directory: packages/sdk
+        run: npm pack --dry-run
+
+      - name: Publish with provenance
+        working-directory: packages/sdk
+        run: npm publish --provenance --access public
