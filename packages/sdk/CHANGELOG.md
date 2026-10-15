@@ -2,6 +2,15 @@
 
 All notable changes to `@getagenttrust/sdk` are documented here. This project follows [Semantic Versioning](https://semver.org); while the version is `0.x`, minor releases may include breaking changes.
 
+## 0.1.1
+
+### Changed
+
+- First release published from GitHub Actions through npm Trusted Publishing, with a provenance attestation linking the package to its source commit in `agenttrust-ai/agenttrust`. No stored npm tokens are used to publish.
+- The `User-Agent` sent with each check now reports `agenttrust-sdk/0.1.1`.
+
+No functional or API changes since 0.1.0.
+
 ## 0.1.0
 
 First release: check an AI agent or MCP server endpoint with [AgentTrust](https://getagenttrust.com) before connecting to it.

@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   AgentTrustError,
   NotTrustedError,
+  SDK_VERSION,
   createAgentTrustClient,
   evaluatePolicy,
   type MatchedTrustResult,
@@ -47,6 +49,13 @@ function client(stub: ReturnType<typeof fetchStub>, timeoutMs?: number) {
   return createAgentTrustClient({ endpoint: ENDPOINT, fetch: stub.impl, timeoutMs });
 }
 
+describe("version", () => {
+  it("SDK_VERSION (sent as the User-Agent) matches package.json", () => {
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
+    expect(SDK_VERSION).toBe(pkg.version);
+  });
+});
+
 describe("checkAgentTrust", () => {
   it("sends one MCP tools/call for check_agent_trust and returns the typed matched result", async () => {
     const stub = fetchStub(toolResult(matched, {}, true));
@@ -61,7 +70,7 @@ describe("checkAgentTrust", () => {
       "content-type": "application/json",
       accept: "application/json, text/event-stream",
       "mcp-protocol-version": "2025-06-18",
-      "user-agent": "agenttrust-sdk/0.1.0",
+      "user-agent": `agenttrust-sdk/${SDK_VERSION}`,
     });
     expect(call.body).toMatchObject({
       jsonrpc: "2.0",
