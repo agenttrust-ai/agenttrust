@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+// One Supabase code exchange; this bounds a request that would otherwise
+// hold a function (and its memory) open.
+export const maxDuration = 15;
+
 /**
  * Destination for Supabase's email-confirmation and OAuth redirects. Exchanges
  * the one-time `code` for a session, then sends the user on to the dashboard.

@@ -16,6 +16,11 @@ import {
 // Never statically rendered/cached — this is invoked by Vercel Cron, not a browser.
 export const dynamic = "force-dynamic";
 
+// A run normally takes seconds, but up to 15 registry requests (each
+// aborted after 10s) can stack up, so it keeps the full 300s explicitly
+// rather than inheriting whatever the project default is.
+export const maxDuration = 300;
+
 const FETCH_LIMIT = 50;
 
 /**

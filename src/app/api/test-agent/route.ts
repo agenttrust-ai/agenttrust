@@ -11,6 +11,9 @@ import { z } from "zod";
  */
 export const dynamic = "force-dynamic";
 
+// Answers instantly with no I/O; this only bounds a stuck request.
+export const maxDuration = 10;
+
 const AGENT_NAME = "Support Bot";
 const MAX_MESSAGE_LENGTH = 2000;
 
