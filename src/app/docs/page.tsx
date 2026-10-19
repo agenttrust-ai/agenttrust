@@ -5,6 +5,18 @@ import { CodeBlock as Code } from "@/components/dev/code-block";
 import { CopyButton } from "@/components/dev/copy-button";
 import { Callout } from "@/components/ui/callout";
 import { SUPPORT_EMAIL } from "@/lib/contact";
+import {
+  SDK_ASSERT_EXAMPLE,
+  SDK_CHECK_EXAMPLE,
+  SDK_ERROR_CODES,
+  SDK_EXAMPLE_ENDPOINT,
+  SDK_EXAMPLE_URL,
+  SDK_INSTALL,
+  SDK_NPM_URL,
+  SDK_PACKAGE,
+  SDK_POLICY_OPTIONS,
+  SDK_README_URL,
+} from "./sdk-reference";
 
 export const metadata: Metadata = {
   title: "API Reference — AgentTrust",
@@ -21,6 +33,7 @@ export const metadata: Metadata = {
 const DOCS_NAV_ITEMS = [
   { id: "quick-start", label: "Quick Start" },
   { id: "mcp", label: "MCP" },
+  { id: "sdk", label: "SDK (TypeScript)" },
   { id: "getting-started", label: "Getting started (REST)" },
   { id: "workflow", label: "The workflow" },
   { id: "auth", label: "Authentication" },
@@ -44,6 +57,7 @@ const AT_A_GLANCE: { label: string; value: string; note: string; copy?: boolean 
   { label: "MCP server", value: MCP_URL, note: "Streamable HTTP", copy: true },
   { label: "Trust check (MCP)", value: "check_agent_trust({ endpointUrl })", note: "No API key or account" },
   { label: "Trust check (REST)", value: "GET /api/v1/agents?endpoint_url=", note: "API key required" },
+  { label: "SDK (TypeScript)", value: SDK_INSTALL, note: "Anonymous trust checks, typed results", copy: true },
   { label: "Authentication", value: "Authorization: Bearer <API_KEY>", note: "REST and keyed MCP tools" },
 ];
 
@@ -270,6 +284,88 @@ export default function DocsPage() {
           <Code>{`Request:  { "endpointUrl": "https://api.example-acme.com/v1/invoke" }
 Response: structuredContent.agents[0] has the exact same fields as
           the REST example above.`}</Code>
+        </Section>
+
+        <Section id="sdk" title="SDK (TypeScript)">
+          <p>
+            <a href={SDK_NPM_URL}>
+              <code>{SDK_PACKAGE}</code>
+            </a>{" "}
+            is the official TypeScript SDK for the anonymous trust check: it
+            calls <code>check_agent_trust</code> on{" "}
+            <code>{PUBLIC_MCP_URL}</code> and returns typed results and errors.
+            No API key or account. It runs on Node.js 18 or later and is an ES
+            module; <code>require()</code> works on Node.js 20.19+ and 22.12+.
+            Use version 0.1.2 or later — 0.1.0 and 0.1.1 are deprecated.
+          </p>
+          <Code label="Install the SDK">{SDK_INSTALL}</Code>
+          <p>
+            Check an endpoint. The example uses{" "}
+            <code>{SDK_EXAMPLE_ENDPOINT}</code>, AgentTrust&apos;s own monitored
+            test agent, so it returns a real result. AgentTrust never contacts
+            the endpoint you check.
+          </p>
+          <Code label="checkAgentTrust example">{SDK_CHECK_EXAMPLE}</Code>
+          <p>
+            Only connect if it&apos;s trusted: <code>assertTrusted</code> throws{" "}
+            <code>NotTrustedError</code> unless the endpoint meets your policy,
+            and fails closed — an endpoint AgentTrust has no data for is
+            rejected unless you set <code>allowUnknown</code>. For a result you
+            already have, <code>evaluatePolicy(result, policy)</code> returns
+            the same failures as a string array (empty means it passes).
+          </p>
+          <Code label="assertTrusted example">{SDK_ASSERT_EXAMPLE}</Code>
+          <p>
+            Policy options. The boolean options must be <code>true</code> or{" "}
+            <code>false</code>: any other value, or any other invalid policy,
+            throws <code>TypeError</code> before a request is made.
+          </p>
+          <ul className="flex flex-col gap-2">
+            {SDK_POLICY_OPTIONS.map((option) => (
+              <li key={option.name}>
+                <code>{option.name}</code>
+                {option.defaultValue && (
+                  <>
+                    {" "}
+                    (default <code>{option.defaultValue}</code>)
+                  </>
+                )}{" "}
+                — {option.meaning}
+              </li>
+            ))}
+          </ul>
+          <p>
+            Results are{" "}
+            <code>
+              {
+                "{ matched: true, slug, name, status, verified, reliabilityScore, reliabilityScoreStatus, trustDecision }"
+              }
+            </code>{" "}
+            — the same fields as <code>check_agent_trust</code> above, explained
+            in <a href="#trust-decision">Interpreting trustDecision</a> — or{" "}
+            <code>{"{ matched: false, observation? }"}</code>, which never
+            carries a score.
+          </p>
+          <p>
+            Errors. Invalid client options, per-call options and policies throw
+            a plain <code>TypeError</code>. Everything else is an{" "}
+            <code>AgentTrustError</code> with a <code>code</code>, and the SDK
+            never retries on its own:
+          </p>
+          <ul className="flex flex-col gap-2">
+            {SDK_ERROR_CODES.map((error) => (
+              <li key={error.code}>
+                <code>{error.code}</code> — {error.meaning}.
+              </li>
+            ))}
+          </ul>
+          <p>
+            Full reference, including <code>createAgentTrustClient</code>{" "}
+            options and per-call timeouts: the{" "}
+            <a href={SDK_README_URL}>SDK README</a>. A complete trust gate in
+            front of an MCP connection:{" "}
+            <a href={SDK_EXAMPLE_URL}>examples/check-before-connect.ts</a>.
+          </p>
         </Section>
 
         <Section id="getting-started" title="Getting started">
@@ -658,9 +754,10 @@ Authorization: Bearer at_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}</Code>
 
         <Section id="not-built" title="Not yet built">
           <p>
-            No official SDK yet — the REST API and MCP tools above are
-            sufficient to integrate directly. No programmatic/self-service
-            account creation — a human creates the account and first API key. No
+            The official SDK covers only the anonymous trust check (see{" "}
+            <a href="#sdk">SDK</a>); for everything else, use the REST API and
+            MCP tools above directly. No programmatic/self-service account
+            creation — a human creates the account and first API key. No
             batch/multi-URL lookup — call <code>?endpoint_url=</code> once per
             URL.
           </p>

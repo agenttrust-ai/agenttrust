@@ -1,6 +1,18 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  sdkErrorCodes,
+  sdkExportedFunctions,
+  sdkMatchedResultFields,
+  sdkPolicyOptions,
+} from "@/lib/test/sdk-source";
+import {
+  SDK_EXAMPLE_ENDPOINT,
+  SDK_INSTALL,
+  SDK_NPM_URL,
+  SDK_README_URL,
+} from "@/app/docs/sdk-reference";
 
 /**
  * public/llms.txt — the plain-text reference AI agents fetch (served at
@@ -44,5 +56,41 @@ describe("llms.txt authentication facts", () => {
     for (const forbidden of ["DATABASE_URL", "DIRECT_URL", "CRON_SECRET", "service_role"]) {
       expect(text()).not.toContain(forbidden);
     }
+  });
+});
+
+describe("llms.txt SDK section", () => {
+  const sdkSection = () =>
+    text().match(/## SDK \(TypeScript\)\n([\s\S]*?)\n## /)?.[1] ?? "";
+
+  it("has an SDK section, and no longer says there is no official SDK", () => {
+    expect(sdkSection()).not.toBe("");
+    expect(flat()).not.toMatch(/no official SDK/i);
+  });
+
+  it("gives the install command, the npm package, the full reference and the example endpoint", () => {
+    expect(text()).toContain(SDK_INSTALL);
+    expect(sdkSection()).toContain(SDK_NPM_URL);
+    expect(sdkSection()).toContain(SDK_README_URL);
+    expect(sdkSection()).toContain(SDK_EXAMPLE_ENDPOINT);
+  });
+
+  it("documents every exported function and class, policy option, result field and error code", () => {
+    const section = sdkSection();
+    for (const name of [
+      ...sdkExportedFunctions(),
+      ...sdkPolicyOptions(),
+      ...sdkMatchedResultFields(),
+      ...sdkErrorCodes(),
+    ]) {
+      expect(section).toContain(name);
+    }
+  });
+
+  it("says the boolean policy options must be booleans and invalid policies throw TypeError", () => {
+    expect(sdkSection().replace(/\s+/g, " ")).toContain(
+      "booleans must be true or false",
+    );
+    expect(sdkSection()).toContain("TypeError");
   });
 });

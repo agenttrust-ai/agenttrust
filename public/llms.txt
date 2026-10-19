@@ -18,6 +18,7 @@
 Base URL: https://getagenttrust.com
 Full human-readable reference: https://getagenttrust.com/docs
 Official MCP Registry identity: io.github.agenttrust-ai/agenttrust
+TypeScript SDK: `npm install @getagenttrust/sdk` (see SDK below)
 
 ## Workflow
 
@@ -247,9 +248,67 @@ Example — list_agents with endpointUrl:
   Response: `structuredContent.agents[0]` has the exact same fields as
   the REST example above.
 
+## SDK (TypeScript)
+
+Official SDK for the anonymous trust check: `npm install @getagenttrust/sdk`
+(https://www.npmjs.com/package/@getagenttrust/sdk). It calls
+check_agent_trust on https://getagenttrust.com/api/mcp/public and returns
+typed results and errors. No API key or account. Node.js 18 or later; an
+ES module (`require()` works on Node.js 20.19+ and 22.12+). Use version
+0.1.2 or later: 0.1.0 and 0.1.1 are deprecated. Not affiliated with the
+`@agenttrust` npm scope.
+
+Example endpoint: https://agenttrust-umber.vercel.app/api/test-agent is
+AgentTrust's own monitored test agent, so checking it returns a real
+result. AgentTrust never contacts the endpoint you check.
+
+  import { checkAgentTrust, assertTrusted, NotTrustedError } from "@getagenttrust/sdk";
+
+  const result = await checkAgentTrust("https://agenttrust-umber.vercel.app/api/test-agent");
+  if (result.matched) {
+    // result.status, result.verified, result.reliabilityScore,
+    // result.reliabilityScoreStatus, result.trustDecision
+  }
+
+  // Throws NotTrustedError (see error.failures) unless the endpoint meets the policy.
+  await assertTrusted("https://agenttrust-umber.vercel.app/api/test-agent", { minConfidence: "medium" });
+
+Functions:
+  checkAgentTrust(endpointUrl, { timeoutMs?, signal? }?) — the trust
+    check. Resolves to { matched: true, slug, name, status, verified,
+    reliabilityScore, reliabilityScoreStatus, trustDecision } or
+    { matched: false, observation? } (never a score).
+  assertTrusted(endpointUrl, policy?, options?) — throws NotTrustedError
+    unless the endpoint meets the policy; fails closed on unknown
+    endpoints. Returns the result it decided on.
+  evaluatePolicy(result, policy?) — the same policy check on a result you
+    already have; returns the failed requirements (empty = passes).
+  createAgentTrustClient({ endpoint?, timeoutMs?, fetch?, userAgent? }) —
+    a client with its own options (default timeout 10000 ms) and the same
+    checkAgentTrust/assertTrusted methods.
+
+Policy options (booleans must be true or false; any other value, or any
+other invalid policy, throws TypeError before a request is made):
+  requireRecommended (default true) — require trustDecision.recommended.
+  minConfidence — "low", "medium" or "high".
+  requireVerified (default false) — require proven endpoint ownership.
+  minReliabilityScore — 0-100; a missing or stale score fails it.
+  allowUnknown (default false) — accept an endpoint with no data.
+
+Errors: invalid client options, per-call options and policies throw a
+plain TypeError. Everything else is an AgentTrustError with a `code`:
+INVALID_URL (not an absolute http(s) URL, or it contains a username or
+password; no request is made), RATE_LIMITED (see retryAfterSeconds),
+TIMEOUT, ABORTED, NETWORK_ERROR, HTTP_ERROR (see status), PROTOCOL_ERROR,
+TOOL_ERROR, NOT_TRUSTED (NotTrustedError, with failures and result). The
+SDK never retries on its own.
+
+Full reference: https://github.com/agenttrust-ai/agenttrust/tree/main/packages/sdk#readme
+
 ## Not yet built
 
-No official SDK yet (the REST API and MCP tools above are sufficient to
-integrate directly). No programmatic/self-service account creation — a
+The official SDK covers only the anonymous trust check (see SDK above);
+for everything else, use the REST API and MCP tools directly. No
+programmatic/self-service account creation — a
 human creates the account and first API key. No batch/multi-URL lookup —
 call `?endpoint_url=` once per URL.
