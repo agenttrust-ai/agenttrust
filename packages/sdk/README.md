@@ -25,39 +25,44 @@ No dependencies. An ES module: use `import`, or `require()` on Node.js 20.19+ or
 ```ts
 import { checkAgentTrust } from "@getagenttrust/sdk";
 
-const result = await checkAgentTrust("https://mcp.example.com/mcp");
+// AgentTrust's own test agent: a real, monitored endpoint you can check.
+const result = await checkAgentTrust("https://agenttrust-umber.vercel.app/api/test-agent");
 
 if (result.matched) {
   console.log(result.status, result.reliabilityScore, result.trustDecision);
-  // "healthy" 100 { recommended: true, confidence: "high", reasons: [] }
+  // e.g. "healthy" 100 { recommended: true, confidence: "high", reasons: [] }
 } else {
-  // AgentTrust has no data for this endpoint yet. It may be queued for
-  // observation: result.observation?.status is "pending", "observing" or
-  // "not_in_registry". An unmatched result never carries a score.
+  // AgentTrust has no data for this endpoint (yet). An unmatched result never
+  // carries a score; result.observation may say it was queued for a lookup.
+  console.log("Unknown endpoint", result.observation?.status);
 }
 ```
 
+The example checks `https://agenttrust-umber.vercel.app/api/test-agent`, AgentTrust's own monitored test agent, so it returns a real result you can try right away. AgentTrust never contacts the endpoint you check. The values in the comment are an example: a result reflects AgentTrust's latest monitoring.
+
 ## Only connect if it's trusted
 
-`assertTrusted` throws `NotTrustedError` unless the endpoint meets your policy, and **fails closed**: an endpoint AgentTrust doesn't know is rejected unless you allow it.
+`assertTrusted` throws `NotTrustedError` unless the endpoint meets your policy, and **fails closed**: an endpoint AgentTrust doesn't know is rejected unless you allow it. It returns the result it decided on.
 
 ```ts
 import { assertTrusted, NotTrustedError } from "@getagenttrust/sdk";
 
+const endpointUrl = "https://agenttrust-umber.vercel.app/api/test-agent";
+
 try {
-  await assertTrusted("https://mcp.example.com/mcp", {
+  await assertTrusted(endpointUrl, {
     requireRecommended: true, // default
     minConfidence: "medium",
-    requireVerified: false,
+    requireVerified: false, // default
     minReliabilityScore: 80,
     allowUnknown: false, // default
   });
-  // connect with your MCP client here
+  // Trusted: connect with your MCP client here.
 } catch (error) {
   if (error instanceof NotTrustedError) {
     console.log("Not connecting:", error.failures);
   } else {
-    throw error; // couldn't get a decision — treat as untrusted
+    throw error; // couldn't get a decision: treat the endpoint as untrusted
   }
 }
 ```
@@ -74,24 +79,70 @@ The boolean options must be `true` or `false`: any other value, such as the stri
 
 A full trust gate in front of an MCP connection is in [`examples/check-before-connect.ts`](https://github.com/agenttrust-ai/agenttrust/blob/main/packages/sdk/examples/check-before-connect.ts).
 
+## Check a result you already have
+
+`evaluatePolicy(result, policy?)` applies a policy to a result from `checkAgentTrust` without another request. It returns every requirement the result fails, in plain language; an empty array means it passes.
+
+```ts
+import { checkAgentTrust, evaluatePolicy } from "@getagenttrust/sdk";
+
+const result = await checkAgentTrust("https://agenttrust-umber.vercel.app/api/test-agent");
+const failures = evaluatePolicy(result, { requireVerified: true, minReliabilityScore: 90 });
+
+if (failures.length === 0) {
+  console.log("Meets the policy");
+} else {
+  console.log("Policy not met:", failures);
+}
+```
+
+## Results
+
+`checkAgentTrust` and `assertTrusted` resolve to a `TrustCheckResult`. Check `result.matched` first; TypeScript then narrows it to one of these:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `matched` | `true` | AgentTrust monitors this exact endpoint URL. |
+| `slug` | `string` | The agent's AgentTrust identifier. |
+| `name` | `string` | The agent's display name. |
+| `status` | `"unknown" \| "healthy" \| "degraded" \| "down"` | Its latest observed status. |
+| `verified` | `boolean` | Whether the endpoint's owner has proven control of its origin. |
+| `reliabilityScore` | `number \| null` | 0–100, or `null` before there is enough monitoring history. |
+| `reliabilityScoreStatus` | `"none" \| "fresh" \| "stale"` | Whether the score is current evidence. A stale score never makes an agent recommended. |
+| `trustDecision.recommended` | `boolean` | AgentTrust's own recommendation. |
+| `trustDecision.confidence` | `"high" \| "medium" \| "low" \| "insufficient_data"` | How much evidence is behind it. |
+| `trustDecision.reasons` | `string[]` | Plain-language reasons for everything that counted against the agent; empty when nothing did. |
+
+| Field | Type | Meaning |
+|---|---|---|
+| `matched` | `false` | AgentTrust has no data for this endpoint. It never carries a score or verification. |
+| `observation` | `{ status: "pending" \| "observing" \| "not_in_registry"; message: string }` (optional) | Present when AgentTrust queued the endpoint for a lookup in the official MCP Registry. |
+
 ## Options
+
+`createAgentTrustClient(options?)` returns a client with its own settings; `checkAgentTrust` and `assertTrusted` are its methods:
 
 ```ts
 import { createAgentTrustClient } from "@getagenttrust/sdk";
 
 const agentTrust = createAgentTrustClient({
   timeoutMs: 5_000, // default 10_000
+  userAgent: "my-agent/1.0", // default "agenttrust-sdk/<version>"
   // endpoint: "https://getagenttrust.com/api/mcp/public", // default
-  // fetch: customFetch,
-  // userAgent: "my-agent/1.0",
+  // fetch: customFetch, // default: the global fetch
 });
 
-await agentTrust.checkAgentTrust(url, { timeoutMs: 2_000, signal });
+const controller = new AbortController();
+const result = await agentTrust.checkAgentTrust("https://agenttrust-umber.vercel.app/api/test-agent", {
+  timeoutMs: 2_000, // overrides the client's timeout for this call
+  signal: controller.signal, // controller.abort() cancels the check
+});
+console.log(result.matched);
 ```
 
 ## Errors
 
-Everything the SDK throws is an `AgentTrustError` with a `code`:
+Invalid client options, per-call options or policies are programming errors: they throw a plain `TypeError`, before any request. Everything else the SDK throws is an `AgentTrustError` with a `code`:
 
 | `code` | When |
 |---|---|
@@ -104,7 +155,19 @@ Everything the SDK throws is an `AgentTrustError` with a `code`:
 | `TOOL_ERROR` | The tool reported an error (e.g. input the server rejected). |
 | `NOT_TRUSTED` | `NotTrustedError` from `assertTrusted`; see `failures` and `result`. |
 
-Invalid client options, per-call options or policies are programming errors: they throw a plain `TypeError`, not an `AgentTrustError`.
+```ts
+import { AgentTrustError, checkAgentTrust } from "@getagenttrust/sdk";
+
+try {
+  await checkAgentTrust("https://agenttrust-umber.vercel.app/api/test-agent");
+} catch (error) {
+  if (error instanceof AgentTrustError && error.code === "RATE_LIMITED") {
+    console.log(`Rate limited; try again in ${error.retryAfterSeconds ?? 60}s`);
+  } else {
+    throw error;
+  }
+}
+```
 
 ## Unknown endpoints
 

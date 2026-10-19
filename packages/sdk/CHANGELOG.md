@@ -2,6 +2,16 @@
 
 All notable changes to `@getagenttrust/sdk` are documented here. This project follows [Semantic Versioning](https://semver.org); while the version is `0.x`, minor releases may include breaking changes.
 
+## Unreleased
+
+### Documentation
+
+- Every README example now compiles exactly as written (the "Options" example used an undefined `url` and `signal`) and checks AgentTrust's own monitored test agent, `https://agenttrust-umber.vercel.app/api/test-agent`, so it returns a real result.
+- The README documents `evaluatePolicy` and every result field.
+- `examples/check-before-connect.ts` imports from `@getagenttrust/sdk`, so it can be copied into a project as is.
+
+No code changes.
+
 ## 0.1.2
 
 ### Security

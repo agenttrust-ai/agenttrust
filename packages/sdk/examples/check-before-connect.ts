@@ -4,7 +4,14 @@
  * another agent) asks AgentTrust first, and only connects if the server
  * meets its policy.
  *
- *   npx tsx packages/sdk/examples/check-before-connect.ts https://mcp.example.com/mcp
+ * Copy this file into a project with the SDK installed, then run it with the
+ * URL of the server to check. AgentTrust's own monitored test agent is a
+ * real endpoint to try it with:
+ *
+ *   npm install @getagenttrust/sdk
+ *   npx tsx check-before-connect.ts https://agenttrust-umber.vercel.app/api/test-agent
+ *
+ * (In this repository: npx tsx packages/sdk/examples/check-before-connect.ts <url>.)
  *
  * Each run makes one anonymous request to AgentTrust (rate-limited per IP).
  * AgentTrust never contacts the server being checked.
@@ -15,7 +22,7 @@ import {
   createAgentTrustClient,
   type TrustCheckResult,
   type TrustPolicy,
-} from "../src/index.js";
+} from "@getagenttrust/sdk";
 
 const agentTrust = createAgentTrustClient({ timeoutMs: 5_000 });
 
@@ -60,7 +67,7 @@ export async function connectWithTrustGate<T>(
 async function main() {
   const serverUrl = process.argv[2];
   if (!serverUrl) {
-    console.error("Usage: npx tsx packages/sdk/examples/check-before-connect.ts <mcp-server-url>");
+    console.error("Usage: npx tsx check-before-connect.ts <mcp-server-url>");
     process.exitCode = 2;
     return;
   }
