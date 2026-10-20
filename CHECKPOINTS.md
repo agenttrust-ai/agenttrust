@@ -45,6 +45,144 @@ tested (only Node.js 24).
 
 ---
 
+## API TIMEOUTS P2 — PROJECT DEFAULT MAX DURATION 300 s → 60 s — 2026-10-19
+
+_Recorded retroactively on 2026-10-20 from Vercel records and the session log._
+
+**Change (no code commit).** The Vercel project default function timeout
+(`resourceConfig.functionDefaultTimeout`) was set from Vercel's 300 s default
+to 60 s through the project API; a before/after comparison of every project
+setting showed this as the only change [session]. Explicit route values from
+P1 keep precedence: crons 300 s, MCP 30 s, other API routes 10–15 s. The
+setting applies per deployment, so commit `6aa6b39` was redeployed:
+`dpl_9sniHAMj16pfBSs9AHdV9WDg4oMd`, READY 2026-10-19 08:08:36 UTC,
+`config.functionTimeout: 60` (the P1 deployment showed 300) [Vercel].
+
+**Evidence.**
+- 11/11 read-only post-deploy smoke tests passed (pages, MCP `initialize` and
+  `tools/list` on both routes matched the pinned snapshots, `check_agent_trust`
+  on `support-bot`, `test-agent`, `auth/callback`, 401 checks); no 5xx after
+  the deploy [session].
+- In the 14 days before, the functions now inheriting the default (pages,
+  server actions, 404, proxy) never ran longer than 1.78 s [Vercel metrics,
+  session].
+- First cron runs under a 60 s-default deployment, on 2026-10-20 (on
+  `dpl_GRhW3hFByvpXhX1a1JERmxGn7n5c`, `config.functionTimeout: 60`): health
+  checks HTTP 200, 40.1 s, 298 MB; discovery HTTP 200, 4.2 s, 249 MB
+  [Vercel metrics]. Both stayed under 60 s, so these runs don't by themselves
+  prove the crons' explicit 300 s; that's shown by the P1 build manifest.
+
+**Result: PASS.** Rollback: promote `dpl_HksLf7NvMUag2UGx1zHkrHvM251H`
+(300 s default) or set the project default back to 300 and redeploy.
+
+---
+
+## API TIMEOUTS P1 — EXPLICIT maxDuration ON EVERY API ROUTE — 2026-10-18
+
+_Recorded retroactively on 2026-10-20 from git, Vercel records and the session log._
+
+**Change.** Commit `6aa6b39` (`6aa6b392e933a3f840dd6a913fa9701b691c0b40`,
+2026-10-18 11:47:09 UTC, "fix(api): set explicit maxDuration on every API
+route", 8 files) [git]: the discovery cron 300 s (made explicit); v1 agent
+routes and heartbeat 15 s; `/api/test-agent` 10 s; `/auth/callback` 15 s. The
+health-check cron (300 s) and both MCP routes (30 s) were unchanged. New
+`src/app/route-max-duration.test.ts` requires every route to declare one and
+pins all 10 values.
+
+**Evidence.**
+- Regression test 31/31; it failed 4 tests when a timeout was removed or
+  lowered (mutation check). Full suite 52 files / 1,226 tests passed;
+  typecheck and lint passed [session].
+- Production build `functions-config-manifest.json` listed all 10 values
+  [session]. Vercel's API doesn't expose per-route `maxDuration` for Git
+  deployments, so the deployed values are confirmed from the deployed commit
+  and that build.
+- Deploy `dpl_HksLf7NvMUag2UGx1zHkrHvM251H`, READY 2026-10-18 11:47:35 UTC
+  [Vercel]; 11/11 read-only smoke tests passed; no 5xx after the deploy
+  [session].
+- First cron runs under it, 2026-10-19: health checks HTTP 200, 39.3 s,
+  295 MB; discovery HTTP 200, 2.0 s, 249 MB — within the previous three
+  days' ranges (38.6–39.2 s, 1.9–3.0 s) [Vercel metrics].
+
+**Result: PASS.**
+
+---
+
+## SDK @getagenttrust/sdk 0.1.2 — SECURITY AND COMPATIBILITY FIXES — 2026-10-15
+
+_Recorded retroactively on 2026-10-20 from git, the npm registry and the session log._
+
+**Release.** Commit `563280f` (`563280fb9f496b90a34f7ffefaefd4a18fb5b427`,
+2026-10-15 14:09:54 UTC, "fix(sdk): v0.1.2 security and compatibility
+fixes") [git]; published 2026-10-15 14:17:36 UTC by `publish-sdk.yml` (run
+38749851052) with SLSA provenance naming this commit; registry `gitHead`
+matches [npm]. Fixes found by the 0.1.1 external test:
+- **Security:** the boolean policy options (`allowUnknown`,
+  `requireRecommended`, `requireVerified`) were read by truthiness, so e.g.
+  `allowUnknown: "false"` accepted unknown endpoints (fail-open). They now
+  throw `TypeError`. URLs with embedded credentials are rejected
+  (`INVALID_URL`) instead of being sent to AgentTrust.
+- HTTP 429 → `RATE_LIMITED` with `retryAfterSeconds` (seconds or HTTP date);
+  CommonJS `require()` works (`"default"` export condition); invalid client
+  and per-call options throw `TypeError`.
+
+**Evidence.** Before publishing: SDK tests 161/161 (79 failed with the old
+policy logic restored), SDK contract tests 5/5, package compatibility 16/16,
+offline end-to-end 102/102 [session]. After publishing: external smoke test
+19/21; the 2 failures were documentation gaps, later fixed in 0.1.3 [session].
+0.1.0 and 0.1.1 were then deprecated on npm with range `>=0.1.0 <0.1.2`;
+verified 2026-10-19: both carry the security message, 0.1.2 and
+`0.0.0-stage` don't [npm, session].
+
+**Result: PASS.**
+
+---
+
+## SDK @getagenttrust/sdk 0.1.1 — FIRST TRUSTED-PUBLISHING RELEASE — 2026-10-15
+
+_Recorded retroactively on 2026-10-20 from git, the npm registry and the session log._
+
+**Release.** Workflow `.github/workflows/publish-sdk.yml` added in `3b6d525`
+(2026-10-15 12:26:27 UTC; manual dispatch on `main` only, OIDC, provenance,
+duplicate-version guard); version prepared in `0827a49`
+(`0827a498bb5a5b521ca2265c6bc02fc892614731`, 12:44:25 UTC) [git]. Published
+2026-10-15 12:56:31 UTC by that workflow (run 38738209327) with SLSA
+provenance naming `0827a49`; registry `gitHead` matches [npm]. No functional
+change from 0.1.0; the User-Agent reported 0.1.1.
+
+**Evidence.** Before publishing: SDK typecheck, root typecheck and lint
+passed; SDK tests 36/36; contract tests 5/5; `npm pack` 12 files [session].
+After publishing, an external end-to-end test passed 103/110; its findings
+(fail-open policy values, 429 mapping, `require()`) became 0.1.2 [session].
+Deprecated on npm (see 0.1.2) [npm].
+
+**Result: PUBLISHED; superseded by 0.1.2.**
+
+---
+
+## SDK @getagenttrust/sdk 0.1.0 — FIRST RELEASE — 2026-10-14
+
+_Recorded retroactively on 2026-10-20 from git and the npm registry._
+
+**Release.** Commit `ec48215` (`ec4821537e370f6275520130534211e85a9d78e6`,
+2026-10-13 13:24:38 UTC, "feat(sdk): @getagenttrust/sdk 0.1.0 — TypeScript
+SDK for pre-connection trust checks", 13 files) [git]. Published manually
+(no provenance attestation) on 2026-10-14 at 10:21:31 UTC; registry
+`gitHead` `ec48215` [npm]. `checkAgentTrust`, `assertTrusted`,
+`evaluatePolicy`, `createAgentTrustClient`, typed errors; anonymous, no
+dependencies, ESM. The npm org `getagenttrust` enforces 2FA. The placeholder
+`0.0.0-stage` (10:18:53 UTC) is npm's staged-publishing holder: README and
+`package.json` only, no code [npm].
+
+**Evidence.** Deployment of the commit `dpl_HSD14xDqCv6qHog4u1DoHR9Zbjs6`
+READY [Vercel]. Pre-publish test counts for this exact commit aren't
+recorded in a form I can verify, so none are claimed. Deprecated on npm
+(see 0.1.2) [npm].
+
+**Result: PUBLISHED; superseded and deprecated.**
+
+---
+
 ## MCP COST FIX — +60-MINUTE VERIFICATION PASS — 2026-10-11
 
 **Checked (read-only Vercel metrics, `POST /api/mcp/public`,
