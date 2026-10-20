@@ -6,6 +6,45 @@ entry above the previous one, not by editing history.
 
 ---
 
+## SDK @getagenttrust/sdk 0.1.3 — PUBLISHED AND VERIFIED — 2026-10-20
+
+**Release.** `@getagenttrust/sdk@0.1.3` published to npm 2026-10-20
+11:04:38 UTC (`latest`) by the "Publish SDK to npm" workflow
+(`.github/workflows/publish-sdk.yml`, run 39412143701) through npm Trusted
+Publishing — no stored npm token. GitHub source commit `e4b668a`
+(`e4b668a7d028155f6a2f960a5e8afff600562f64`, "chore(sdk): prepare v0.1.3
+documentation release"). Documentation-only: versus 0.1.2, only the
+version, `SDK_VERSION` (User-Agent `agenttrust-sdk/0.1.3`), README and
+CHANGELOG differ.
+
+**Verified (read-only, as an external developer, fresh install outside the
+repository, Node.js 24):**
+- Trusted Publisher and npm provenance: the SLSA v1 attestation names
+  `agenttrust-ai/agenttrust` at `refs/heads/main`, commit `e4b668a`, workflow
+  `publish-sdk.yml`, GitHub-hosted runner; its SHA-512 matches the registry
+  tarball and the registry `gitHead` matches. `npm audit signatures` verifies
+  the signature and attestation. The installed files are byte-identical to
+  the tarball packed locally from the reviewed commit.
+- Fresh `npm install @getagenttrust/sdk@0.1.3`: passed (no dependencies).
+- ESM `import`, CommonJS `require()` and TypeScript (strict; NodeNext,
+  `.cts`, Bundler, CommonJS/node10) checks: passed.
+- All 5 TypeScript examples in the published README compiled as written.
+- Live anonymous read-only `checkAgentTrust` on
+  `https://agenttrust-umber.vercel.app/api/test-agent`: passed —
+  `support-bot` healthy, verified, reliability 100 (fresh), confidence high,
+  `recommended: true`.
+- Error-handling tests: 9/9 passed (local test servers, no production
+  traffic).
+- No production writes and no `send_heartbeat` calls; the only production
+  request was that one anonymous check.
+
+**Result: PASS.**
+
+**Remaining limitation:** Node.js 18, 20 and 22 were not individually
+tested (only Node.js 24).
+
+---
+
 ## MCP COST FIX — +60-MINUTE VERIFICATION PASS — 2026-10-11
 
 **Checked (read-only Vercel metrics, `POST /api/mcp/public`,
