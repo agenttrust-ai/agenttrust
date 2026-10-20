@@ -8,7 +8,7 @@ import type {
   UnmatchedTrustResult,
 } from "./types.js";
 
-export const SDK_VERSION = "0.1.2";
+export const SDK_VERSION = "0.1.3";
 export const DEFAULT_ENDPOINT = "https://getagenttrust.com/api/mcp/public";
 export const DEFAULT_TIMEOUT_MS = 10_000;
 /** The MCP protocol revision this client speaks (stateless Streamable HTTP). */

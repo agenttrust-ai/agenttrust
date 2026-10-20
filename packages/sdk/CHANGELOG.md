@@ -2,7 +2,7 @@
 
 All notable changes to `@getagenttrust/sdk` are documented here. This project follows [Semantic Versioning](https://semver.org); while the version is `0.x`, minor releases may include breaking changes.
 
-## Unreleased
+## 0.1.3
 
 ### Documentation
 
@@ -10,7 +10,11 @@ All notable changes to `@getagenttrust/sdk` are documented here. This project fo
 - The README documents `evaluatePolicy` and every result field.
 - `examples/check-before-connect.ts` imports from `@getagenttrust/sdk`, so it can be copied into a project as is.
 
-No code changes.
+### Changed
+
+- The `User-Agent` sent with each check now reports `agenttrust-sdk/0.1.3`.
+
+No functional or API changes since 0.1.2.
 
 ## 0.1.2
 
