@@ -12,6 +12,8 @@ import {
   NotTrustedError,
   createAgentTrustClient,
 } from "../../../../../packages/sdk/src/index";
+import { MCP_CURL_REQUEST } from "@/app/docs/quick-start";
+import { SDK_EXAMPLE_ENDPOINT } from "@/app/docs/sdk-reference";
 
 // The route imports the app's `db`; point it at an in-memory PGlite
 // database so these tests never reach a real one.
@@ -129,5 +131,39 @@ describe("SDK ↔ /api/mcp/public contract", () => {
     expect(error).toBeInstanceOf(AgentTrustError);
     expect(error.code).toBe("RATE_LIMITED");
     expect(error.retryAfterSeconds).toBeGreaterThan(0);
+  });
+});
+
+describe("/docs Quick Start curl example ↔ /api/mcp/public", () => {
+  it("returns a check_agent_trust result for exactly the request the docs show", async () => {
+    const agent = await publicAgentWithScore(
+      SDK_EXAMPLE_ENDPOINT,
+      "Docs Example Agent",
+    );
+    const response = await POST(
+      new Request(MCP_CURL_REQUEST.url, {
+        method: "POST",
+        headers: {
+          ...MCP_CURL_REQUEST.headers,
+          "x-vercel-forwarded-for": "198.51.100.90",
+        },
+        body: JSON.stringify(MCP_CURL_REQUEST.body),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    const data = (await response.text())
+      .split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .at(-1);
+    const message = JSON.parse(data!.slice("data:".length));
+    expect(message.result.isError).toBeUndefined();
+    expect(message.result.structuredContent).toMatchObject({
+      matched: true,
+      slug: agent.slug,
+      status: "healthy",
+      trustDecision: { recommended: true },
+    });
   });
 });

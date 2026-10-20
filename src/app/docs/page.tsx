@@ -17,6 +17,12 @@ import {
   SDK_POLICY_OPTIONS,
   SDK_README_URL,
 } from "./sdk-reference";
+import {
+  BROWSER_CHECK_URL,
+  CLAUDE_CODE_ADD_COMMAND,
+  MCP_CURL_EXAMPLE,
+  PUBLIC_MCP_URL,
+} from "./quick-start";
 
 export const metadata: Metadata = {
   title: "API Reference — AgentTrust",
@@ -50,10 +56,10 @@ const DOCS_NAV_ITEMS = [
 ] as const;
 
 const MCP_URL = "https://getagenttrust.com/api/mcp";
-const PUBLIC_MCP_URL = "https://getagenttrust.com/api/mcp/public";
 
 /** The facts a developer looks for first — each is detailed further down. */
 const AT_A_GLANCE: { label: string; value: string; note: string; copy?: boolean }[] = [
+  { label: "MCP (no key)", value: PUBLIC_MCP_URL, note: "Public connector: check_agent_trust only", copy: true },
   { label: "MCP server", value: MCP_URL, note: "Streamable HTTP", copy: true },
   { label: "Trust check (MCP)", value: "check_agent_trust({ endpointUrl })", note: "No API key or account" },
   { label: "Trust check (REST)", value: "GET /api/v1/agents?endpoint_url=", note: "API key required" },
@@ -209,9 +215,62 @@ export default function DocsPage() {
         </details>
 
         <Section id="quick-start" title="Quick Start">
-          <Callout tone="info" title="5-minute beta path">
-            <a href="/signup">Sign up</a> → Dashboard → API keys → Create key →
-            Dashboard → Agents → Register agent → Activate agent →{" "}
+          <p>
+            Check an endpoint in under a minute — no account or API key. The
+            check is read-only, and AgentTrust never contacts the endpoint you
+            check. Each option below checks AgentTrust&apos;s own monitored test
+            agent, <code>{SDK_EXAMPLE_ENDPOINT}</code>; swap in the URL
+            you&apos;re about to call.
+          </p>
+
+          <h3 className="mt-2 font-medium text-foreground">
+            1. MCP — connect your agent
+          </h3>
+          <p>
+            Add the public MCP connector <code>{PUBLIC_MCP_URL}</code>{" "}
+            (Streamable HTTP, no authentication). It exposes one read-only tool,{" "}
+            <code>check_agent_trust</code>. In Claude Code:
+          </p>
+          <Code label="Add AgentTrust to Claude Code">
+            {CLAUDE_CODE_ADD_COMMAND}
+          </Code>
+          <p>
+            Run <code>claude mcp list</code> to confirm it&apos;s connected. In
+            other MCP clients, add a remote (Streamable HTTP) server with the
+            same URL. To call the tool without a client:
+          </p>
+          <Code label="check_agent_trust over HTTP with curl">
+            {MCP_CURL_EXAMPLE}
+          </Code>
+          <p>
+            The response is one server-sent event; the trust result is in{" "}
+            <code>result.structuredContent</code> (see <a href="#mcp">MCP</a>).
+          </p>
+
+          <h3 className="mt-2 font-medium text-foreground">
+            2. TypeScript SDK
+          </h3>
+          <Code label="Install the SDK">{SDK_INSTALL}</Code>
+          <Code label="checkAgentTrust example">{SDK_CHECK_EXAMPLE}</Code>
+          <p>
+            Policies, errors and options: <a href="#sdk">SDK (TypeScript)</a>.
+          </p>
+
+          <h3 className="mt-2 font-medium text-foreground">
+            3. In the browser
+          </h3>
+          <p>
+            <a href={BROWSER_CHECK_URL}>Check the test agent</a>, or paste any
+            endpoint URL into <a href="/check-agent-trust">Check an agent</a>.
+          </p>
+
+          <Callout
+            tone="info"
+            title="Registering your own agent, or using the REST API?"
+          >
+            These need an account: <a href="/signup">Sign up</a> → Dashboard →
+            API keys → Create key → Dashboard → Agents → Register agent →
+            Activate agent →{" "}
             <a href="#getting-started">
               call <code>?endpoint_url=</code>
             </a>{" "}
