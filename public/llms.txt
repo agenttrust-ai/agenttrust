@@ -217,6 +217,64 @@ field — AgentTrust doesn't impose that policy for everyone.
 No-auth endpoint with only check_agent_trust:
 `https://getagenttrust.com/api/mcp/public` (Streamable HTTP).
 
+### Connect an MCP client
+
+Two endpoints, both Streamable HTTP. Most agents need only the first:
+  Public connector — no key (recommended): https://getagenttrust.com/api/mcp/public
+    No authentication. One read-only tool, check_agent_trust.
+  Full MCP server — API key: https://getagenttrust.com/api/mcp
+    Every tool except check_agent_trust needs `Authorization: Bearer
+    <API_KEY>`. Adds list_agents, get_agent, get_agent_health and
+    send_heartbeat.
+
+Claude Code (https://code.claude.com/docs/en/mcp):
+  claude mcp add --transport http agenttrust https://getagenttrust.com/api/mcp/public
+  Add `--scope user` to make it available in every project; confirm with
+  `claude mcp list`.
+
+Claude Desktop and claude.ai
+(https://support.claude.com/en/articles/11175166-getting-started-with-custom-connectors-using-remote-mcp):
+  AgentTrust is listed in Claude's connector directory:
+  https://claude.ai/directory/agenttrust. Or add a custom connector:
+  Customize -> Connectors -> + Add -> Add custom connector, name
+  AgentTrust, URL https://getagenttrust.com/api/mcp/public, then
+  Continue -> Add (no authentication).
+  Team and Enterprise: an owner adds it under Organization settings ->
+  Connectors. In a chat: + -> Connectors -> turn AgentTrust on. Free plans
+  can add one custom connector. claude_desktop_config.json is not needed
+  (it is for local servers).
+
+Cursor (https://cursor.com/docs/context/mcp) — in ~/.cursor/mcp.json
+(every project) or .cursor/mcp.json (one project):
+  {
+    "mcpServers": {
+      "agenttrust": {
+        "url": "https://getagenttrust.com/api/mcp/public"
+      }
+    }
+  }
+
+Any HTTP client: see the curl example in the Quick Start at
+https://getagenttrust.com/docs#quick-start.
+
+Full MCP server (API key) — only if you need the keyed tools. Replace
+<API_KEY> with a key from Dashboard -> API keys, and keep it out of
+shared files (Claude Code: keep the default local scope; Cursor: use
+~/.cursor/mcp.json, not a project file you commit):
+  claude mcp add --transport http agenttrust-account https://getagenttrust.com/api/mcp --header "Authorization: Bearer <API_KEY>"
+  {
+    "mcpServers": {
+      "agenttrust-account": {
+        "url": "https://getagenttrust.com/api/mcp",
+        "headers": {
+          "Authorization": "Bearer <API_KEY>"
+        }
+      }
+    }
+  }
+
+### Endpoints and tools
+
 Endpoint: `https://getagenttrust.com/api/mcp` (GET and POST,
 Streamable HTTP transport). Auth: the same Bearer token as REST, in the
 `Authorization` header — except `check_agent_trust`, below, which needs

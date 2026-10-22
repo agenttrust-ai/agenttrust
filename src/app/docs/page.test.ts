@@ -26,6 +26,17 @@ import {
   MCP_CURL_REQUEST,
   PUBLIC_MCP_URL,
 } from "./quick-start";
+import {
+  API_KEY_PLACEHOLDER,
+  AUTHENTICATED_MCP_URL,
+  CLAUDE_CODE_ADD_AUTHENTICATED_COMMAND,
+  CLAUDE_DIRECTORY_URL,
+  CURSOR_AUTHENTICATED_CONFIG,
+  CURSOR_AUTHENTICATED_CONFIG_JSON,
+  CURSOR_CONFIG,
+  CURSOR_CONFIG_JSON,
+  OFFICIAL_SETUP_DOCS,
+} from "./mcp-clients";
 
 const text = (html: string) =>
   html
@@ -176,5 +187,109 @@ describe("/docs Quick Start (no-account trust checks first)", () => {
     expect(summary.indexOf(PUBLIC_MCP_URL)).toBeLessThan(
       summary.indexOf("https://getagenttrust.com/api/mcp "),
     );
+  });
+});
+
+describe("/docs MCP client setup (#mcp-clients)", () => {
+  const html = renderToStaticMarkup(DocsPage());
+  const mcpRaw = html.match(/<section id="mcp"[\s\S]*?<\/section>/)?.[0] ?? "";
+  // The setup subsection: from its heading to the reference that follows it.
+  const setupRaw =
+    mcpRaw.split('id="mcp-clients"')[1]?.split("Endpoints and tools")[0] ?? "";
+  const setup = text(setupRaw);
+  const [publicPart, keyedPart] = setup.split("Full MCP server (API key)");
+  // The per-client steps for the public connector (after the endpoint comparison).
+  const publicClients =
+    publicPart.split("To add the public connector:")[1] ?? "";
+  // `text` strips anything tag-shaped, so code containing "<API_KEY>" is only whitespace-collapsed.
+  const collapse = (code: string) => code.replace(/\s+/g, " ");
+  // A real AgentTrust key, or anything shaped like a bearer secret; the documented
+  // placeholders (<API_KEY>, at_live_xxxx…) are allowed.
+  const realKey =
+    /at_live_(?!x+\b)[A-Za-z0-9_-]{20,}|Bearer (?!<API_KEY>|at_live_x+\b)[A-Za-z0-9._-]{16,}/;
+
+  it("opens the MCP section, and the Quick Start links to it", () => {
+    expect(setupRaw).not.toBe("");
+    expect(mcpRaw.indexOf('id="mcp-clients"')).toBeLessThan(
+      mcpRaw.indexOf("Endpoint:"),
+    );
+    const quickStart =
+      html.match(/<section id="quick-start"[\s\S]*?<\/section>/)?.[0] ?? "";
+    expect(quickStart).toContain('href="#mcp-clients"');
+  });
+
+  it("puts the public no-key connector first and labels the keyed server", () => {
+    expect(setup.indexOf("Public connector — no key")).toBeGreaterThan(-1);
+    expect(setup.indexOf(PUBLIC_MCP_URL)).toBeLessThan(
+      setup.indexOf("Full MCP server — API key"),
+    );
+    // "…/api/mcp " (not the "…/api/mcp/public" prefix) follows its label.
+    expect(setup.indexOf("Full MCP server — API key")).toBeLessThan(
+      setup.indexOf(AUTHENTICATED_MCP_URL + " "),
+    );
+    expect(setup).toContain("Full MCP server — API key");
+  });
+
+  it("gives every client's setup for the public connector, without any credentials", () => {
+    expect(publicClients).toContain(CLAUDE_CODE_ADD_COMMAND);
+    expect(publicClients).toContain(collapse(CURSOR_CONFIG_JSON));
+    expect(setupRaw).toContain(`href="${CLAUDE_DIRECTORY_URL}"`);
+    expect(publicClients).toMatch(/Add custom connector/);
+    expect(publicClients).not.toMatch(/Authorization|API_KEY|--header/);
+  });
+
+  it("uses Claude Code's documented syntax", () => {
+    const documented =
+      /^claude mcp add --transport http [a-z][a-z0-9-]* https:\/\/\S+( --header "[^"]+")?$/;
+    expect(CLAUDE_CODE_ADD_COMMAND).toMatch(documented);
+    expect(CLAUDE_CODE_ADD_AUTHENTICATED_COMMAND).toMatch(documented);
+    expect(publicPart).toContain("--scope user");
+    expect(publicPart).toContain("claude mcp list");
+  });
+
+  it("uses Cursor's documented mcp.json shape: mcpServers → name → url (and headers only when keyed)", () => {
+    expect(JSON.parse(CURSOR_CONFIG_JSON)).toEqual({
+      mcpServers: { agenttrust: { url: PUBLIC_MCP_URL } },
+    });
+    expect(JSON.parse(CURSOR_CONFIG_JSON)).toEqual(CURSOR_CONFIG);
+    expect(JSON.parse(CURSOR_AUTHENTICATED_CONFIG_JSON)).toEqual(
+      CURSOR_AUTHENTICATED_CONFIG,
+    );
+    for (const config of [CURSOR_CONFIG, CURSOR_AUTHENTICATED_CONFIG]) {
+      for (const server of Object.values(config.mcpServers) as Record<
+        string,
+        unknown
+      >[]) {
+        expect(
+          Object.keys(server).every(
+            (key) => key === "url" || key === "headers",
+          ),
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("keeps the keyed setup separate, on the authenticated endpoint, with only a placeholder key", () => {
+    expect(keyedPart).toBeDefined();
+    expect(keyedPart).toContain(CLAUDE_CODE_ADD_AUTHENTICATED_COMMAND);
+    expect(keyedPart).toContain(collapse(CURSOR_AUTHENTICATED_CONFIG_JSON));
+    expect(CLAUDE_CODE_ADD_AUTHENTICATED_COMMAND).toContain(
+      AUTHENTICATED_MCP_URL + " ",
+    );
+    expect(CLAUDE_CODE_ADD_AUTHENTICATED_COMMAND).not.toContain(PUBLIC_MCP_URL);
+    expect(CURSOR_AUTHENTICATED_CONFIG_JSON).toContain(
+      `Bearer ${API_KEY_PLACEHOLDER}`,
+    );
+    expect(keyedPart).toMatch(/keep it out of shared files/);
+  });
+
+  it("never shows a real API key anywhere on the page", () => {
+    expect(text(html)).not.toMatch(realKey);
+  });
+
+  it("links each client's official setup documentation", () => {
+    for (const url of Object.values(OFFICIAL_SETUP_DOCS)) {
+      expect(setupRaw).toContain(`href="${url}"`);
+    }
   });
 });

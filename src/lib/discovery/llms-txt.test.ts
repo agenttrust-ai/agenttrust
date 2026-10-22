@@ -13,6 +13,16 @@ import {
   SDK_NPM_URL,
   SDK_README_URL,
 } from "@/app/docs/sdk-reference";
+import {
+  AUTHENTICATED_MCP_URL,
+  CLAUDE_CODE_ADD_AUTHENTICATED_COMMAND,
+  CLAUDE_CODE_ADD_COMMAND,
+  CLAUDE_DIRECTORY_URL,
+  CURSOR_AUTHENTICATED_CONFIG_JSON,
+  CURSOR_CONFIG_JSON,
+  OFFICIAL_SETUP_DOCS,
+  PUBLIC_MCP_URL,
+} from "@/app/docs/mcp-clients";
 
 /**
  * public/llms.txt — the plain-text reference AI agents fetch (served at
@@ -92,5 +102,45 @@ describe("llms.txt SDK section", () => {
       "booleans must be true or false",
     );
     expect(sdkSection()).toContain("TypeError");
+  });
+});
+
+describe("llms.txt MCP client setup", () => {
+  const setup = () =>
+    text().match(
+      /### Connect an MCP client\n([\s\S]*?)\n### Endpoints and tools/,
+    )?.[1] ?? "";
+  const indent = (block: string) =>
+    block
+      .split("\n")
+      .map((line) => `  ${line}`)
+      .join("\n");
+
+  it("has the setup block, with the public no-key connector first", () => {
+    expect(setup()).not.toBe("");
+    expect(setup()).toContain("Public connector — no key");
+    expect(setup().indexOf(PUBLIC_MCP_URL)).toBeLessThan(
+      setup().indexOf(AUTHENTICATED_MCP_URL + "\n"),
+    );
+  });
+
+  it("shows the same Claude Code commands and Cursor configs as /docs, verbatim", () => {
+    expect(setup()).toContain(CLAUDE_CODE_ADD_COMMAND);
+    expect(setup()).toContain(indent(CURSOR_CONFIG_JSON));
+    expect(setup()).toContain(CLAUDE_CODE_ADD_AUTHENTICATED_COMMAND);
+    expect(setup()).toContain(indent(CURSOR_AUTHENTICATED_CONFIG_JSON));
+    expect(setup()).toContain(CLAUDE_DIRECTORY_URL);
+  });
+
+  it("keeps the keyed setup after the public one, behind a placeholder key", () => {
+    const [publicPart, keyedPart] = setup().split("Full MCP server (API key)");
+    expect(publicPart).toContain(CLAUDE_CODE_ADD_COMMAND);
+    expect(publicPart.split("Claude Code (")[1]).not.toMatch(/--header|Bearer/);
+    expect(keyedPart).toContain("<API_KEY>");
+  });
+
+  it("links each client's official setup documentation", () => {
+    for (const url of Object.values(OFFICIAL_SETUP_DOCS))
+      expect(setup()).toContain(url);
   });
 });

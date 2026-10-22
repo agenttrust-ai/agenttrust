@@ -23,6 +23,14 @@ import {
   MCP_CURL_EXAMPLE,
   PUBLIC_MCP_URL,
 } from "./quick-start";
+import {
+  AUTHENTICATED_MCP_URL,
+  CLAUDE_CODE_ADD_AUTHENTICATED_COMMAND,
+  CLAUDE_DIRECTORY_URL,
+  CURSOR_AUTHENTICATED_CONFIG_JSON,
+  CURSOR_CONFIG_JSON,
+  OFFICIAL_SETUP_DOCS,
+} from "./mcp-clients";
 
 export const metadata: Metadata = {
   title: "API Reference — AgentTrust",
@@ -55,7 +63,7 @@ const DOCS_NAV_ITEMS = [
   { id: "support", label: "Support" },
 ] as const;
 
-const MCP_URL = "https://getagenttrust.com/api/mcp";
+const MCP_URL = AUTHENTICATED_MCP_URL;
 
 /** The facts a developer looks for first — each is detailed further down. */
 const AT_A_GLANCE: { label: string; value: string; note: string; copy?: boolean }[] = [
@@ -235,9 +243,10 @@ export default function DocsPage() {
             {CLAUDE_CODE_ADD_COMMAND}
           </Code>
           <p>
-            Run <code>claude mcp list</code> to confirm it&apos;s connected. In
-            other MCP clients, add a remote (Streamable HTTP) server with the
-            same URL. To call the tool without a client:
+            Run <code>claude mcp list</code> to confirm it&apos;s connected.
+            Claude Desktop, Cursor and other clients:{" "}
+            <a href="#mcp-clients">Connect an MCP client</a>. To call the tool
+            without a client:
           </p>
           <Code label="check_agent_trust over HTTP with curl">
             {MCP_CURL_EXAMPLE}
@@ -281,6 +290,96 @@ export default function DocsPage() {
         </Section>
 
         <Section id="mcp" title="MCP">
+          <h3
+            id="mcp-clients"
+            className="mt-2 scroll-mt-20 font-medium text-foreground"
+          >
+            Connect an MCP client
+          </h3>
+          <p>
+            AgentTrust has two MCP endpoints. Most agents need only the first:
+          </p>
+          <ul className="flex flex-col gap-2">
+            <li>
+              <strong>Public connector — no key (recommended):</strong>{" "}
+              <code>{PUBLIC_MCP_URL}</code>. No authentication. One read-only
+              tool, <code>check_agent_trust</code>. Use it to let an agent or
+              client check endpoints before calling them.
+            </li>
+            <li>
+              <strong>Full MCP server — API key:</strong>{" "}
+              <code>{AUTHENTICATED_MCP_URL}</code>. Every tool except{" "}
+              <code>check_agent_trust</code> needs{" "}
+              <code>Authorization: Bearer &lt;API_KEY&gt;</code>. Adds{" "}
+              <code>list_agents</code>, <code>get_agent</code>,{" "}
+              <code>get_agent_health</code> and <code>send_heartbeat</code>, for
+              reading full agent records and sending your own agents&apos;
+              heartbeats.
+            </li>
+          </ul>
+          <p>Both use Streamable HTTP. To add the public connector:</p>
+
+          <p>
+            <strong>Claude Code</strong> (
+            <a href={OFFICIAL_SETUP_DOCS.claudeCode}>Claude Code MCP docs</a>):
+          </p>
+          <Code label="Add the public connector to Claude Code">
+            {CLAUDE_CODE_ADD_COMMAND}
+          </Code>
+          <p>
+            Add <code>--scope user</code> to make it available in every project.
+            Run <code>claude mcp list</code> to confirm it&apos;s connected.
+          </p>
+
+          <p>
+            <strong>Claude Desktop and claude.ai</strong> (
+            <a href={OFFICIAL_SETUP_DOCS.claude}>Claude connector guide</a>):
+            AgentTrust is listed in Claude&apos;s connector directory — add it
+            from <a href={CLAUDE_DIRECTORY_URL}>its directory listing</a>. Or
+            add it as a custom connector: Customize → Connectors → + Add → Add
+            custom connector, name it AgentTrust, enter{" "}
+            <code>{PUBLIC_MCP_URL}</code>, then Continue → Add. No
+            authentication is needed. On Team and Enterprise plans, an owner
+            adds it under Organization settings → Connectors. To use it in a
+            chat, open + → Connectors and turn AgentTrust on. Free plans can add
+            one custom connector. Claude Desktop doesn&apos;t need{" "}
+            <code>claude_desktop_config.json</code> for this — that file is for
+            local servers.
+          </p>
+
+          <p>
+            <strong>Cursor</strong> (
+            <a href={OFFICIAL_SETUP_DOCS.cursor}>Cursor MCP docs</a>): add this
+            to <code>~/.cursor/mcp.json</code> (every project) or{" "}
+            <code>.cursor/mcp.json</code> (one project):
+          </p>
+          <Code label="Cursor mcp.json for the public connector">
+            {CURSOR_CONFIG_JSON}
+          </Code>
+
+          <p>
+            <strong>Any HTTP client:</strong> see the <code>curl</code> example
+            in the <a href="#quick-start">Quick Start</a>.
+          </p>
+
+          <p>
+            <strong>Full MCP server (API key)</strong> — only if you need the
+            keyed tools. Replace <code>&lt;API_KEY&gt;</code> with a key from
+            Dashboard → API keys, and keep it out of shared files: in Claude
+            Code keep the default local scope (<code>--scope project</code>{" "}
+            writes it to a shared <code>.mcp.json</code>), and in Cursor use{" "}
+            <code>~/.cursor/mcp.json</code>, not a project file you commit.
+          </p>
+          <Code label="Add the full MCP server to Claude Code">
+            {CLAUDE_CODE_ADD_AUTHENTICATED_COMMAND}
+          </Code>
+          <Code label="Cursor mcp.json for the full MCP server">
+            {CURSOR_AUTHENTICATED_CONFIG_JSON}
+          </Code>
+
+          <h3 className="mt-2 font-medium text-foreground">
+            Endpoints and tools
+          </h3>
           <p>
             Endpoint: <code>{MCP_URL}</code> (GET and POST, Streamable HTTP
             transport). Auth: the same Bearer token as REST, in the{" "}
