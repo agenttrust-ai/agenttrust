@@ -1,14 +1,11 @@
 # AgentTrust — Pre-invocation Trust Check for AI Agent Endpoints
 
-## Pre-invocation trust check for AI agent endpoints
+Check an AI agent or MCP server endpoint before you call it. Given the exact
+endpoint URL, AgentTrust returns the reliability evidence it has already
+collected, endpoint-ownership verification, and a machine-readable
+`trustDecision` — without contacting the endpoint.
 
-Given an exact AI agent endpoint URL, AgentTrust returns existing reliability evidence, endpoint ownership verification, and a machine-readable `trustDecision` without contacting the target endpoint during the check.
-
-Example:
-
-    check_agent_trust({ "endpointUrl": "https://example.com/agent" })
-
-**No AgentTrust API key required · Read-only · MCP**
+**No AgentTrust account or API key required · Read-only · MCP and TypeScript SDK**
 
 AgentTrust is trust infrastructure for AI agents. It provides
 reliability monitoring, endpoint verification, and pre-invocation trust
@@ -23,61 +20,73 @@ guarantee of safety — before deciding whether to interact with it.
 
 Official MCP Registry identity: `io.github.agenttrust-ai/agenttrust`.
 
-## Using the API
+## Quick start — no account needed
 
-If you're building an AI agent or system that wants to *look up* another
-agent's trust information, you don't need this repository at all — see:
+Every example below checks AgentTrust's own monitored test agent,
+`https://agenttrust-umber.vercel.app/api/test-agent`; swap in the URL you're
+about to call.
 
-- **[/docs](https://getagenttrust.com/docs)** — full REST and
-  MCP reference, with real request/response examples.
-- **[/llms.txt](https://getagenttrust.com/llms.txt)** — the
-  same reference as a single plain-text file, meant for pasting into an
-  LLM's context or fetching programmatically.
+### MCP
 
-### Anonymous pre-invocation trust check (MCP)
+Add the public connector `https://getagenttrust.com/api/mcp/public`
+(Streamable HTTP, no authentication; one read-only tool, `check_agent_trust`).
+In Claude Code:
 
-The fastest way to evaluate an agent before invoking it needs no
-AgentTrust account or API key at all — call the `check_agent_trust` MCP
-tool at `https://getagenttrust.com/api/mcp/public` (no key; also available
-at `/api/mcp`):
-
-```
-check_agent_trust({ "endpointUrl": "https://the-agent-you-are-about-to-call.example.com/invoke" })
+```bash
+claude mcp add --transport http agenttrust https://getagenttrust.com/api/mcp/public
 ```
 
-- Read-only.
-- No AgentTrust account or API key required.
-- Checks only AgentTrust's already-stored observations — it does not
-  invoke or otherwise contact the target endpoint during the lookup.
-- Returns a machine-readable `trustDecision` (`recommended`,
-  `confidence`, `reasons`) for the caller to evaluate.
+Claude Desktop, Cursor and a plain `curl` call:
+[Connect an MCP client](https://getagenttrust.com/docs#mcp-clients).
 
-#### Try it with a known endpoint
+### TypeScript SDK
 
-To see the lookup flow work end-to-end without registering anything
-yourself, call `check_agent_trust` against an endpoint AgentTrust
-already observes:
-
-```
-check_agent_trust({ "endpointUrl": "https://allagents.app/a2a" })
+```bash
+npm install @getagenttrust/sdk
 ```
 
-This endpoint is already tracked by AgentTrust, so the call exercises
-the real lookup path against real observed data. Its health status,
-reliability score, verification state, and `trustDecision` can change
-over time — the point here is to confirm the flow works, not to check
-that endpoint's current standing.
+```ts
+import { checkAgentTrust } from "@getagenttrust/sdk";
 
-### Authenticated REST/MCP operations
+// AgentTrust's own test agent: a real, monitored endpoint you can check.
+const result = await checkAgentTrust("https://agenttrust-umber.vercel.app/api/test-agent");
 
-Registering an agent, or reading the fuller per-agent record (agent
-card, capabilities, health history), requires a human-created API key:
-sign up, create a key in the dashboard, then
-`GET /api/v1/agents?endpoint_url=<the URL you're about to call>` with
-`Authorization: Bearer <API_KEY>` — the response includes the same
-`trustDecision`. The authenticated MCP tools (`list_agents`,
-`get_agent`, `get_agent_health`, `send_heartbeat`) mirror the REST API
-exactly.
+if (result.matched) {
+  console.log(result.status, result.reliabilityScore, result.trustDecision);
+  // e.g. "healthy" 100 { recommended: true, confidence: "high", reasons: [] }
+} else {
+  // AgentTrust has no data for this endpoint (yet). An unmatched result never
+  // carries a score; result.observation may say it was queued for a lookup.
+  console.log("Unknown endpoint", result.observation?.status);
+}
+```
+
+Policies (`assertTrusted`), errors and options: [SDK README](packages/sdk/README.md)
+· [npm](https://www.npmjs.com/package/@getagenttrust/sdk).
+
+### In the browser
+
+[Check the test agent](https://getagenttrust.com/check-agent-trust?endpointUrl=https%3A%2F%2Fagenttrust-umber.vercel.app%2Fapi%2Ftest-agent)
+on getagenttrust.com.
+
+## Public checks vs. agent management
+
+| | Public trust checks | Agent management |
+|---|---|---|
+| For | Checking any endpoint before you call it | Registering and monitoring your own agents; full agent records |
+| Account / API key | Not needed | Account and API key (`Authorization: Bearer <API_KEY>`) |
+| Interfaces | MCP `check_agent_trust` at `/api/mcp/public`; `@getagenttrust/sdk` | REST `/api/v1/*`; MCP server `/api/mcp` (`list_agents`, `get_agent`, `get_agent_health`, `send_heartbeat`) |
+
+To register an agent: sign up, create a key under Dashboard → API keys, then
+follow [Getting started (REST)](https://getagenttrust.com/docs#getting-started).
+
+## Documentation
+
+You don't need this repository to use AgentTrust:
+
+- **[/docs](https://getagenttrust.com/docs)** — full REST, MCP and SDK reference.
+- **[/llms.txt](https://getagenttrust.com/llms.txt)** — the same reference as one
+  plain-text file, for an LLM's context.
 
 ## Developing this project
 
