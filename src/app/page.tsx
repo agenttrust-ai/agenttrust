@@ -20,6 +20,7 @@ import { EvidenceTraces, ObservedNetworkBackdrop } from "@/components/network/ob
 import { buttonClass } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
 import { IconArrowRight, IconCheck } from "@/components/ui/icons";
+import { SDK_INSTALL, SDK_NPM_URL } from "./docs/sdk-reference";
 
 const HOME_TITLE = "Check an AI Agent Endpoint Before You Call It — AgentTrust";
 const HOME_DESCRIPTION =
@@ -443,10 +444,24 @@ export default function Home() {
                 </li>
               ))}
             </ul>
-            <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+            <p className="mt-6 text-sm text-muted">
+              Prefer TypeScript?{" "}
+              <code className="rounded-sm bg-surface-2 px-1 py-0.5 font-mono text-xs break-all text-foreground">
+                {SDK_INSTALL}
+              </code>{" "}
+              runs the same check from your Node.js code — anonymous and
+              read-only, with no account or API key.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
               <Link href="/docs#mcp" className={LINK}>
                 MCP reference
               </Link>
+              <Link href="/docs#sdk" className={LINK}>
+                TypeScript SDK
+              </Link>
+              <a href={SDK_NPM_URL} rel="noopener noreferrer" className={LINK}>
+                @getagenttrust/sdk on npm
+              </a>
               <Link href="/docs#lookup" className={LINK}>
                 REST lookup (API key)
               </Link>

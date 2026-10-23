@@ -18,6 +18,7 @@ const GROUPS: { title: string; links: FooterLink[] }[] = [
     title: "Developers",
     links: [
       { href: "/docs#mcp", label: "MCP server" },
+      { href: "/docs#sdk", label: "TypeScript SDK" },
       { href: "/docs#getting-started", label: "REST API" },
       { href: "/llms.txt", label: "llms.txt" },
       {
