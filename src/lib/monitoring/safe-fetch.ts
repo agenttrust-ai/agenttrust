@@ -63,7 +63,7 @@ function isReachableStatus(status: number): boolean {
 const MAX_REDIRECTS = 5;
 const DEFAULT_CONNECT_TIMEOUT_MS = 5_000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 10_000;
-const USER_AGENT = "AgentTrust-HealthCheck/1.0 (+https://agenttrust.dev)";
+const USER_AGENT = "AgentTrust-HealthCheck/1.0 (+https://getagenttrust.com)";
 
 /**
  * Answers a lookup callback in whichever of the two shapes Node's

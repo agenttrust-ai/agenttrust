@@ -35,6 +35,8 @@ function withPort(path: string, port: number) {
 let server: https.Server;
 let port: number;
 let cert: { private: string; public: string; cert: string };
+/** The User-Agent of every request the test server receives under /ua/. */
+const seenUserAgents: { path: string; userAgent: string | undefined }[] = [];
 
 beforeAll(async () => {
   // selfsigned's generate() is async in this version — and defaults to a
@@ -59,6 +61,23 @@ beforeAll(async () => {
     { key: cert.private, cert: cert.cert },
     (req, res) => {
       const url = req.url ?? "/";
+      if (url.startsWith("/ua/")) {
+        seenUserAgents.push({
+          path: url,
+          userAgent: req.headers["user-agent"],
+        });
+        if (url === "/ua/redirect") {
+          res.writeHead(302, { Location: "/ua/ok" });
+          res.end();
+        } else if (url === "/ua/redirect-verification") {
+          res.writeHead(302, { Location: "/ua/verification" });
+          res.end();
+        } else {
+          res.writeHead(200, { "content-type": "text/plain" });
+          res.end("the-correct-token\n");
+        }
+        return;
+      }
       if (url === "/ok") {
         res.writeHead(200, { "content-type": "text/plain" });
         res.end("ok");
@@ -714,5 +733,80 @@ describe("fetchOwnershipVerificationFile", () => {
       { lookup: dnsFailLookup },
     );
     expect(result).toMatchObject({ success: false, errorCode: "ENOTFOUND" });
+  });
+});
+
+describe("monitoring User-Agent", () => {
+  // What operators of monitored endpoints see in their logs: the product
+  // token they may allowlist, and a link to this project's own domain.
+  const EXPECTED = "AgentTrust-HealthCheck/1.0 (+https://getagenttrust.com)";
+
+  afterEach(() => {
+    seenUserAgents.length = 0;
+  });
+
+  it("is sent on a health check (fetchWithGuard, which checkAgentEndpoint uses)", async () => {
+    const result = await fetchWithGuard(withPort("/ua/ok", port), {
+      lookup: testLookup,
+      extraCaCert: cert.cert,
+    });
+    expect(result).toMatchObject({ status: "success", httpStatus: 200 });
+    expect(seenUserAgents).toEqual([{ path: "/ua/ok", userAgent: EXPECTED }]);
+  });
+
+  it("is sent on every hop of a followed redirect", async () => {
+    const result = await fetchWithGuard(withPort("/ua/redirect", port), {
+      lookup: testLookup,
+      extraCaCert: cert.cert,
+    });
+    expect(result).toMatchObject({ status: "success", httpStatus: 200 });
+    expect(seenUserAgents).toEqual([
+      { path: "/ua/redirect", userAgent: EXPECTED },
+      { path: "/ua/ok", userAgent: EXPECTED },
+    ]);
+  });
+
+  it("is sent with an authenticated health check, alongside its auth header", async () => {
+    const result = await fetchWithGuard(withPort("/ua/ok", port), {
+      lookup: testLookup,
+      extraCaCert: cert.cert,
+      authHeader: { name: "authorization", value: "Bearer secret-token" },
+    });
+    expect(result).toMatchObject({ status: "success", httpStatus: 200 });
+    expect(seenUserAgents).toEqual([{ path: "/ua/ok", userAgent: EXPECTED }]);
+  });
+
+  it("is sent when fetching the ownership verification file, including after a redirect", async () => {
+    const direct = await fetchOwnershipVerificationFile(
+      withPort("/ua/verification", port),
+      { lookup: testLookup, extraCaCert: cert.cert },
+    );
+    expect(direct).toEqual({ success: true, body: "the-correct-token\n" });
+    const redirected = await fetchOwnershipVerificationFile(
+      withPort("/ua/redirect-verification", port),
+      { lookup: testLookup, extraCaCert: cert.cert },
+    );
+    expect(redirected).toEqual({ success: true, body: "the-correct-token\n" });
+    expect(seenUserAgents).toEqual([
+      { path: "/ua/verification", userAgent: EXPECTED },
+      { path: "/ua/redirect-verification", userAgent: EXPECTED },
+      { path: "/ua/verification", userAgent: EXPECTED },
+    ]);
+  });
+
+  it("never names the old agenttrust.dev domain", async () => {
+    await fetchWithGuard(withPort("/ua/redirect", port), {
+      lookup: testLookup,
+      extraCaCert: cert.cert,
+    });
+    await fetchOwnershipVerificationFile(withPort("/ua/verification", port), {
+      lookup: testLookup,
+      extraCaCert: cert.cert,
+    });
+    expect(seenUserAgents.length).toBe(3);
+    for (const { userAgent } of seenUserAgents) {
+      expect(userAgent).toMatch(/^AgentTrust-HealthCheck\/1\.0 /);
+      expect(userAgent).not.toContain("agenttrust.dev");
+    }
   });
 });
