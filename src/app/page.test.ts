@@ -3,6 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { SiteFooter } from "@/components/shell/site-footer";
 import { SDK_INSTALL, SDK_NPM_URL } from "./docs/sdk-reference";
 import Home from "./page";
+import { PUBLIC_MCP_URL } from "./docs/quick-start";
+import { AUTHENTICATED_MCP_URL } from "./docs/mcp-clients";
 
 const text = (html: string) =>
   html
@@ -87,5 +89,31 @@ describe("site footer Developers links", () => {
       "GitHub",
     ]);
     expect(links[1][0]).toBe("/docs#sdk");
+  });
+});
+
+describe("home page MCP box: public connector first, keyed server labelled", () => {
+  // The connector box runs from its eyebrow label to the keyed-tools note below it.
+  const [beforeNote, fromNote = ""] = developers.split("Keyed tools (");
+  const box = beforeNote.slice(beforeNote.lastIndexOf('<p class="eyebrow">'));
+  const keyedNote = fromNote.split("</p>")[0];
+
+  it("shows and copies the public no-key connector", () => {
+    expect(box).not.toBe("");
+    expect(text(box)).toContain(PUBLIC_MCP_URL);
+    expect(text(box)).toMatch(/Public MCP connector · no key/);
+    expect(box).toContain('aria-label="Copy MCP connector URL"');
+  });
+
+  it("names the authenticated server only next to its API key requirement", () => {
+    expect(text(box)).not.toContain(`${AUTHENTICATED_MCP_URL} `);
+    expect(text(keyedNote)).toContain(AUTHENTICATED_MCP_URL);
+    expect(text(keyedNote)).toMatch(/with an API key/);
+    expect(text(keyedNote)).toMatch(/list_agents.*send_heartbeat/);
+    expect(keyedNote).toContain('href="/docs#mcp-clients"');
+  });
+
+  it("keeps the check_agent_trust tool-call example", () => {
+    expect(text(developers)).toMatch(/"name": "check_agent_trust"/);
   });
 });

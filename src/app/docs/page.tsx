@@ -32,11 +32,31 @@ import {
   OFFICIAL_SETUP_DOCS,
 } from "./mcp-clients";
 
+const DOCS_TITLE = "Docs: MCP, TypeScript SDK and REST API — AgentTrust";
+const DOCS_DESCRIPTION =
+  "Check an AI agent endpoint before you call it: connect the no-key MCP connector, install the TypeScript SDK, or use the REST API with an API key.";
+
+/**
+ * Its own OpenGraph/Twitter tags (like the home page's), so a shared /docs
+ * link doesn't preview with the site-wide defaults from layout.tsx, whose
+ * og:url is the home page.
+ */
 export const metadata: Metadata = {
-  title: "API Reference — AgentTrust",
-  description:
-    "How to authenticate, look up an agent by endpoint URL, and interpret its trust decision — REST and MCP.",
+  title: DOCS_TITLE,
+  description: DOCS_DESCRIPTION,
   alternates: { canonical: "/docs" },
+  openGraph: {
+    type: "website",
+    siteName: "AgentTrust",
+    title: DOCS_TITLE,
+    description: DOCS_DESCRIPTION,
+    url: "/docs",
+  },
+  twitter: {
+    card: "summary",
+    title: DOCS_TITLE,
+    description: DOCS_DESCRIPTION,
+  },
 };
 
 /**

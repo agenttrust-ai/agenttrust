@@ -8,7 +8,7 @@ import {
   sdkMatchedResultFields,
   sdkPolicyOptions,
 } from "@/lib/test/sdk-source";
-import DocsPage from "./page";
+import DocsPage, { metadata } from "./page";
 import {
   SDK_ASSERT_EXAMPLE,
   SDK_CHECK_EXAMPLE,
@@ -291,5 +291,35 @@ describe("/docs MCP client setup (#mcp-clients)", () => {
     for (const url of Object.values(OFFICIAL_SETUP_DOCS)) {
       expect(setupRaw).toContain(`href="${url}"`);
     }
+  });
+});
+
+describe("/docs metadata", () => {
+  it("keeps the canonical URL", () => {
+    expect(metadata.alternates?.canonical).toBe("/docs");
+  });
+
+  it("has its own OpenGraph and Twitter tags, pointing at /docs (not the home page)", () => {
+    expect(metadata.openGraph).toMatchObject({
+      url: "/docs",
+      title: metadata.title,
+      description: metadata.description,
+    });
+    expect(metadata.twitter).toMatchObject({
+      title: metadata.title,
+      description: metadata.description,
+    });
+  });
+
+  it("describes what the page now leads with, within search-snippet lengths", () => {
+    const title = String(metadata.title);
+    const description = String(metadata.description);
+    expect(title.length).toBeLessThanOrEqual(60);
+    expect(description.length).toBeLessThanOrEqual(160);
+    expect(title).toMatch(/MCP/);
+    expect(title).toMatch(/TypeScript SDK/);
+    expect(description).toMatch(/no-key MCP connector/);
+    expect(description).toMatch(/TypeScript SDK/);
+    expect(description).toMatch(/REST API with an API key/);
   });
 });

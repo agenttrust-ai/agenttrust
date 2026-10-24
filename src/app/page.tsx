@@ -21,6 +21,8 @@ import { buttonClass } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
 import { IconArrowRight, IconCheck } from "@/components/ui/icons";
 import { SDK_INSTALL, SDK_NPM_URL } from "./docs/sdk-reference";
+import { PUBLIC_MCP_URL } from "./docs/quick-start";
+import { AUTHENTICATED_MCP_URL } from "./docs/mcp-clients";
 
 const HOME_TITLE = "Check an AI Agent Endpoint Before You Call It — AgentTrust";
 const HOME_DESCRIPTION =
@@ -70,8 +72,6 @@ const STRUCTURED_DATA = {
   url: publicEnv.NEXT_PUBLIC_APP_URL,
   sameAs: ["https://github.com/agenttrust-ai/agenttrust"],
 };
-
-const MCP_SERVER_URL = "https://getagenttrust.com/api/mcp";
 
 /** AgentTrust's own test agent — safe to use as a live example. */
 const LIVE_EXAMPLE_ENDPOINT = "https://agenttrust-umber.vercel.app/api/test-agent";
@@ -471,11 +471,30 @@ export default function Home() {
           <div className="min-w-0">
             <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2">
               <div className="min-w-0">
-                <p className="eyebrow">MCP server · Streamable HTTP</p>
-                <p className="truncate font-mono text-sm">{MCP_SERVER_URL}</p>
+                <p className="eyebrow">
+                  Public MCP connector · no key · Streamable HTTP
+                </p>
+                <p className="truncate font-mono text-sm">{PUBLIC_MCP_URL}</p>
               </div>
-              <CopyButton text={MCP_SERVER_URL} label="Copy MCP server URL" />
+              <CopyButton
+                text={PUBLIC_MCP_URL}
+                label="Copy MCP connector URL"
+              />
             </div>
+            <p className="mt-2 text-xs text-muted">
+              Keyed tools (<code className="font-mono">list_agents</code>,{" "}
+              <code className="font-mono">get_agent</code>,{" "}
+              <code className="font-mono">get_agent_health</code>,{" "}
+              <code className="font-mono">send_heartbeat</code>) are on{" "}
+              <code className="font-mono break-words">
+                {AUTHENTICATED_MCP_URL}
+              </code>{" "}
+              with an API key — see{" "}
+              <Link href="/docs#mcp-clients" className={LINK}>
+                Connect an MCP client
+              </Link>
+              .
+            </p>
             <p className="mt-5 text-xs font-medium">Tool call</p>
             <CodeBlock label="check_agent_trust tool call">{MCP_REQUEST}</CodeBlock>
             <p className="mt-5 text-xs font-medium">
