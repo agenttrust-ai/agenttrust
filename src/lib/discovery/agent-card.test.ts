@@ -106,7 +106,10 @@ describe("AgentTrust's A2A Agent Card (public/.well-known/agent-card.json)", () 
     expect(skill.description).toMatch(/requires an API key/);
     // The anonymous path is real, but it's MCP — named exactly, never as an A2A interface.
     expect(skill.description).toContain("check_agent_trust");
-    expect(skill.description).toContain("https://getagenttrust.com/api/mcp");
+    // No-key callers are pointed at the public connector first.
+    expect(skill.description).toContain(
+      "check_agent_trust at the public connector https://getagenttrust.com/api/mcp/public",
+    );
     expect(skill.description).toMatch(/not an A2A interface/);
   });
 

@@ -39,9 +39,13 @@ describe("llms.txt authentication facts", () => {
     expect(flat()).not.toMatch(/every request,? REST or MCP/i);
   });
 
-  it("says check_agent_trust over MCP needs no account or API key", () => {
+  it("says check_agent_trust over MCP needs no account or API key, at the public connector", () => {
     expect(flat()).toMatch(
-      /The MCP tool `check_agent_trust` at \/api\/mcp is anonymous and read-only: no AgentTrust account or API key/,
+      /The MCP tool `check_agent_trust` at \/api\/mcp\/public is anonymous and read-only: no AgentTrust account or API key/,
+    );
+    // The workflow's no-key lookup step points at the public connector too.
+    expect(flat()).toContain(
+      "`check_agent_trust({endpointUrl})` over MCP at /api/mcp/public.",
     );
   });
 
