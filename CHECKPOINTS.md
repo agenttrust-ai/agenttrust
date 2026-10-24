@@ -6,6 +6,52 @@ entry above the previous one, not by editing history.
 
 ---
 
+## HEALTH-CHECK USER-AGENT DOMAIN CORRECTED — LIVE — 2026-10-24
+
+**Change.** Commit `75c8a7e` ("fix(monitoring): correct health-check
+User-Agent domain"); only `src/lib/monitoring/safe-fetch.ts` (one line) and
+its test. The User-Agent sent to monitored agent endpoints — by health
+checks and by ownership-verification file fetches — was
+`AgentTrust-HealthCheck/1.0 (+https://agenttrust.dev)` since the first MVP
+commit. That domain isn't this project's: it isn't attached to the Vercel
+project and resolves to GoDaddy hosting with no site. It is now
+`AgentTrust-HealthCheck/1.0 (+https://getagenttrust.com)`, the canonical
+domain. The `AgentTrust-HealthCheck/1.0` product token is unchanged, so
+operators' token-based allow rules still match. A separate product,
+"AgentTrust-Monitor" (agenttrust.site), probes our MCP endpoints, so
+pointing operators at the real project matters.
+
+No change to auth headers, SSRF protection (DNS-rebinding lookup, private
+IP and redirect blocking), health classification, retries, scoring or the
+database.
+
+**Deployment.** Automatic on push: `dpl_Pk5v2qCfDoZwMcus43UtTVi4kF2f`,
+production, READY 2026-10-24 10:29:01 UTC.
+
+**Evidence.**
+- Before the commit: 5 new tests (the value is sent on a health check, on
+  every redirect hop, with an auth header, and on verification-file fetches
+  including after a redirect; it never names agenttrust.dev). With the old
+  value restored, all 5 fail and the other 56 `safe-fetch` tests pass. Full
+  suite 59 files, 1,321 tests passed, 0 failed; typecheck, ESLint and
+  production build passed; the built server code no longer contains
+  agenttrust.dev.
+- Live: pages 200, security headers unchanged, `/dashboard` 307,
+  `/api/v1/agents` without a key 401; `/api/mcp` `initialize`/`tools/list`
+  byte-identical to the snapshots; one read-only `check_agent_trust` of the
+  test agent (healthy, 100 fresh, verified, recommended); 0 × 5xx after the
+  deploy.
+- Vercel metrics show the previous health-check run reaching
+  `/api/test-agent` with the old User-Agent.
+
+**Result: PASS.**
+
+**Pending:** the first health-check run with the new value, 2026-10-25
+00:00 UTC — confirm `/api/test-agent` then sees
+`AgentTrust-HealthCheck/1.0 (+https://getagenttrust.com)`.
+
+---
+
 ## DEPENDENCY SECURITY PATCHES (STAGES 1 AND 2) — LIVE — 2026-10-24
 
 **Why.** `npm audit --omit=dev` reported 1 critical and 5 high advisories.
