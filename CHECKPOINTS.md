@@ -6,6 +6,45 @@ entry above the previous one, not by editing history.
 
 ---
 
+## /check-agent-trust DEVELOPER NEXT STEPS (ISSUE 2) — LIVE — 2026-10-24
+
+**Change.** Commit `fb07b8e` ("feat(check): point /check-agent-trust
+developers to the public connector, Claude Code and the SDK"); only
+`src/app/check-agent-trust/page.tsx` and its new `page.test.ts`. The
+developer section names the public no-key connector `/api/mcp/public`
+instead of the keyed server, adds the Claude Code command, MCP client and
+SDK links and `npm install @getagenttrust/sdk`, and a matched or unmatched
+result links to that section. The trust-check logic, auth, rate limits,
+telemetry, APIs and database are unchanged.
+
+**Deployment.** Automatic on push: `dpl_A8A3tDaRhtFwaEDFTX6ph6pbZFhx`,
+production, READY 2026-10-24 06:50:57 UTC, aliased to `getagenttrust.com`.
+
+**Evidence.**
+- Full suite before the commit: 57 files, 1,300 tests passed, 0 failed;
+  typecheck, ESLint and production build passed.
+- Live page: the public connector URL, the exact Claude Code command and the
+  SDK install line are present, the keyed URL is gone from the section, and
+  `/docs#mcp-clients`, `#sdk` and `#mcp` resolve. The connector's
+  `initialize` and `tools/list` return only `check_agent_trust`
+  (read-only).
+- Layout matches the local build: 1024 px and 375 px, h1 and form
+  unchanged, no horizontal page overflow; the Claude Code command scrolls
+  inside its code block (by 20 px at 1024 px).
+- One read-only live check of `https://agenttrust-umber.vercel.app/api/test-agent`
+  through the page: recommended, confidence high, healthy, reliability 100,
+  ownership verified; the new result link is shown. No page overflow with a
+  result at 1024, 375 or 320 px.
+
+**Result: PASS.**
+
+**Known limitation (pre-existing, not from this change):** at a 280 px
+viewport the result card's "Trust report" breadcrumb
+(`src/components/check/resolution-trace.tsx`) overflows by 5 px. 320 px
+and wider are unaffected.
+
+---
+
 ## SDK @getagenttrust/sdk 0.1.3 — PUBLISHED AND VERIFIED — 2026-10-20
 
 **Release.** `@getagenttrust/sdk@0.1.3` published to npm 2026-10-20
