@@ -6,6 +6,80 @@ entry above the previous one, not by editing history.
 
 ---
 
+## DEPENDENCY SECURITY PATCHES (STAGES 1 AND 2) — LIVE — 2026-10-24
+
+**Why.** `npm audit --omit=dev` reported 1 critical and 5 high advisories.
+Checked against the code, the ones that reach this app were: Next.js Server
+Actions DoS (the app uses server actions), Next.js Image Optimization SVG RCE
+and SSRF (`/_next/image` is on by default), MCP SDK memory exhaustion from
+one request (GHSA-46jr, reachable without a key on `/api/mcp/public`), zod
+collection memory exhaustion, and undici crashes from untrusted HTTPS
+servers (monitoring fetches untrusted endpoints). Not applicable: `next/og`
+and `use cache` RCEs (unused), GHSA-jm63 (mcp-handler builds a new server per
+request), the SDK bearer-auth issue (its verifier isn't used), and undici's
+dropped-`Agent`-options issue (our DNS guard goes through `connect.lookup`).
+
+**Stage 1 — Next.js.** Commit `5d57e13` ("fix(deps): upgrade Next.js to
+16.4.3 for security advisories"). `next` and `eslint-config-next` 16.3.4 →
+16.4.3, `sharp` 0.35.4 → 0.35.5, `source-map-js` 1.2.1 → 1.2.2; adds
+`src/lib/security/dependency-floors.test.ts`, which fails if
+`package-lock.json` falls below the patched versions. Deployment
+`dpl_D4LbW3egdSiJdPMooC5bWXbV2FF3`, automatic on push, READY
+2026-10-24 08:42:30 UTC.
+- Before the commit: full suite 58 files, 1,305 tests passed, 0 failed;
+  typecheck, ESLint and production build passed (same route table);
+  production audit 0 critical, 3 high (the Stage 2 packages).
+- Live: pages 200, security headers identical to before, `/dashboard`
+  307 → `/login`; `/api/mcp` `initialize`/`tools/list` byte-identical to the
+  committed snapshots, `/api/mcp/public` byte-identical to a local build of
+  the same commit; one read-only `check_agent_trust` of the test agent
+  (healthy, 100, verified, recommended); 0 × 5xx after the deploy.
+
+**Stage 2 — MCP SDK, zod, undici and request limits.** Commit `4d59aa0`
+("fix(deps): patch MCP SDK, zod and undici; bound MCP request size").
+`@modelcontextprotocol/server` and `core` 2.0.0 → 2.3.1, `zod` 4.5.4 → 4.6.7,
+`undici` 8.10.2 → 8.12.3; `mcp-handler` stays 2.1.1 (no advisory). The SDK
+upgrade alone doesn't fix GHSA-46jr, so `src/lib/mcp/request-limits.ts` adds,
+on both MCP routes:
+- a 64 KiB POST body limit, answered with the SDK's own 413 JSON-RPC error.
+  It lives in the route because mcp-handler parses the body itself, and the
+  SDK skips its own limit when handed a parsed body;
+- `maxToolInputElements: 100` for tool-call arguments (the largest tool
+  input has 3 arguments). mcp-handler forwards it to `new McpServer(...)`
+  although its options type doesn't list it; a test checks it's enforced.
+
+Deployment `dpl_FUZECyPxT7pdFgVBp1Si6WdV1s5t`, automatic on push, READY
+2026-10-24 09:21:38 UTC.
+- Before the commit: full suite 59 files, 1,316 tests passed, 0 failed
+  (new: 7 request-limit tests on both routes, 4 more dependency floors);
+  each new test failed with its protection removed (body limit, tool-input
+  limit, one server per request); typecheck, ESLint and production build
+  passed; MCP snapshots unchanged.
+- Production audit (`npm audit --omit=dev`): **0** vulnerabilities. Dev-only
+  advisories remain and are pre-existing: `drizzle-kit`/`esbuild`,
+  `vitest`/`vite`, `brace-expansion` (moderate 6, high 2).
+- Live: pages and files 200, security headers identical to before,
+  `/dashboard` 307, `/api/v1/agents` without a key 401, MCP GET 405 on both
+  routes; `/api/mcp` `initialize`/`tools/list` byte-identical to the
+  snapshots, `/api/mcp/public` byte-identical to a local build of the same
+  commit (and, before the deploy, to the previous production); one read-only
+  check with the published SDK 0.1.3 from a fresh install: `support-bot`
+  healthy, reliability 100 (fresh), verified, `recommended: true`, high
+  confidence; 0 × 5xx in the first minutes (48 calls), MCP max 647 ms.
+- Not tested live: the 413 response (optional, not approved); covered by
+  local and test checks.
+
+**Result: PASS.** No database, auth, rate-limit or telemetry changes; MCP
+Registry listing and the SDK package unchanged. Rollback target for Stage 2:
+`dpl_D4LbW3egdSiJdPMooC5bWXbV2FF3` (Stage 1); for both: `dpl_2PY8d4QyDBw5uhZzEreWqKDgBnoQ`.
+
+**Pending:** the first scheduled cron runs on the Stage 2 deployment —
+health checks 2026-10-25 00:00 UTC, discovery 03:30 UTC — and the cumulative
+5xx rate since the deploy. Monitoring now uses undici 8.12.3, so a successful
+health-check run is the remaining verification.
+
+---
+
 ## TRUST REPORT TRACE ROW — 280 px OVERFLOW FIXED — LIVE — 2026-10-24
 
 Fixes the 280 px limitation recorded in the Issue 2 entry below.
