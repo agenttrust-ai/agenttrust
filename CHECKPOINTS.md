@@ -45,6 +45,69 @@ and wider are unaffected.
 
 ---
 
+## FOOTER llms.txt LINK — NO MORE 404 PREFETCH (ISSUE 3) — LIVE — 2026-10-24
+
+_Recorded retroactively on 2026-10-24 from Vercel records and the session log._
+
+**Change.** Commit `966b0de` ("fix(footer): render the llms.txt link as a
+plain anchor to avoid a 404 prefetch"); only
+`src/components/shell/site-footer.tsx` and `src/app/page.test.ts`. A
+footer link can be marked `staticFile`, which renders a plain `<a>` instead
+of `next/link`; only `/llms.txt` uses it. `next/link` had been prefetching
+the static file as a page (`/llms.txt?_rsc=…`), which returned 404 and
+logged a console error.
+
+**Deployment.** Automatic on push: `dpl_7uZJgvMEjouNkxBeWzXwV5pAiULk`,
+production, created 06:00:39 and READY 2026-10-24 06:00:58 UTC.
+
+**Evidence.**
+- Before the commit: 3 new footer tests, 141/141 focused tests (home,
+  privacy, docs, discovery), typecheck, ESLint and production build passed.
+  The full suite wasn't run for this commit alone; the Issue 2 full run
+  (1,300 passed) includes these tests.
+- Live, in a fresh browser tab: no `/llms.txt?_rsc` request and an empty
+  console. The other page links were still prefetched as before.
+  `/llms.txt` returns 200 `text/plain`. The Developers footer order is
+  unchanged, and clicking `llms.txt` opens the file.
+- No 5xx after the deploy.
+
+**Result: PASS.**
+
+---
+
+## llms.txt AND AGENT CARD → PUBLIC MCP CONNECTOR (ISSUE 1) — LIVE — 2026-10-24
+
+_Recorded retroactively on 2026-10-24 from Vercel records and the session log._
+
+**Change.** Commit `0583104` ("docs(discovery): direct agents to public MCP
+connector"); only `public/llms.txt`, `public/.well-known/agent-card.json`
+and their two tests (`src/lib/discovery/llms-txt.test.ts`,
+`agent-card.test.ts`). The `llms.txt` workflow steps 2 and 3, and the agent
+card's `check-agent-trust` skill description, now send no-key users to
+`https://getagenttrust.com/api/mcp/public` instead of `/api/mcp`.
+
+**Deployment.** Pushed 05:03 UTC. Vercel received the push about 48 minutes
+late, with no incident on either status page. It then deployed automatically
+(`source: git`, nothing triggered by hand): `dpl_AATcNGeVigUWgECoSzYoTSESLRny`,
+created 05:51:03 and READY 2026-10-24 05:51:22 UTC.
+
+**Evidence.**
+- Before the commit: full suite 56 files, 1,290 tests passed, 0 failed;
+  typecheck, ESLint and production build passed. Mutation checks: putting
+  the keyed URL back in the agent card, or removing the public connector
+  from step 3, each failed a test.
+- Live: `/llms.txt` (200 `text/plain`) and
+  `/.well-known/agent-card.json` (200 `application/json`) are
+  byte-identical to the committed files. Compared with the previous card
+  (`988324e`), only `skills[0].description` changed; `url`, `security`,
+  `securitySchemes`, `protocolVersion` and the other fields are identical.
+  The authentication wording in `llms.txt` is unchanged.
+- No 5xx after the deploy.
+
+**Result: PASS.**
+
+---
+
 ## SDK @getagenttrust/sdk 0.1.3 — PUBLISHED AND VERIFIED — 2026-10-20
 
 **Release.** `@getagenttrust/sdk@0.1.3` published to npm 2026-10-20
