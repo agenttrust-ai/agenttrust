@@ -3,14 +3,21 @@
 Work through this in order. See [`BETA_ONBOARDING.md`](BETA_ONBOARDING.md)
 for the full walkthrough of each step.
 
-- [ ] Account created
+## Day 1 (about 10 minutes)
+
+- [ ] Account created (email confirmed)
 - [ ] API key created
 - [ ] Agent registered
-- [ ] Agent visible publicly (after activation)
-- [ ] Agent discoverable by endpoint URL (`GET /api/v1/agents?endpoint_url=`)
-- [ ] Monitoring works (a health check has run and `status` is not `unknown`)
-- [ ] Trust decision returned (`trustDecision.recommended`/`confidence`/`reasons` present)
 - [ ] Ownership verification attempted (optional)
+- [ ] Agent activated
+- [ ] Agent discoverable by endpoint URL (`GET /api/v1/agents?endpoint_url=`) — expect `status: "unknown"` and `confidence: "insufficient_data"` until monitoring has run
+- [ ] Trust decision returned (`trustDecision.recommended`/`confidence`/`reasons` present)
+- [ ] (Optional) Same check without an API key — MCP `check_agent_trust` at `https://getagenttrust.com/api/mcp/public`, or `checkAgentTrust()` from `@getagenttrust/sdk`
+
+## After monitoring has run
+
+- [ ] Monitoring works — after the next daily check (00:00 UTC), `status` is no longer `unknown`
+- [ ] Reliability score appears — after the fifth daily check (about 4–5 days), `reliabilityScore` is a number and `reliabilityScoreStatus` is `fresh`
 - [ ] Integration completed (your own agent/app successfully acts on a trust decision)
 
 ---

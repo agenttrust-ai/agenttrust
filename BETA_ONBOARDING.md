@@ -18,29 +18,41 @@ check.
 to check whether another agent's endpoint is healthy, reliable, and
 actually controlled by who it claims to be, before calling it.
 
-**Production URL:** `https://agenttrust-umber.vercel.app`
+**Production URL:** `https://getagenttrust.com`
 
 ---
 
-## Onboarding flow (~5–10 minutes)
+## Two ways to use AgentTrust
+
+- **Check an endpoint before you call it — no account or API key.** The
+  public MCP connector, the TypeScript SDK, or the browser. See
+  "Checking an agent without an API key" below.
+- **Register and monitor your own agent** — needs an account and an API
+  key. That's the walkthrough that follows.
+
+## Onboarding flow
 
 ```
 Sign up
   → create API key
-  → register agent
-  → configure endpoint
+  → register agent (endpoint URL, optional monitor credentials)
   → (optional) verify endpoint ownership
-  → allow monitoring (activate the agent)
-  → retrieve the agent by endpoint URL
-  → request its trust decision
+  → activate the agent (it becomes public and monitored)
+  → look it up by endpoint URL → trustDecision
+  → wait for monitoring: status after the next daily check,
+    a reliability score after about five days
 ```
+
+Account to an activated, discoverable agent takes about 10 minutes. The
+trust decision only becomes meaningful once monitoring has run — see
+"Timeline after you activate".
 
 ### 1. Sign up
 
-Go to `https://agenttrust-umber.vercel.app/signup` and create an account
-with email + password. Email confirmation is required — check your inbox
-before continuing. There is currently no unauthenticated or
-programmatic account-creation API; this one step is manual.
+Go to `https://getagenttrust.com/signup` and create an account with email
++ password. Email confirmation is required — check your inbox before
+continuing. There is no programmatic account-creation API; this one step
+is manual.
 
 ### 2. Create an API key
 
@@ -48,7 +60,8 @@ Dashboard → **API keys** → **Create key**.
 
 The raw key is shown **exactly once**, at creation. Copy it immediately —
 AgentTrust stores only a hash and can never show it to you again. If you
-lose it, revoke it and create a new one. Every request below uses it as:
+lose it, revoke it and create a new one. Every authenticated request below
+uses it as:
 
 ```
 Authorization: Bearer <API_KEY>
@@ -60,69 +73,99 @@ Dashboard → **Agents** → **Register agent**. Fields:
 
 | Field | Notes |
 |---|---|
-| `name` | Required. |
+| `name` | Required, 2–100 characters. |
 | `description` | Optional. |
-| `endpointUrl` | Required. Must be `https://`. This is the URL other callers will look you up by. |
+| `endpointUrl` | Required. Must be `https://`, and must not point at a private, internal or localhost address (rejected at registration). This is the exact URL other callers will look you up by. |
 | `version` | Optional, e.g. `1.0.0`. |
-| `authType` | `none`, `api_key`, `bearer`, `oauth2`, or `custom` — how AgentTrust's monitor authenticates to *your* endpoint (not how callers authenticate to AgentTrust). |
-| `authCredential` / `authHeaderName` | Only if `authType` needs one. Stored encrypted (AES-256-GCM), never shown back in plaintext, never exposed in any public or API response. |
+| `authType` | `none`, `bearer` or `api_key` — how AgentTrust's monitor authenticates to *your* endpoint (not how callers authenticate to AgentTrust). |
+| `authCredential` | Only for `bearer` or `api_key`. Stored encrypted (AES-256-GCM), never shown back in plaintext, never exposed in any public or API response. |
+| `authHeaderName` | Only for `api_key`. Defaults to `X-API-Key`. |
 | `capabilities` | Comma-separated tags, e.g. `chat, ticket-triage`. |
+| Agent card fields | Optional: modalities, interaction type, documentation URL. |
+
+With `bearer`, the monitor sends `Authorization: Bearer <credential>`;
+with `api_key`, it sends `<authHeaderName>: <credential>`.
 
 The agent is created as `draft` — not monitored, not publicly visible yet.
 
-### 4. Configure the endpoint
-
-This is just the `endpointUrl` (and, if your endpoint needs it,
-`authType`/`authCredential`) from step 3 — nothing further to configure.
-`endpointUrl` must be reachable over HTTPS and must not point at a
-private/internal/localhost address (rejected at registration).
-
-### 5. (Optional) Verify endpoint ownership
+### 4. (Optional) Verify endpoint ownership
 
 On the agent's dashboard page → **Endpoint ownership** → **Start
-verification**. AgentTrust gives you a URL and a token:
+verification**. AgentTrust gives you a token and the URL to publish it
+at — always `/.well-known/agenttrust-verification.txt` on your endpoint's
+origin (scheme, host and port), not on the endpoint's own path.
 
-- Publish a file at exactly that URL containing exactly that token.
+- Publish a file at exactly that URL containing the token (surrounding
+  whitespace is ignored). A redirect is followed only within the same
+  origin.
 - Click **Check now**.
 
-Verification is a **trust signal, not a requirement** — see "Verified vs
-unverified" below. The check is throttled to once per 60 seconds per
+Verification is a **trust signal, not a requirement** — see "Verified vs.
+unverified agents" below. The check is throttled to once per 60 seconds per
 agent; a repeated click within that window returns
 `"Checking too often — try again in Ns."`.
 
-### 6. Allow monitoring (activate)
+### 5. Activate the agent
 
 While the agent is a draft, its dashboard page shows **Activate agent**.
 Click it. This makes the agent public and puts it on the monitoring
-schedule. Monitoring runs two ways:
+schedule.
 
-- **Pull** (default): AgentTrust calls your `endpointUrl` on a cron.
-  On the current plan this cron runs **once per day**, so a brand-new
-  pull-mode agent's first reliability score can take several days to
-  appear (see "Errors and fixes" below).
-- **Push**: your agent calls `POST /api/v1/agents/{slug}/heartbeat`
-  (owner-only, needs your API key) whenever it's alive. This is the
-  faster path to a first score if you want to see one in this session.
+Monitoring is **pull-based**: AgentTrust's own scheduled health checks are
+the only thing that sets an agent's status and reliability score. There is
+no push mode to switch to. `POST /api/v1/agents/{slug}/heartbeat` (and the
+MCP `send_heartbeat` tool) still exist and are accepted, but for your
+agent they only update `lastHeartbeatAt` — they don't change status or
+score, and they don't speed up a first score.
 
-### 7. Retrieve the agent by endpoint URL
+### 6. Look the agent up by endpoint URL
 
-This is the actual integration point — the thing any other AI agent does
-to check you out before calling you:
+This is the integration point — the thing any other AI agent does to check
+you out before calling you. With an API key, over REST:
 
 ```bash
-curl -s "https://agenttrust-umber.vercel.app/api/v1/agents?endpoint_url=https%3A%2F%2Fyour-agent.example.com%2Fv1%2Finvoke" \
+curl -s "https://getagenttrust.com/api/v1/agents?endpoint_url=https%3A%2F%2Fyour-agent.example.com%2Fv1%2Finvoke" \
   -H "Authorization: Bearer <API_KEY>"
 ```
 
-Matching is **exact** (after normalizing trailing slash and
-scheme/host casing only) against the `endpointUrl` you registered. An
-unregistered URL returns `200` with an empty `data` array — never an
-error.
+Matching is **exact** against the `endpointUrl` you registered, after
+standard URL parsing plus one rule — see "URL matching" below. An
+unregistered URL returns `200` with an empty `data` array — never an error.
 
-### 8. Request its trust decision
+The response already includes `trustDecision` — there's no separate call.
 
-The lookup response above already includes `trustDecision` — there's no
-separate call. See the example and field meanings below.
+---
+
+## Timeline after you activate
+
+| When | What you'll see |
+|---|---|
+| Right after activation | The lookup finds the agent with `status: "unknown"`, `reliabilityScore: null`, `reliabilityScoreStatus: "none"`, and `trustDecision` `{ recommended: false, confidence: "insufficient_data" }`. That's expected — nothing has been checked yet. |
+| Next daily check, 00:00 UTC (09:00 KST) | The first health check runs. `status` becomes `healthy` if it succeeded, `degraded` if it failed. Activating doesn't trigger an immediate check. |
+| Fifth daily check (about 4–5 days after activation) | A reliability score needs at least 5 checks in its trailing 7-day window, so this is when the first `reliabilityScore` appears. Until then it's `null` — never a placeholder number. |
+| Afterwards | The score is recomputed after every check. A score older than 50 hours is `stale` and counts as no score in `trustDecision` (this only happens if checks stop running). |
+
+## What the health check does
+
+Useful when your agent shows `degraded` or `down` and you're not sure why.
+
+- **Request:** a `GET` to your exact `endpointUrl`, with your monitor
+  credential header if you set one, and the User-Agent
+  `AgentTrust-HealthCheck/1.0 (+https://getagenttrust.com)` (allowlist it if
+  your firewall filters bots). The response body is never read.
+- **Limits:** 5-second connect and 10-second total timeout. Up to 5
+  redirects are followed; every hop is re-checked, and a redirect to a
+  private, internal or localhost address is blocked.
+- **Retries:** a timeout, DNS error or connection error is retried within
+  the same run, up to 3 attempts. An HTTP response is never retried.
+- **What counts as up:** any 2xx or 3xx, and also **401, 403, 405 and 406**
+  — the endpoint is reachable even if it rejected this particular request.
+  MCP servers that answer a plain `GET` with 405 or 406 are fine.
+- **What counts as a failure:** every other 4xx (including 400 and 404),
+  every 5xx, timeouts, DNS/connection/TLS errors, and blocked redirects.
+- **Status changes after a run of results, never a single sample:** 2
+  consecutive failures → `degraded`, 4 → `down`, 2 consecutive successes →
+  `healthy`. The very first check sets the status directly.
 
 ---
 
@@ -158,9 +201,11 @@ Response (`200`, fictional values):
         "interfaces": { "modalities": ["text"], "interactionType": "request-response" },
         "documentationUrl": null
       },
+      "source": "owner_registered",
       "verified": false,
       "ownershipVerifiedAt": null,
       "reliabilityScore": 97,
+      "reliabilityScoreStatus": "fresh",
       "reliabilityScoreComputedAt": "2026-09-14T00:44:16.440Z",
       "lastCheckedAt": "2026-09-14T00:44:13.152Z",
       "latencyMs": 142,
@@ -176,17 +221,42 @@ Response (`200`, fictional values):
 }
 ```
 
-Other endpoints you'll likely also use:
+Other endpoints you'll likely also use (all need your API key):
 
 - `GET /api/v1/agents/{slug}` — same enriched shape, by AgentTrust slug.
-- `GET /api/v1/agents/{slug}/health` — `{agentId, slug, status, lastCheckedAt, latencyMs, httpStatus, checkStatus, reliabilityScore, reliabilityScoreComputedAt}`
-- `POST /api/v1/agents/{slug}/heartbeat` — owner-only push liveness signal.
-- MCP: `https://agenttrust-umber.vercel.app/api/mcp` (`list_agents`,
-  `get_agent`, `get_agent_health`, `send_heartbeat` — same auth, same
-  data, as tools).
+- `GET /api/v1/agents/{slug}/health` — `{agentId, slug, status, lastCheckedAt, latencyMs, httpStatus, checkStatus, reliabilityScore, reliabilityScoreStatus, reliabilityScoreComputedAt}`
+- `POST /api/v1/agents/{slug}/heartbeat` — owner-only; for your agent it
+  only updates `lastHeartbeatAt` (see step 5).
+- MCP with an API key: `https://getagenttrust.com/api/mcp` (`list_agents`,
+  `get_agent`, `get_agent_health`, `send_heartbeat`, plus
+  `check_agent_trust`).
 
-Full reference: [`/docs`](https://agenttrust-umber.vercel.app/docs) and
-its plain-text twin, `/llms.txt`.
+Full reference: [`/docs`](https://getagenttrust.com/docs) and its
+plain-text twin, [`/llms.txt`](https://getagenttrust.com/llms.txt).
+
+## Checking an agent without an API key
+
+Any caller can run the same trust check anonymously and read-only — it
+only reads AgentTrust's existing data and never contacts the endpoint being
+checked. Anonymous checks are rate-limited per IP.
+
+- **MCP:** the public connector `https://getagenttrust.com/api/mcp/public`
+  (Streamable HTTP, no authentication, one tool: `check_agent_trust`). In
+  Claude Code:
+
+  ```bash
+  claude mcp add --transport http agenttrust https://getagenttrust.com/api/mcp/public
+  ```
+
+  Other clients: [Connect an MCP client](https://getagenttrust.com/docs#mcp-clients).
+- **TypeScript SDK:** `npm install @getagenttrust/sdk`, then
+  `checkAgentTrust(endpointUrl)`; `assertTrusted(endpointUrl, policy)`
+  throws unless the endpoint meets your policy. Node.js 18 or later. See the
+  [SDK README](packages/sdk/README.md).
+- **Browser:** `https://getagenttrust.com/check-agent-trust`.
+
+To try any of these on a real, monitored agent, use AgentTrust's own test
+agent: `https://agenttrust-umber.vercel.app/api/test-agent`.
 
 ---
 
@@ -195,28 +265,34 @@ its plain-text twin, `/llms.txt`.
 A deterministic 0–100 score computed from an agent's own trailing 7-day
 check history — uptime, latency, consistency, and incidents, with an
 uptime floor so a mostly-down agent can't buy back a good score through
-other factors. It requires **at least 5 samples** before it's computed at
-all; until then it's `null` (never a fabricated number). There is no
-AI/LLM involved in scoring — same inputs always produce the same score.
+other factors. It requires **at least 5 checks** in that window before it's
+computed at all; until then it's `null` (never a fabricated number). There
+is no AI/LLM involved in scoring — same inputs always produce the same
+score.
+
+`reliabilityScoreStatus` tells you whether the score is current: `none`
+(no score yet), `fresh`, or `stale` (older than 50 hours).
 
 ## trustDecision
 
 Derived entirely from an agent's **existing** status, reliability score,
-and verification state — never a second, independent score.
+score freshness and verification state — never a second, independent score.
 
-- **`recommended`** (boolean): `true` only when `status === "healthy"`
-  AND `reliabilityScore !== null` AND `reliabilityScore >= 50`.
-- **`confidence`**: `"insufficient_data"` if no score yet; otherwise
-  `"low"` if unverified regardless of score; otherwise `"high"` (score
-  ≥ 90), `"medium"` (score ≥ 50), or `"low"`.
+- **`recommended`** (boolean): `true` only when `status === "healthy"` AND
+  there is a **fresh** `reliabilityScore` AND it is ≥ 50.
+- **`confidence`**: `"insufficient_data"` if there's no fresh score;
+  otherwise `"low"` if unverified, regardless of score; otherwise `"high"`
+  (score ≥ 90), `"medium"` (score ≥ 50), or `"low"`.
 - **`reasons`**: plain-language list of every factor counting against
   the agent — empty only when nothing did.
+
+Details: [Interpreting trustDecision](https://getagenttrust.com/docs#trust-decision).
 
 ## Verified vs. unverified agents
 
 `verified` (and `ownershipVerifiedAt`) reflects whether the owner has
-proven control of the endpoint via the well-known-file challenge (step
-5). **Verification is optional and is not a hard requirement for
+proven control of the endpoint's origin via the well-known-file challenge
+(step 4). **Verification is optional and is not a hard requirement for
 `recommended`.** A strong, healthy, unverified agent can still be
 `recommended: true` — verification instead raises `confidence` and its
 absence is always spelled out explicitly in `reasons`. A caller that
@@ -224,18 +300,33 @@ wants a stricter policy (e.g. "only trust verified agents") can enforce
 that itself by checking the raw `verified` field — AgentTrust doesn't
 impose that policy for everyone.
 
+## URL matching
+
+Exact match only — never fuzzy or partial. Both the URL you pass and each
+registered URL go through standard URL parsing, plus one extra rule:
+
+- a trailing slash on a non-root path is ignored (`.../invoke/` matches
+  `.../invoke`);
+- scheme/host casing and default ports are normalized by URL parsing
+  (`HTTPS://Example.com:443/a` matches `https://example.com/a`).
+
+Path casing, query strings, fragments and non-default ports are compared
+exactly. Details: [URL normalization](https://getagenttrust.com/docs#normalization).
+
 ## Common errors and how to fix them
 
 | Response | Cause | Fix |
 |---|---|---|
 | `401 UNAUTHENTICATED` — "Missing API key..." | No `Authorization` header. | Add `Authorization: Bearer <API_KEY>`. |
 | `401 UNAUTHENTICATED` — "Invalid, expired, or revoked API key." | Wrong, revoked, or malformed key. | Create a new key in the dashboard; a revoked key can never work again by design. |
-| `429 RATE_LIMITED` (Public API) | More than 100 requests/60s on one key. | Back off using the `X-RateLimit-Reset`/`Retry-After` header. |
+| `429 RATE_LIMITED` (REST API) | More than 100 requests/60s on one key. | Back off using the `Retry-After` header. |
 | `429 RATE_LIMITED` — "Checking too often..." (ownership check) | Clicked **Check now** twice within 60s. | Wait for the stated `retryAfterSeconds`. |
 | `400 VALIDATION_ERROR` | Bad `limit`/`cursor`, or a malformed field. | Check the `details` object in the response for the specific field. |
-| `endpoint_url` lookup returns empty `data: []` | URL doesn't exactly match what you registered (path casing, ports, and query strings are compared exactly, not normalized). | Re-check `endpointUrl` as registered; only trailing slash and scheme/host casing are normalized. |
-| `reliabilityScore` stays `null` for days | Pull-mode monitoring cron runs once/day and needs 5 samples. | Switch to push-mode via `POST /agents/{slug}/heartbeat`, or wait ~5 days. |
-| Agent not visible / lookup returns nothing at all | Agent is still `draft` — never activated. | Go to the agent's dashboard page and click **Activate agent**. |
+| `endpoint_url` lookup returns empty `data: []` | URL doesn't exactly match what you registered (path casing, query strings and non-default ports are compared exactly). | Re-check `endpointUrl` as registered — see "URL matching". |
+| Agent not found at all | Agent is still `draft` — never activated. | Go to the agent's dashboard page and click **Activate agent**. |
+| `status` stays `unknown` | No health check has run yet. | Wait for the next daily check at 00:00 UTC. |
+| `reliabilityScore` stays `null` | Fewer than 5 checks so far. | Expected for about 4–5 days after activation. Heartbeats don't speed this up. |
+| `status` is `degraded` or `down` | Health checks are failing. | See "What the health check does": a 400, 404 or 5xx, a timeout, or a TLS error counts as a failure. |
 
 ## Never share
 
