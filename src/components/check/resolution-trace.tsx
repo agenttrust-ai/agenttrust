@@ -18,7 +18,7 @@ export function ResolutionTrace({ resolved }: { resolved: boolean }) {
           ? "Resolved from AgentTrust's existing observations. No request was sent to the endpoint."
           : "Not found in AgentTrust's existing observations. No request was sent to the endpoint."}
       </p>
-      <div aria-hidden="true" className="flex items-center gap-2">
+      <div aria-hidden="true" className="flex flex-wrap items-center gap-2">
         <NetworkNode state="signal" size="sm" />
         <span>Endpoint</span>
         <Segment />

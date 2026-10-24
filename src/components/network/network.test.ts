@@ -50,6 +50,20 @@ describe("ResolutionTrace — a directory lookup, never a live request", () => {
     }
     expect(text(renderToStaticMarkup(ResolutionTrace({ resolved: false })))).toContain("No match");
   });
+
+  it("lets the decorative row wrap on narrow screens instead of overflowing the page", () => {
+    for (const resolved of [true, false]) {
+      const row = renderToStaticMarkup(ResolutionTrace({ resolved })).match(
+        /<div aria-hidden="true" class="([^"]*)"/,
+      )?.[1];
+      expect(row?.split(" ")).toEqual([
+        "flex",
+        "flex-wrap",
+        "items-center",
+        "gap-2",
+      ]);
+    }
+  });
 });
 
 describe("trustReportFromEvidence — agent pages show exactly the API's decision", () => {
