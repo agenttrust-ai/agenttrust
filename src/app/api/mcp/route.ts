@@ -2,6 +2,10 @@ import { createMcpHandler, withMcpAuth } from "mcp-handler";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import { db } from "@/lib/db";
 import { registerAgentTrustTools } from "@/lib/mcp/server";
+import {
+  MCP_SERVER_LIMITS,
+  withMcpRequestLimit,
+} from "@/lib/mcp/request-limits";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +39,8 @@ const handler = createMcpHandler(
     // would never carry a notification — it only kept a function open,
     // up to ~10 minutes per client connection.
     maxSubscriptions: 0,
+    // Bounds tool-call arguments; the body size is bounded below.
+    ...MCP_SERVER_LIMITS,
     // Sent to every client during initialize — the standard MCP mechanism
     // for "how to use this server", read once up front rather than
     // inferred solely from individual tool descriptions.
@@ -43,6 +49,8 @@ const handler = createMcpHandler(
   },
 );
 
-const authedHandler = withMcpAuth(handler, verifyToken, { required: false });
+const authedHandler = withMcpRequestLimit(
+  withMcpAuth(handler, verifyToken, { required: false }),
+);
 
 export { authedHandler as GET, authedHandler as POST };

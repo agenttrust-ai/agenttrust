@@ -33,6 +33,13 @@ const FLOORS: [name: string, floor: string, advisories: string][] = [
   ["next", "16.4.1", "GHSA-p3m5, GHSA-2464, GHSA-cjq9"],
   ["sharp", "0.35.5", "GHSA-wq5f"],
   ["source-map-js", "1.2.2", "GHSA-68fv"],
+  // Memory exhaustion in validation (also needs the limits in
+  // src/lib/mcp/request-limits.ts), shared-instance message leak.
+  ["@modelcontextprotocol/server", "2.3.0", "GHSA-46jr, GHSA-jm63"],
+  ["@modelcontextprotocol/core", "2.3.0", "GHSA-46jr, GHSA-jm63"],
+  ["zod", "4.6.6", "GHSA-mrhx"],
+  // Monitoring fetches untrusted endpoints with undici.
+  ["undici", "8.12.2", "GHSA-xjj6, GHSA-4qv8, GHSA-qrxm"],
 ];
 
 describe("dependency security floors (package-lock.json)", () => {

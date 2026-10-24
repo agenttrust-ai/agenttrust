@@ -1,6 +1,10 @@
 import { createMcpHandler } from "mcp-handler";
 import { db } from "@/lib/db";
 import { PUBLIC_CONNECTOR_INSTRUCTIONS, registerPublicTrustCheckTool } from "@/lib/mcp/server";
+import {
+  MCP_SERVER_LIMITS,
+  withMcpRequestLimit,
+} from "@/lib/mcp/request-limits";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +31,11 @@ const handler = createMcpHandler(
     // up to ~10 minutes per client connection.
     maxSubscriptions: 0,
     instructions: PUBLIC_CONNECTOR_INSTRUCTIONS,
+    // Bounds tool-call arguments; the body size is bounded below.
+    ...MCP_SERVER_LIMITS,
   },
 );
 
-export { handler as GET, handler as POST };
+const limitedHandler = withMcpRequestLimit(handler);
+
+export { limitedHandler as GET, limitedHandler as POST };
