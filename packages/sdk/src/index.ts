@@ -1,5 +1,6 @@
 export {
   assertTrusted,
+  assessAgent,
   checkAgentTrust,
   createAgentTrustClient,
   evaluatePolicy,
@@ -10,11 +11,16 @@ export {
 } from "./client.js";
 export { AgentTrustError, NotTrustedError, type AgentTrustErrorCode } from "./errors.js";
 export type {
+  AgentAssessment,
   AgentStatus,
+  AssessmentConfidence,
+  AssessmentDecision,
   AgentTrustClientOptions,
   CheckOptions,
+  InitialRiskLevel,
   MatchedTrustResult,
   ObservationStatus,
+  ReachabilityOutcome,
   ReliabilityScoreStatus,
   TrustCheckResult,
   TrustConfidence,

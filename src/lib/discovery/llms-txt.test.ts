@@ -56,7 +56,7 @@ describe("llms.txt authentication facts", () => {
 
   it("names the no-auth /api/mcp/public endpoint and describes check_agent_trust like the tool does", () => {
     expect(flat()).toContain(
-      "No-auth endpoint with only check_agent_trust: `https://getagenttrust.com/api/mcp/public`",
+      "No-auth endpoint with only check_agent_trust and assess_agent: `https://getagenttrust.com/api/mcp/public`",
     );
     // The summary is a "> " blockquote, so a line break there leaves a "> " in the phrase.
     expect(flat()).toMatch(/Before invoking an unknown AI agent (> )?or MCP server, call check_agent_trust/);

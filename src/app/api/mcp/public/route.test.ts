@@ -74,11 +74,11 @@ describe("/api/mcp/public", () => {
     }
   });
 
-  it("lists exactly one tool, check_agent_trust, with the required annotations", async () => {
+  it("lists exactly two read-only tools, check_agent_trust then assess_agent, with the required annotations", async () => {
     const tools = await listTools(publicPost, PUBLIC_URL);
-    expect(tools.map((tool) => tool.name)).toEqual(["check_agent_trust"]);
+    expect(tools.map((tool) => tool.name)).toEqual(["check_agent_trust", "assess_agent"]);
 
-    const [tool] = tools;
+    const [tool, assess] = tools;
     expect(tool.title).toBe("Check Agent Trust");
     expect(tool.annotations).toEqual({
       title: "Check Agent Trust",
@@ -88,6 +88,25 @@ describe("/api/mcp/public", () => {
       openWorldHint: false,
     });
     expect(tool.description).not.toMatch(/preferred/i);
+    expect(assess.annotations).toEqual({
+      title: "Assess Agent",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    });
+    expect(assess.description).toMatch(/never contacts endpointUrl/);
+    expect(assess.description).toMatch(/Reachability is not safety/);
+    expect(assess.description).not.toMatch(/preferred/i);
+  });
+
+  it("uses exactly the same assess_agent output schema as /api/mcp", async () => {
+    const publicAssess = (await listTools(publicPost, PUBLIC_URL)).find((tool) => tool.name === "assess_agent")!;
+    const mainAssess = (await listTools(mainPost, "https://getagenttrust.com/api/mcp")).find(
+      (tool) => tool.name === "assess_agent",
+    )!;
+    expect(publicAssess.inputSchema).toEqual(mainAssess.inputSchema);
+    expect(publicAssess.outputSchema).toEqual(mainAssess.outputSchema);
   });
 
   it("states when the tool applies — an unknown AI agent or MCP server, before calling it — in the description and instructions", async () => {

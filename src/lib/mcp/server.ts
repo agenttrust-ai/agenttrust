@@ -19,6 +19,12 @@ import {
   sendHeartbeatOutputSchema,
   type CheckAgentTrustInput,
 } from "./tools";
+import {
+  assessAgentInputSchema,
+  assessAgentOutputSchema,
+  mcpAssessAgent,
+  type AssessAgentInput,
+} from "./assess-agent-tool";
 
 /**
  * The only SDK-specific code in the MCP adapter: wires each registered
@@ -98,6 +104,37 @@ export function registerAgentTrustTools(server: McpServer, db: AppDatabase): voi
     },
     checkAgentTrustHandler(db),
   );
+
+  server.registerTool(
+    "assess_agent",
+    {
+      title: "Assess Agent",
+      description:
+        "Immediate use-or-avoid decision about an AI agent or MCP server endpoint, for an agent deciding whether to call it. Returns decision (allow_with_caution, avoid, or insufficient_evidence), confidence, reasonCodes, reachability (the latest stored observation, with its age), initialRisk, the historical reliability score and trustDecision (unchanged), limitations, and freshness. Built only from AgentTrust's stored observations: it never contacts endpointUrl. Reachability is not safety: allow_with_caution never means the agent's behavior is safe. Requires no API key.",
+      inputSchema: assessAgentInputSchema,
+      outputSchema: assessAgentOutputSchema,
+      annotations: ASSESS_AGENT_ANNOTATIONS,
+    },
+    assessAgentHandler(db, "mcp"),
+  );
+}
+
+/**
+ * `assess_agent`'s annotations, the same on both endpoints: in this phase
+ * it only reads AgentTrust's stored data and never contacts endpointUrl.
+ */
+const ASSESS_AGENT_ANNOTATIONS = {
+  title: "Assess Agent",
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+} as const;
+
+/** The `assess_agent` callback; like `check_agent_trust`, it rate-limits by the real request's caller IP. */
+function assessAgentHandler(db: AppDatabase, surface: "mcp" | "mcp_public") {
+  return async (input: AssessAgentInput, ctx: { http?: { req?: Request } }) =>
+    mcpAssessAgent(db, ctx.http?.req ?? new Request("https://mcp.internal/assess-agent"), input, surface);
 }
 
 /**
@@ -163,7 +200,7 @@ function checkAgentTrustHandler(db: AppDatabase) {
  * what the server offers, stated as fact — no directions to the client.
  */
 export const PUBLIC_CONNECTOR_INSTRUCTIONS =
-  "AgentTrust offers one read-only tool, check_agent_trust, for checking an unknown AI agent or MCP server before calling it. It looks up the endpoint's exact URL in AgentTrust's own monitoring data and returns the agent's observed status, endpoint-ownership verification, reliability score (when available), and a trustDecision (recommended, confidence, reasons). The result is a signal derived from AgentTrust's observations, not a certification or guarantee of safety. The tool never contacts the endpoint being checked.";
+  "AgentTrust offers two read-only tools for checking an unknown AI agent or MCP server before calling it. check_agent_trust looks up the endpoint's exact URL in AgentTrust's own monitoring data and returns the agent's observed status, endpoint-ownership verification, reliability score (when available), and a trustDecision (recommended, confidence, reasons). assess_agent returns a use-or-avoid decision (allow_with_caution, avoid, or insufficient_evidence) with reason codes, evidence, limitations, and freshness. Results are signals derived from AgentTrust's observations, not a certification or guarantee of safety; reachability is not evidence of safe behavior. Neither tool contacts the endpoint being checked.";
 
 function isHttpUrl(value: string): boolean {
   try {
@@ -189,7 +226,7 @@ const publicCheckAgentTrustInputSchema = checkAgentTrustInputSchema.extend({
 });
 
 /**
- * The public connector endpoint's only tool: the same `check_agent_trust`
+ * The public connector endpoint's trust check: the same `check_agent_trust`
  * check, output schema and handler as `/api/mcp`, with a neutral
  * description, stricter input validation, and the tool annotations
  * directory listings (e.g. Claude's) require. Needs no API key, so this
@@ -207,5 +244,29 @@ export function registerPublicTrustCheckTool(server: McpServer, db: AppDatabase)
       annotations: CHECK_AGENT_TRUST_ANNOTATIONS,
     },
     checkAgentTrustHandler(db),
+  );
+}
+
+/**
+ * The public connector's `assess_agent`: the same assessment, output schema
+ * and handler as `/api/mcp`, with a neutral description and the same
+ * stricter URL validation as the public `check_agent_trust`. No API key.
+ */
+export function registerPublicAssessAgentTool(server: McpServer, db: AppDatabase): void {
+  server.registerTool(
+    "assess_agent",
+    {
+      title: "Assess Agent",
+      description:
+        "Use-or-avoid decision about an AI agent or MCP server endpoint, built from AgentTrust's stored observations of its exact URL. Returns decision (allow_with_caution, avoid, or insufficient_evidence), confidence, reasonCodes, reachability (the latest stored observation, with its age), initialRisk, the historical reliability score and trustDecision, limitations, and freshness. Read-only, no account or API key. It never contacts endpointUrl. Reachability is not safety: allow_with_caution does not mean the agent's behavior is safe. A URL AgentTrust has not observed returns decision insufficient_evidence.",
+      inputSchema: assessAgentInputSchema.extend({
+        endpointUrl: assessAgentInputSchema.shape.endpointUrl.refine(isHttpUrl, {
+          error: "endpointUrl must be an absolute http:// or https:// URL, such as https://agent.example.com/invoke.",
+        }),
+      }),
+      outputSchema: assessAgentOutputSchema,
+      annotations: ASSESS_AGENT_ANNOTATIONS,
+    },
+    assessAgentHandler(db, "mcp_public"),
   );
 }

@@ -241,7 +241,8 @@ only reads AgentTrust's existing data and never contacts the endpoint being
 checked. Anonymous checks are rate-limited per IP.
 
 - **MCP:** the public connector `https://getagenttrust.com/api/mcp/public`
-  (Streamable HTTP, no authentication, one tool: `check_agent_trust`). In
+  (Streamable HTTP, no authentication; read-only tools `check_agent_trust`
+  and `assess_agent`, a use-or-avoid decision). In
   Claude Code:
 
   ```bash

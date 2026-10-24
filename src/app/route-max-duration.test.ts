@@ -29,6 +29,7 @@ const EXPECTED: Record<string, number> = {
   "/api/v1/agents/[slug]": 15,
   "/api/v1/agents/[slug]/health": 15,
   "/api/v1/agents/[slug]/heartbeat": 15,
+  "/api/v1/assessments": 15,
   "/api/test-agent": 10,
   "/auth/callback": 15,
 };

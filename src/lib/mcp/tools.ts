@@ -57,7 +57,7 @@ export type McpToolResult = {
  * verbatim here so an MCP client and a REST client see the identical
  * error shape for the identical failure, never a second error taxonomy.
  */
-async function toErrorResult(response: Response): Promise<McpToolResult> {
+export async function toErrorResult(response: Response): Promise<McpToolResult> {
   const body = (await response.json().catch(() => null)) as
     | { error?: { code?: string; message?: string; details?: unknown } }
     | null;
@@ -79,21 +79,21 @@ async function toErrorResult(response: Response): Promise<McpToolResult> {
   };
 }
 
-function toSuccessResult(structuredContent: Record<string, unknown>): McpToolResult {
+export function toSuccessResult(structuredContent: Record<string, unknown>): McpToolResult {
   return {
     content: [{ type: "text", text: JSON.stringify(structuredContent, null, 2) }],
     structuredContent,
   };
 }
 
-const agentStatusEnum = z.enum(["unknown", "healthy", "degraded", "down"]);
+export const agentStatusEnum = z.enum(["unknown", "healthy", "degraded", "down"]);
 
 /**
  * Whether `reliabilityScore` is current evidence — see
  * src/lib/reliability/freshness.ts. `stale` means the value is the last one
  * computed, kept for reference, but current monitoring no longer supports it.
  */
-const reliabilityScoreStatusEnum = z.enum(RELIABILITY_SCORE_STATUSES);
+export const reliabilityScoreStatusEnum = z.enum(RELIABILITY_SCORE_STATUSES);
 
 const agentCardOutputSchema = z.object({
   schemaVersion: z.string(),
@@ -112,7 +112,7 @@ const agentCardOutputSchema = z.object({
  * Derived from the agent's own status/reliability-score/verification —
  * never a second score. See src/lib/reliability/trust-decision.ts.
  */
-const trustDecisionOutputSchema = z.object({
+export const trustDecisionOutputSchema = z.object({
   recommended: z.boolean(),
   confidence: z.enum(["high", "medium", "low", "insufficient_data"]),
   reasons: z.array(z.string()),

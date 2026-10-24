@@ -35,7 +35,7 @@ describe("/api/mcp", () => {
     await expect(JSON.stringify(result, null, 2)).toMatchFileSnapshot("./__snapshots__/initialize.json");
   });
 
-  it("tools/list matches the pinned snapshot: the same five tools", async () => {
+  it("tools/list keeps the five existing tools byte-for-byte as pinned, and adds assess_agent last", async () => {
     const { body } = await mcpRpc(post, URL_MCP, { id: 2, method: "tools/list" });
     const tools = (body.result as { tools: { name: string; description?: string; annotations?: unknown }[] }).tools;
     expect(tools.map((tool) => tool.name)).toEqual([
@@ -44,11 +44,17 @@ describe("/api/mcp", () => {
       "get_agent_health",
       "send_heartbeat",
       "check_agent_trust",
+      "assess_agent",
     ]);
-    await expect(JSON.stringify(body.result, null, 2)).toMatchFileSnapshot("./__snapshots__/tools-list.json");
+    // The pre-existing snapshot is unchanged: every existing tool's name,
+    // description, schemas and annotations are exactly what they were.
+    const existing = { tools: tools.filter((tool) => tool.name !== "assess_agent") };
+    await expect(JSON.stringify(existing, null, 2)).toMatchFileSnapshot("./__snapshots__/tools-list.json");
+    const assess = tools.find((tool) => tool.name === "assess_agent");
+    await expect(JSON.stringify(assess, null, 2)).toMatchFileSnapshot("./__snapshots__/assess-agent-tool.json");
   });
 
-  it("annotates every tool: the four reads as read-only, send_heartbeat as a non-idempotent write", async () => {
+  it("annotates every tool: the reads as read-only, send_heartbeat as a non-idempotent write", async () => {
     const { body } = await mcpRpc(post, URL_MCP, { id: 6, method: "tools/list" });
     const tools = (body.result as { tools: { name: string; annotations?: unknown }[] }).tools;
     const readOnly = (title: string) => ({
@@ -70,6 +76,7 @@ describe("/api/mcp", () => {
         openWorldHint: false,
       },
       check_agent_trust: readOnly("Check Agent Trust"),
+      assess_agent: readOnly("Assess Agent"),
     });
   });
 

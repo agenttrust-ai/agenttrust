@@ -96,6 +96,33 @@ if (failures.length === 0) {
 }
 ```
 
+## Decide whether to call it
+
+Requires `@getagenttrust/sdk` 0.2.0 or later.
+
+`assessAgent(endpointUrl, options?)` returns a use-or-avoid decision your agent can act on immediately: `decision` is `allow_with_caution`, `avoid` or `insufficient_evidence`, with `confidence`, machine-readable `reasonCodes`, the latest stored `reachability` observation and its age, an `initialRisk` level, the unchanged `historical` score and `trustDecision`, `limitations` and `freshness`. Like `checkAgentTrust`, it is read-only and never contacts the endpoint.
+
+```ts
+import { assessAgent } from "@getagenttrust/sdk";
+
+const assessment = await assessAgent("https://agenttrust-umber.vercel.app/api/test-agent");
+
+switch (assessment.decision) {
+  case "allow_with_caution":
+    // Observed reachable and not failing — still not proof that its behavior is safe.
+    console.log("Proceed carefully:", assessment.reasonCodes, assessment.limitations);
+    break;
+  case "avoid":
+    console.log("Don't call it:", assessment.reasonCodes);
+    break;
+  case "insufficient_evidence":
+    console.log("Not enough evidence yet:", assessment.reasonCodes);
+    break;
+}
+```
+
+`allow_with_caution` needs either a current historical reliability score or at least two successful observations at least 10 minutes apart — one successful check is never enough. Reachability is not safety: AgentTrust observes whether the endpoint answers, not what the agent does.
+
 ## Results
 
 `checkAgentTrust` and `assertTrusted` resolve to a `TrustCheckResult`. Check `result.matched` first; TypeScript then narrows it to one of these:
@@ -181,4 +208,4 @@ A `trustDecision` is a signal derived from AgentTrust's own monitoring (reachabi
 
 The endpoint URL you pass, including any query string, is sent to AgentTrust to be looked up, so remove secrets such as API keys from it first. URLs with a username or password are rejected.
 
-The SDK sends one [MCP](https://modelcontextprotocol.io) `tools/call` for AgentTrust's `check_agent_trust` tool to `https://getagenttrust.com/api/mcp/public` over stateless Streamable HTTP, and validates the result. The same tool is available to MCP clients directly — see [getagenttrust.com/docs](https://getagenttrust.com/docs).
+The SDK sends one [MCP](https://modelcontextprotocol.io) `tools/call` — for AgentTrust's `check_agent_trust` tool, or `assess_agent` for `assessAgent` — to `https://getagenttrust.com/api/mcp/public` over stateless Streamable HTTP, and validates the result. The same tools are available to MCP clients directly — see [getagenttrust.com/docs](https://getagenttrust.com/docs).

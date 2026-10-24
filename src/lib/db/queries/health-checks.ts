@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { agents, healthChecks } from "@/lib/db/schema";
 import {
   withAnonContext,
@@ -268,6 +268,33 @@ export async function getLatestChecksForAgents(
  * called with an agent id that `getPublicAgentBySlug` already confirmed is
  * public+active, and RLS's public-read policy backs that up independently.
  */
+/**
+ * A public agent's stored checks since `since`, newest first (at most
+ * `limit`) — the evidence an agent assessment reads. Same anonymous, RLS-
+ * scoped context as `getLatestCheckPublic`: only a public, active agent's
+ * checks are visible.
+ */
+export async function getRecentChecksPublic(
+  db: AppDatabase,
+  agentId: string,
+  since: Date,
+  limit: number,
+): Promise<HealthCheckRow[]> {
+  return withAnonContext(db, async (tx) =>
+    tx
+      .select()
+      .from(healthChecks)
+      .where(
+        and(
+          eq(healthChecks.agentId, agentId),
+          gte(healthChecks.checkedAt, since),
+        ),
+      )
+      .orderBy(desc(healthChecks.checkedAt))
+      .limit(limit),
+  );
+}
+
 export async function getLatestCheckPublic(
   db: AppDatabase,
   agentId: string,

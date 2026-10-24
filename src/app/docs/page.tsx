@@ -87,9 +87,10 @@ const MCP_URL = AUTHENTICATED_MCP_URL;
 
 /** The facts a developer looks for first — each is detailed further down. */
 const AT_A_GLANCE: { label: string; value: string; note: string; copy?: boolean }[] = [
-  { label: "MCP (no key)", value: PUBLIC_MCP_URL, note: "Public connector: check_agent_trust only", copy: true },
+  { label: "MCP (no key)", value: PUBLIC_MCP_URL, note: "Public connector: check_agent_trust and assess_agent", copy: true },
   { label: "MCP server", value: MCP_URL, note: "Streamable HTTP", copy: true },
   { label: "Trust check (MCP)", value: "check_agent_trust({ endpointUrl })", note: "No API key or account" },
+  { label: "Use-or-avoid (MCP)", value: "assess_agent({ endpointUrl })", note: "No API key or account" },
   { label: "Trust check (REST)", value: "GET /api/v1/agents?endpoint_url=", note: "API key required" },
   { label: "SDK (TypeScript)", value: SDK_INSTALL, note: "Anonymous trust checks, typed results", copy: true },
   { label: "Authentication", value: "Authorization: Bearer <API_KEY>", note: "REST and keyed MCP tools" },
@@ -256,8 +257,9 @@ export default function DocsPage() {
           </h3>
           <p>
             Add the public MCP connector <code>{PUBLIC_MCP_URL}</code>{" "}
-            (Streamable HTTP, no authentication). It exposes one read-only tool,{" "}
-            <code>check_agent_trust</code>. In Claude Code:
+            (Streamable HTTP, no authentication). It exposes two read-only
+            tools, <code>check_agent_trust</code> and{" "}
+            <code>assess_agent</code>. In Claude Code:
           </p>
           <Code label="Add AgentTrust to Claude Code">
             {CLAUDE_CODE_ADD_COMMAND}
@@ -322,14 +324,15 @@ export default function DocsPage() {
           <ul className="flex flex-col gap-2">
             <li>
               <strong>Public connector — no key (recommended):</strong>{" "}
-              <code>{PUBLIC_MCP_URL}</code>. No authentication. One read-only
-              tool, <code>check_agent_trust</code>. Use it to let an agent or
-              client check endpoints before calling them.
+              <code>{PUBLIC_MCP_URL}</code>. No authentication. Two read-only
+              tools, <code>check_agent_trust</code> and{" "}
+              <code>assess_agent</code>. Use it to let an agent or client check
+              endpoints before calling them.
             </li>
             <li>
               <strong>Full MCP server — API key:</strong>{" "}
               <code>{AUTHENTICATED_MCP_URL}</code>. Every tool except{" "}
-              <code>check_agent_trust</code> needs{" "}
+              <code>check_agent_trust</code> and <code>assess_agent</code> needs{" "}
               <code>Authorization: Bearer &lt;API_KEY&gt;</code>. Adds{" "}
               <code>list_agents</code>, <code>get_agent</code>,{" "}
               <code>get_agent_health</code> and <code>send_heartbeat</code>, for
@@ -404,7 +407,8 @@ export default function DocsPage() {
             Endpoint: <code>{MCP_URL}</code> (GET and POST, Streamable HTTP
             transport). Auth: the same Bearer token as REST, in the{" "}
             <code>Authorization</code> header — except{" "}
-            <code>check_agent_trust</code>, below, which needs none.{" "}
+            <code>check_agent_trust</code> and <code>assess_agent</code>, below,
+            which need none.{" "}
             <code>tools/list</code> works without a key; calling any other tool
             requires one (the same 401 as REST on a missing/bad key).
           </p>
@@ -425,11 +429,35 @@ export default function DocsPage() {
             <a href="/check-agent-trust">Check an AI Agent Before You Invoke It</a>{" "}
             for a plain-language walkthrough of this check.
           </Callout>
+          <Callout tone="info" title={<code className="!bg-transparent !px-0 text-sm">assess_agent({"{endpointUrl}"})</code>}>
+            A use-or-avoid decision for an agent about to call{" "}
+            <code>endpointUrl</code>. No API key or account required. Read-only,
+            and never contacts <code>endpointUrl</code>: it is built only from
+            AgentTrust&apos;s stored observations. Returns{" "}
+            <code>decision</code> (<code>allow_with_caution</code>,{" "}
+            <code>avoid</code> or <code>insufficient_evidence</code>),{" "}
+            <code>confidence</code>, machine-readable <code>reasonCodes</code>,{" "}
+            <code>reachability</code> (the latest stored observation and its
+            age, not a live check), <code>initialRisk</code>,{" "}
+            <code>historical</code> (the reliability score and{" "}
+            <code>trustDecision</code>, unchanged), <code>limitations</code> and{" "}
+            <code>freshness</code>. <code>allow_with_caution</code> needs a
+            fresh historical score or at least two successful observations 10+
+            minutes apart — one success is never enough.{" "}
+            <code>avoid</code> means two or more consecutive failures, a down
+            agent still failing, a fresh score below 50, or a TLS failure or an
+            endpoint resolving into a private network; a single failure that
+            may be temporary is <code>insufficient_evidence</code>.
+            Reachability is not safety. Same anonymous per-IP rate limit as{" "}
+            <code>check_agent_trust</code>; also over REST as{" "}
+            <code>GET /api/v1/assessments?endpoint_url=</code> (API key).
+          </Callout>
           <p>
             Public connector endpoint: <code>{PUBLIC_MCP_URL}</code> (Streamable
             HTTP, no authentication). It exposes only{" "}
-            <code>check_agent_trust</code>, annotated read-only, and runs the same
-            check with the same rate limit. Use it to add AgentTrust to an MCP
+            <code>check_agent_trust</code> and <code>assess_agent</code>, both
+            annotated read-only, and runs the same checks with the same rate
+            limit. Use it to add AgentTrust to an MCP
             client or connector directory that connects without credentials, such
             as a custom connector in Claude.
           </p>
@@ -523,6 +551,15 @@ Response: structuredContent.agents[0] has the exact same fields as
             in <a href="#trust-decision">Interpreting trustDecision</a> — or{" "}
             <code>{"{ matched: false, observation? }"}</code>, which never
             carries a score.
+          </p>
+          <p>
+            Use-or-avoid decisions: <code>assessAgent(endpointUrl)</code>{" "}
+            returns the same result as the <code>assess_agent</code> tool above
+            — <code>decision</code>, <code>confidence</code>,{" "}
+            <code>reasonCodes</code>, <code>reachability</code>,{" "}
+            <code>initialRisk</code>, <code>historical</code>,{" "}
+            <code>limitations</code> and <code>freshness</code>. Requires{" "}
+            <code>@getagenttrust/sdk</code> 0.2.0 or later.
           </p>
           <p>
             Errors. Invalid client options, per-call options and policies throw
@@ -901,6 +938,17 @@ Authorization: Bearer at_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}</Code>
                 <code>lastHeartbeatAt</code>; status and score come from
                 AgentTrust&apos;s own checks.{" "}
                 <code>{"{slug, status, lastHeartbeatAt}"}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>
+                <code>GET /api/v1/assessments?endpoint_url=&lt;url&gt;</code>
+              </dt>
+              <dd className="mt-1">
+                The <code>assess_agent</code> result as{" "}
+                <code>{"{ data: {...} }"}</code>. Read-only: built from stored
+                observations, it never contacts the URL. An unknown URL returns
+                the decision <code>insufficient_evidence</code>, never an error.
               </dd>
             </div>
           </dl>

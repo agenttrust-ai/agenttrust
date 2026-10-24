@@ -449,3 +449,64 @@ describe("client options", () => {
     expect(stub.calls).toHaveLength(0);
   });
 });
+
+describe("assessAgent", () => {
+  const assessment = {
+    assessmentVersion: "1",
+    mode: "cached",
+    status: "complete",
+    matched: false,
+    decision: "insufficient_evidence",
+    confidence: "none",
+    reasonCodes: ["UNKNOWN_ENDPOINT"],
+    reachability: { outcome: "not_checked", checkStatus: null, httpStatus: null, latencyMs: null, checkedAt: null, ageSeconds: null, fresh: false, source: null },
+    initialRisk: { level: "unknown", observations: { attempts: 0, successful: 0, successfulStreak: 0, streakSpanMinutes: 0 } },
+    historical: null,
+    agent: null,
+    limitations: ["Reachability is not safety: …"],
+    freshness: { assessedAt: "2026-10-24T12:00:00.000Z", evidenceAgeSeconds: null, evidenceExpiresAt: null },
+  };
+
+  it("calls the assess_agent tool with the trimmed URL and returns the assessment", async () => {
+    const stub = fetchStub(toolResult(assessment));
+    const result = await client(stub).assessAgent("  https://unknown.example.com/mcp  ");
+    expect(result).toEqual(assessment);
+    expect(stub.calls[0].body).toMatchObject({
+      method: "tools/call",
+      params: { name: "assess_agent", arguments: { endpointUrl: "https://unknown.example.com/mcp" } },
+    });
+  });
+
+  it("rejects an unrecognized decision instead of passing it on", async () => {
+    const stub = fetchStub(toolResult({ ...assessment, decision: "allow" }));
+    await expect(client(stub).assessAgent("https://unknown.example.com/mcp")).rejects.toMatchObject({
+      code: "PROTOCOL_ERROR",
+      message: "assess_agent returned an unexpected result.",
+    });
+  });
+
+  it("validates the URL like checkAgentTrust, before any request", async () => {
+    const stub = fetchStub();
+    await expect(client(stub).assessAgent("not a url")).rejects.toMatchObject({ code: "INVALID_URL" });
+    await expect(client(stub).assessAgent("https://user:pass@example.com/mcp")).rejects.toMatchObject({ code: "INVALID_URL" });
+    expect(stub.calls).toHaveLength(0);
+  });
+
+  it("names assess_agent in a tool error without a message", async () => {
+    const stub = fetchStub(toolResult(undefined, { isError: true, content: [] }));
+    await expect(client(stub).assessAgent("https://unknown.example.com/mcp")).rejects.toMatchObject({
+      code: "TOOL_ERROR",
+      message: "assess_agent failed.",
+    });
+  });
+
+  it("maps a rate-limited tool result to RATE_LIMITED with retryAfterSeconds", async () => {
+    const stub = fetchStub(
+      toolResult({ error: { code: "RATE_LIMITED", message: "Checking too often — try again in 30s.", retryAfterSeconds: 30 } }, { isError: true }),
+    );
+    await expect(client(stub).assessAgent("https://unknown.example.com/mcp")).rejects.toMatchObject({
+      code: "RATE_LIMITED",
+      retryAfterSeconds: 30,
+    });
+  });
+});

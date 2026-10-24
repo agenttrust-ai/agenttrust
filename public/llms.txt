@@ -151,6 +151,11 @@ POST /api/v1/agents/{slug}/heartbeat
   AgentTrust's own checks.
   `{slug, status, lastHeartbeatAt}`
 
+GET /api/v1/assessments?endpoint_url=<url>
+  The assess_agent result (see MCP below) as `{"data": {...}}`. Read-only:
+  built from stored observations, never contacts the URL. An unknown URL
+  returns decision "insufficient_evidence", never an error.
+
 ## Common errors
 
 - 401 UNAUTHENTICATED — missing, invalid, expired, or revoked key.
@@ -215,17 +220,17 @@ field — AgentTrust doesn't impose that policy for everyone.
 
 ## MCP
 
-No-auth endpoint with only check_agent_trust:
+No-auth endpoint with only check_agent_trust and assess_agent:
 `https://getagenttrust.com/api/mcp/public` (Streamable HTTP).
 
 ### Connect an MCP client
 
 Two endpoints, both Streamable HTTP. Most agents need only the first:
   Public connector — no key (recommended): https://getagenttrust.com/api/mcp/public
-    No authentication. One read-only tool, check_agent_trust.
+    No authentication. Two read-only tools, check_agent_trust and assess_agent.
   Full MCP server — API key: https://getagenttrust.com/api/mcp
-    Every tool except check_agent_trust needs `Authorization: Bearer
-    <API_KEY>`. Adds list_agents, get_agent, get_agent_health and
+    Every tool except check_agent_trust and assess_agent needs
+    `Authorization: Bearer <API_KEY>`. Adds list_agents, get_agent, get_agent_health and
     send_heartbeat.
 
 Claude Code (https://code.claude.com/docs/en/mcp):
@@ -278,8 +283,8 @@ shared files (Claude Code: keep the default local scope; Cursor: use
 
 Endpoint: `https://getagenttrust.com/api/mcp` (GET and POST,
 Streamable HTTP transport). Auth: the same Bearer token as REST, in the
-`Authorization` header — except `check_agent_trust`, below, which needs
-none. `tools/list` works without a key; calling any other tool requires
+`Authorization` header — except `check_agent_trust` and `assess_agent`,
+below, which need none. `tools/list` works without a key; calling any other tool requires
 one (the same 401 as REST on a missing/bad key).
 
 check_agent_trust({endpointUrl}) — pre-invocation trust check for an
@@ -291,6 +296,35 @@ check_agent_trust({endpointUrl}) — pre-invocation trust check for an
   trustDecision } for a known public+active agent.
   Anonymous calls are rate-limited per caller IP; a 429 carries
   retryAfterSeconds.
+
+assess_agent({endpointUrl}) — a use-or-avoid decision for an agent about
+  to call endpointUrl. No API key or account required. Read-only, and
+  never contacts endpointUrl: built only from AgentTrust's stored
+  observations. Returns { assessmentVersion, mode, status, matched,
+  decision, confidence, reasonCodes, reachability, initialRisk, historical,
+  agent, limitations, freshness }:
+    decision: "allow_with_caution" | "avoid" | "insufficient_evidence"
+    confidence: "high" | "medium" | "low" | "none"
+    reasonCodes: machine-readable reasons, e.g. UNKNOWN_ENDPOINT,
+      FEW_OBSERVATIONS, TRANSIENT_NETWORK_FAILURE, PERSISTENT_FAILURE,
+      RECOVERING, SUFFICIENT_HISTORY, OWNERSHIP_UNVERIFIED (new codes may
+      be added)
+    reachability: the latest stored observation (outcome, httpStatus,
+      latencyMs, checkedAt, ageSeconds, fresh) — not a live check
+    initialRisk.level: "low" | "moderate" | "elevated" | "high" | "unknown"
+    historical: the reliability score and trustDecision, unchanged (null
+      when unmatched)
+    limitations: what the result does not show; the first always says
+      reachability is not safety
+  Rules: allow_with_caution needs a fresh historical score (healthy,
+  >= 50) or at least two successful observations 10+ minutes apart — one
+  success is never enough. avoid: two or more consecutive failed
+  observations, a down agent that is still failing, a fresh score below
+  50, or a TLS failure or an endpoint resolving into a private network.
+  A single failure that may be temporary, a recovering agent, too few
+  observations, evidence older than 50 hours, or an unknown URL is
+  insufficient_evidence. Same anonymous per-IP rate limit as
+  check_agent_trust.
 
 Tools requiring an API key (each backed by the exact same handler as its
 REST equivalent):
@@ -342,6 +376,10 @@ Functions:
     endpoints. Returns the result it decided on.
   evaluatePolicy(result, policy?) — the same policy check on a result you
     already have; returns the failed requirements (empty = passes).
+  assessAgent(endpointUrl, { timeoutMs?, signal? }?) — the assess_agent
+    decision (see MCP above): decision, confidence, reasonCodes,
+    reachability, initialRisk, historical, limitations, freshness.
+    Requires @getagenttrust/sdk 0.2.0 or later.
   createAgentTrustClient({ endpoint?, timeoutMs?, fetch?, userAgent? }) —
     a client with its own options (default timeout 10000 ms) and the same
     checkAgentTrust/assertTrusted methods.

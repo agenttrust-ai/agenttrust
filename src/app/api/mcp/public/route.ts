@@ -1,6 +1,10 @@
 import { createMcpHandler } from "mcp-handler";
 import { db } from "@/lib/db";
-import { PUBLIC_CONNECTOR_INSTRUCTIONS, registerPublicTrustCheckTool } from "@/lib/mcp/server";
+import {
+  PUBLIC_CONNECTOR_INSTRUCTIONS,
+  registerPublicAssessAgentTool,
+  registerPublicTrustCheckTool,
+} from "@/lib/mcp/server";
 import {
   MCP_SERVER_LIMITS,
   withMcpRequestLimit,
@@ -15,13 +19,15 @@ export const maxDuration = 30;
 /**
  * Public connector endpoint for MCP directories that list servers with no
  * authentication (e.g. Claude's Connectors Directory): exposes only the
- * anonymous, read-only `check_agent_trust` tool. The same check, schemas,
- * rate limiting and telemetry as `/api/mcp`, which is unchanged and still
- * serves the API-key tools. Nothing here reads an Authorization header.
+ * anonymous, read-only `check_agent_trust` and `assess_agent` tools. The
+ * same checks, schemas and rate limiting as `/api/mcp`, which also serves
+ * the API-key tools. Nothing here reads an Authorization header, and
+ * neither tool contacts the endpoint it's asked about.
  */
 const handler = createMcpHandler(
   (server) => {
     registerPublicTrustCheckTool(server, db);
+    registerPublicAssessAgentTool(server, db);
   },
   {
     serverInfo: { name: "agenttrust", version: "1.0.4" },

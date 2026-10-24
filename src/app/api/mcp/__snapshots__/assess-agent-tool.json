@@ -1,0 +1,394 @@
+{
+  "name": "assess_agent",
+  "title": "Assess Agent",
+  "description": "Immediate use-or-avoid decision about an AI agent or MCP server endpoint, for an agent deciding whether to call it. Returns decision (allow_with_caution, avoid, or insufficient_evidence), confidence, reasonCodes, reachability (the latest stored observation, with its age), initialRisk, the historical reliability score and trustDecision (unchanged), limitations, and freshness. Built only from AgentTrust's stored observations: it never contacts endpointUrl. Reachability is not safety: allow_with_caution never means the agent's behavior is safe. Requires no API key.",
+  "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "endpointUrl": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048,
+        "description": "The exact invocation URL of the agent you're about to call. Used only to look up AgentTrust's stored observations of it — this endpoint is never contacted."
+      }
+    },
+    "required": [
+      "endpointUrl"
+    ]
+  },
+  "annotations": {
+    "title": "Assess Agent",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  },
+  "outputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "assessmentVersion": {
+        "type": "string",
+        "const": "1"
+      },
+      "mode": {
+        "type": "string",
+        "const": "cached"
+      },
+      "status": {
+        "type": "string",
+        "const": "complete"
+      },
+      "matched": {
+        "type": "boolean"
+      },
+      "decision": {
+        "type": "string",
+        "enum": [
+          "allow_with_caution",
+          "avoid",
+          "insufficient_evidence"
+        ]
+      },
+      "confidence": {
+        "type": "string",
+        "enum": [
+          "high",
+          "medium",
+          "low",
+          "none"
+        ]
+      },
+      "reasonCodes": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": [
+            "UNKNOWN_ENDPOINT",
+            "NOT_YET_CHECKED",
+            "REACHABLE_AT_LAST_CHECK",
+            "UNREACHABLE_AT_LAST_CHECK",
+            "LAST_CHECK_TIMEOUT",
+            "LAST_CHECK_DNS_ERROR",
+            "LAST_CHECK_CONNECTION_ERROR",
+            "LAST_CHECK_BLOCKED",
+            "LAST_CHECK_TLS_ERROR",
+            "LAST_CHECK_HTTP_ERROR",
+            "TRANSIENT_NETWORK_FAILURE",
+            "ENDPOINT_ERROR_RESPONSE",
+            "PERSISTENT_FAILURE",
+            "RECOVERING",
+            "NO_RECENT_LIVE_CHECK",
+            "STALE_EVIDENCE",
+            "FEW_OBSERVATIONS",
+            "INITIAL_OBSERVATIONS_ONLY",
+            "SUFFICIENT_HISTORY",
+            "NO_HISTORICAL_SCORE",
+            "HISTORICAL_SCORE_STALE",
+            "HISTORICAL_SCORE_LOW",
+            "HISTORICAL_STATUS_DOWN",
+            "HISTORICAL_STATUS_DEGRADED",
+            "OWNERSHIP_VERIFIED",
+            "OWNERSHIP_UNVERIFIED",
+            "EXTERNALLY_OBSERVED",
+            "RECENTLY_REGISTERED"
+          ]
+        }
+      },
+      "reachability": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "reachable",
+              "unreachable",
+              "timeout",
+              "blocked",
+              "not_checked"
+            ]
+          },
+          "checkStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "success",
+                  "http_error",
+                  "timeout",
+                  "dns_error",
+                  "tls_error",
+                  "connection_error",
+                  "ssrf_blocked",
+                  "unknown_error"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "httpStatus": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "latencyMs": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "checkedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ageSeconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "fresh": {
+            "type": "boolean"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "scheduled_check"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "outcome",
+          "checkStatus",
+          "httpStatus",
+          "latencyMs",
+          "checkedAt",
+          "ageSeconds",
+          "fresh",
+          "source"
+        ],
+        "additionalProperties": false
+      },
+      "initialRisk": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": [
+              "low",
+              "moderate",
+              "elevated",
+              "high",
+              "unknown"
+            ]
+          },
+          "observations": {
+            "type": "object",
+            "properties": {
+              "attempts": {
+                "type": "number"
+              },
+              "successful": {
+                "type": "number"
+              },
+              "successfulStreak": {
+                "type": "number"
+              },
+              "streakSpanMinutes": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "attempts",
+              "successful",
+              "successfulStreak",
+              "streakSpanMinutes"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "level",
+          "observations"
+        ],
+        "additionalProperties": false
+      },
+      "historical": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "unknown",
+                  "healthy",
+                  "degraded",
+                  "down"
+                ]
+              },
+              "reliabilityScore": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "reliabilityScoreStatus": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "fresh",
+                  "stale"
+                ]
+              },
+              "reliabilityScoreComputedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "trustDecision": {
+                "type": "object",
+                "properties": {
+                  "recommended": {
+                    "type": "boolean"
+                  },
+                  "confidence": {
+                    "type": "string",
+                    "enum": [
+                      "high",
+                      "medium",
+                      "low",
+                      "insufficient_data"
+                    ]
+                  },
+                  "reasons": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "recommended",
+                  "confidence",
+                  "reasons"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "status",
+              "reliabilityScore",
+              "reliabilityScoreStatus",
+              "reliabilityScoreComputedAt",
+              "trustDecision"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "agent": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "slug": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "owner_registered",
+                  "externally_observed"
+                ]
+              },
+              "verified": {
+                "type": "boolean"
+              },
+              "registeredAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "slug",
+              "name",
+              "source",
+              "verified",
+              "registeredAt"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "limitations": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "freshness": {
+        "type": "object",
+        "properties": {
+          "assessedAt": {
+            "type": "string"
+          },
+          "evidenceAgeSeconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "evidenceExpiresAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "assessedAt",
+          "evidenceAgeSeconds",
+          "evidenceExpiresAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "required": [
+      "assessmentVersion",
+      "mode",
+      "status",
+      "matched",
+      "decision",
+      "confidence",
+      "reasonCodes",
+      "reachability",
+      "initialRisk",
+      "historical",
+      "agent",
+      "limitations",
+      "freshness"
+    ],
+    "additionalProperties": false
+  }
+}

@@ -1,5 +1,6 @@
 import { AgentTrustError, NotTrustedError } from "./errors.js";
 import type {
+  AgentAssessment,
   AgentTrustClientOptions,
   CheckOptions,
   MatchedTrustResult,
@@ -69,6 +70,14 @@ export interface AgentTrustClient {
     policy?: TrustPolicy,
     options?: CheckOptions,
   ): Promise<TrustCheckResult>;
+  /**
+   * A use-or-avoid decision about the endpoint (`allow_with_caution`,
+   * `avoid` or `insufficient_evidence`) with reason codes, evidence,
+   * limitations and freshness. Read-only; never contacts that URL.
+   * Reachability is not safety: `allow_with_caution` never means the
+   * agent's behavior is safe.
+   */
+  assessAgent(endpointUrl: string, options?: CheckOptions): Promise<AgentAssessment>;
 }
 
 /** The parsed URL when `value` is an absolute http:// or https:// URL, otherwise null. */
@@ -169,11 +178,36 @@ function toTrustCheckResult(value: unknown): TrustCheckResult {
   };
 }
 
+const ASSESSMENT_DECISIONS = new Set(["allow_with_caution", "avoid", "insufficient_evidence"]);
+
+/**
+ * Validates the parts of an assessment callers act on; extra fields are
+ * ignored. An unrecognized decision is rejected rather than passed on, so
+ * a caller's switch over the three decisions can't silently fall through.
+ */
+function toAgentAssessment(value: unknown): AgentAssessment {
+  if (
+    !isRecord(value) ||
+    typeof value.matched !== "boolean" ||
+    typeof value.decision !== "string" ||
+    !ASSESSMENT_DECISIONS.has(value.decision) ||
+    typeof value.confidence !== "string" ||
+    !Array.isArray(value.reasonCodes) ||
+    !Array.isArray(value.limitations) ||
+    !isRecord(value.reachability) ||
+    !isRecord(value.initialRisk) ||
+    !isRecord(value.freshness)
+  ) {
+    throw new AgentTrustError("PROTOCOL_ERROR", "assess_agent returned an unexpected result.");
+  }
+  return value as unknown as AgentAssessment;
+}
+
 /** Turns an MCP tool error into a typed error. */
-function toolError(result: Record<string, unknown>): AgentTrustError {
+function toolError(result: Record<string, unknown>, toolName: string): AgentTrustError {
   const structured = isRecord(result.structuredContent) ? result.structuredContent.error : undefined;
   if (isRecord(structured)) {
-    const message = typeof structured.message === "string" ? structured.message : "check_agent_trust failed.";
+    const message = typeof structured.message === "string" ? structured.message : `${toolName} failed.`;
     if (structured.code === "RATE_LIMITED") {
       const details = isRecord(structured.details) ? structured.details : {};
       return new AgentTrustError("RATE_LIMITED", message, {
@@ -188,7 +222,7 @@ function toolError(result: Record<string, unknown>): AgentTrustError {
         .join(" ")
         .trim()
     : "";
-  return new AgentTrustError("TOOL_ERROR", text || "check_agent_trust failed.");
+  return new AgentTrustError("TOOL_ERROR", text || `${toolName} failed.`);
 }
 
 /** The policy requirements a result fails, in plain language. Empty means it passes. */
@@ -265,7 +299,8 @@ export function createAgentTrustClient(options: AgentTrustClientOptions = {}): A
   const userAgent = options.userAgent ?? `agenttrust-sdk/${SDK_VERSION}`;
   let nextId = 1;
 
-  async function checkAgentTrust(endpointUrl: string, check: CheckOptions = {}): Promise<TrustCheckResult> {
+  /** Calls one endpointUrl tool on the AgentTrust MCP endpoint and returns its structuredContent. */
+  async function callEndpointTool(toolName: string, endpointUrl: string, check: CheckOptions): Promise<unknown> {
     const url = typeof endpointUrl === "string" ? parseHttpUrl(endpointUrl.trim()) : null;
     if (!url) {
       throw new AgentTrustError(
@@ -317,7 +352,7 @@ export function createAgentTrustClient(options: AgentTrustClientOptions = {}): A
             jsonrpc: "2.0",
             id: nextId++,
             method: "tools/call",
-            params: { name: "check_agent_trust", arguments: { endpointUrl: endpointUrl.trim() } },
+            params: { name: toolName, arguments: { endpointUrl: endpointUrl.trim() } },
           }),
         });
       } catch (error) {
@@ -367,12 +402,20 @@ export function createAgentTrustClient(options: AgentTrustClientOptions = {}): A
       if (!isRecord(result)) {
         throw new AgentTrustError("PROTOCOL_ERROR", "AgentTrust returned no tool result.");
       }
-      if (result.isError === true) throw toolError(result);
-      return toTrustCheckResult(result.structuredContent);
+      if (result.isError === true) throw toolError(result, toolName);
+      return result.structuredContent;
     } finally {
       clearTimeout(timer);
       check.signal?.removeEventListener("abort", onAbort);
     }
+  }
+
+  async function checkAgentTrust(endpointUrl: string, check: CheckOptions = {}): Promise<TrustCheckResult> {
+    return toTrustCheckResult(await callEndpointTool("check_agent_trust", endpointUrl, check));
+  }
+
+  async function assessAgent(endpointUrl: string, check: CheckOptions = {}): Promise<AgentAssessment> {
+    return toAgentAssessment(await callEndpointTool("assess_agent", endpointUrl, check));
   }
 
   async function assertTrusted(
@@ -387,7 +430,7 @@ export function createAgentTrustClient(options: AgentTrustClientOptions = {}): A
     return result;
   }
 
-  return { checkAgentTrust, assertTrusted };
+  return { checkAgentTrust, assertTrusted, assessAgent };
 }
 
 let defaultClient: AgentTrustClient | undefined;
@@ -408,4 +451,9 @@ export function assertTrusted(
   options?: CheckOptions,
 ): Promise<TrustCheckResult> {
   return getDefaultClient().assertTrusted(endpointUrl, policy, options);
+}
+
+/** `assessAgent` with the default client (public endpoint, 10 s timeout). */
+export function assessAgent(endpointUrl: string, options?: CheckOptions): Promise<AgentAssessment> {
+  return getDefaultClient().assessAgent(endpointUrl, options);
 }

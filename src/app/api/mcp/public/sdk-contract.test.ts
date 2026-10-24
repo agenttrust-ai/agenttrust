@@ -167,3 +167,29 @@ describe("/docs Quick Start curl example ↔ /api/mcp/public", () => {
     });
   });
 });
+
+describe("SDK assessAgent ↔ /api/mcp/public contract", () => {
+  it("parses a real unmatched assessment", async () => {
+    const assessment = await sdkFrom("198.51.100.70").assessAgent("https://never-assessed.example.com/mcp");
+    expect(assessment).toMatchObject({
+      assessmentVersion: "1",
+      matched: false,
+      decision: "insufficient_evidence",
+      confidence: "none",
+      reasonCodes: ["UNKNOWN_ENDPOINT"],
+      historical: null,
+    });
+  });
+
+  it("parses a real matched assessment whose historical trustDecision equals checkAgentTrust's", async () => {
+    await publicAgentWithScore("https://sdk-assess.acme.dev/v1/invoke", "SDK Assess Bot");
+    const sdk = sdkFrom("198.51.100.71");
+    const [assessment, check] = await Promise.all([
+      sdk.assessAgent("https://sdk-assess.acme.dev/v1/invoke"),
+      sdk.checkAgentTrust("https://sdk-assess.acme.dev/v1/invoke"),
+    ]);
+    expect(assessment.matched).toBe(true);
+    expect(["allow_with_caution", "avoid", "insufficient_evidence"]).toContain(assessment.decision);
+    expect(check.matched && assessment.historical?.trustDecision).toEqual(check.matched ? check.trustDecision : undefined);
+  });
+});

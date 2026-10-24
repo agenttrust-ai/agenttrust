@@ -29,7 +29,8 @@ about to call.
 ### MCP
 
 Add the public connector `https://getagenttrust.com/api/mcp/public`
-(Streamable HTTP, no authentication; one read-only tool, `check_agent_trust`).
+(Streamable HTTP, no authentication; two read-only tools, `check_agent_trust`
+and `assess_agent`).
 In Claude Code:
 
 ```bash

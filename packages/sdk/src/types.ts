@@ -74,3 +74,70 @@ export interface CheckOptions {
   /** Aborts the request. */
   signal?: AbortSignal;
 }
+
+/** What `assessAgent` decided. Reachability is not safety: `allow_with_caution` never means the agent's behavior is safe. */
+export type AssessmentDecision =
+  "allow_with_caution" | "avoid" | "insufficient_evidence";
+
+/** How strongly the evidence supports the decision. `none` comes with `insufficient_evidence`. */
+export type AssessmentConfidence = "high" | "medium" | "low" | "none";
+
+export type ReachabilityOutcome =
+  "reachable" | "unreachable" | "timeout" | "blocked" | "not_checked";
+
+export type InitialRiskLevel =
+  "low" | "moderate" | "elevated" | "high" | "unknown";
+
+/** The result of `assessAgent`, as returned by AgentTrust's `assess_agent` tool. */
+export interface AgentAssessment {
+  assessmentVersion: string;
+  /** "cached": built only from AgentTrust's stored observations. */
+  mode: string;
+  status: string;
+  matched: boolean;
+  decision: AssessmentDecision;
+  confidence: AssessmentConfidence;
+  /** Machine-readable reasons, e.g. "UNKNOWN_ENDPOINT", "FEW_OBSERVATIONS", "OWNERSHIP_UNVERIFIED". New codes may be added. */
+  reasonCodes: string[];
+  reachability: {
+    outcome: ReachabilityOutcome;
+    checkStatus: string | null;
+    httpStatus: number | null;
+    latencyMs: number | null;
+    checkedAt: string | null;
+    ageSeconds: number | null;
+    fresh: boolean;
+    source: string | null;
+  };
+  initialRisk: {
+    level: InitialRiskLevel;
+    observations: {
+      attempts: number;
+      successful: number;
+      successfulStreak: number;
+      streakSpanMinutes: number;
+    };
+  };
+  /** The existing reliability score and trustDecision, unchanged. Null when unmatched. */
+  historical: {
+    status: AgentStatus;
+    reliabilityScore: number | null;
+    reliabilityScoreStatus: ReliabilityScoreStatus;
+    reliabilityScoreComputedAt: string | null;
+    trustDecision: TrustDecision;
+  } | null;
+  agent: {
+    slug: string;
+    name: string;
+    source: string;
+    verified: boolean;
+    registeredAt: string;
+  } | null;
+  /** What this assessment does not show. The first entry always states that reachability is not safety. */
+  limitations: string[];
+  freshness: {
+    assessedAt: string;
+    evidenceAgeSeconds: number | null;
+    evidenceExpiresAt: string | null;
+  };
+}
