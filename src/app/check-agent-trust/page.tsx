@@ -13,6 +13,8 @@ import { EXAMPLE_ENDPOINT, PRIMARY_EXAMPLE } from "@/components/trust/examples";
 import { NotMatchedReport, TrustReport, type TrustReportData } from "@/components/trust/trust-report";
 import { Callout } from "@/components/ui/callout";
 import { IconAlert, IconCheck, IconClock } from "@/components/ui/icons";
+import { CLAUDE_CODE_ADD_COMMAND, PUBLIC_MCP_URL } from "../docs/quick-start";
+import { SDK_INSTALL } from "../docs/sdk-reference";
 
 const TITLE = "Check AI Agent Trust Before Invocation | AgentTrust";
 const DESCRIPTION =
@@ -157,6 +159,14 @@ export default async function CheckAgentTrustPage({
               </p>
             </>
           )}
+          {(check.kind === "matched" || check.kind === "not_matched") && (
+            <p className="text-xs text-muted">
+              Run this check from your own agent:{" "}
+              <a href="#mcp-heading" className={LINK}>
+                MCP connector or TypeScript SDK ↓
+              </a>
+            </p>
+          )}
           {check.kind === "rate_limited" && (
             <Callout tone="neutral" icon={IconClock} role="status" title="Too many checks from your network">
               {check.message}
@@ -199,9 +209,14 @@ export default async function CheckAgentTrustPage({
         </h2>
         <p className="mt-2 text-sm text-muted">
           The same check is the anonymous, read-only MCP tool{" "}
-          <code className="font-mono text-xs text-foreground">check_agent_trust</code> at{" "}
-          <code className="font-mono text-xs break-all text-foreground">https://getagenttrust.com/api/mcp</code>{" "}
-          (Streamable HTTP).
+          <code className="font-mono text-xs text-foreground">
+            check_agent_trust
+          </code>{" "}
+          at the public connector{" "}
+          <code className="font-mono text-xs break-all text-foreground">
+            {PUBLIC_MCP_URL}
+          </code>{" "}
+          (Streamable HTTP, no key).
         </p>
         <ul className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
           {MCP_FACTS.map((fact) => (
@@ -220,6 +235,31 @@ export default async function CheckAgentTrustPage({
         <CodeBlock label="check_agent_trust example result">
           {JSON.stringify(PRIMARY_EXAMPLE, null, 2)}
         </CodeBlock>
+        <p className="mt-6 text-sm font-medium">Use it in your agent</p>
+        <p className="mt-2 text-sm text-muted">
+          Connect an MCP client. In Claude Code:
+        </p>
+        <CodeBlock label="Add AgentTrust to Claude Code">
+          {CLAUDE_CODE_ADD_COMMAND}
+        </CodeBlock>
+        <p className="mt-2 text-sm text-muted">
+          Claude Desktop, Cursor and others:{" "}
+          <Link href="/docs#mcp-clients" className={LINK}>
+            Connect an MCP client
+          </Link>
+          .
+        </p>
+        <p className="mt-3 text-sm text-muted">
+          Prefer TypeScript?{" "}
+          <code className="font-mono text-xs break-all text-foreground">
+            {SDK_INSTALL}
+          </code>{" "}
+          runs the same check from your Node.js code —{" "}
+          <Link href="/docs#sdk" className={LINK}>
+            TypeScript SDK
+          </Link>
+          .
+        </p>
         <p className="mt-4 text-sm text-muted">
           Full request/response detail, the REST equivalent and the other MCP
           tools are in the{" "}
