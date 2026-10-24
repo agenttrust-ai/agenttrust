@@ -6,6 +6,41 @@ entry above the previous one, not by editing history.
 
 ---
 
+## TRUST REPORT TRACE ROW — 280 px OVERFLOW FIXED — LIVE — 2026-10-24
+
+Fixes the 280 px limitation recorded in the Issue 2 entry below.
+
+**Change.** Commit `890013e` ("fix(ui): prevent trust report overflow on
+narrow screens"); only `src/components/check/resolution-trace.tsx` and
+`src/components/network/network.test.ts`. The decorative trace row above a
+result ("Endpoint — observations — Trust report / No match") gains
+`flex-wrap`. Where the row doesn't fit (below about 301 px, or with larger
+browser text), the last label moves to a second line instead of overflowing.
+The screen-reader text is unchanged.
+
+**Deployment.** Automatic on push (`source: git`, nothing triggered by
+hand): `dpl_5NasgyfhYXseHRDHjQbjYavCmJ9M`, production, created 07:48:41 and
+READY 2026-10-24 07:48:59 UTC, aliased to `getagenttrust.com`.
+
+**Evidence.**
+- Before the commit: full suite 57 files, 1,301 tests passed, 0 failed
+  (one new test pins the row's classes for both result types and fails
+  without `flex-wrap`); typecheck, ESLint and production build passed.
+- Live, one read-only check of
+  `https://agenttrust-umber.vercel.app/api/test-agent`: Recommended,
+  healthy, reliability 100/100. Measured on that one page load:
+  - 280 px: page overflow 5 px → 0 px; the row fits (248 px) and
+    "Trust report" wraps to a second line.
+  - 320, 375 and 1024 px: one line, with "Trust report" at the same
+    position as before the change; no page overflow.
+- "No match" result: not checked live (checking an unknown URL can queue a
+  lookup). Before deploy, its rendered markup was measured in the browser:
+  it wraps at 280 px and is identical to before at 320, 375 and 1024 px.
+
+**Result: PASS.**
+
+---
+
 ## /check-agent-trust DEVELOPER NEXT STEPS (ISSUE 2) — LIVE — 2026-10-24
 
 **Change.** Commit `fb07b8e` ("feat(check): point /check-agent-trust
