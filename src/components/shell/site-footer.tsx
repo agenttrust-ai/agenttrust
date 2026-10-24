@@ -2,7 +2,16 @@ import Link from "next/link";
 import { IconExternal } from "@/components/ui/icons";
 import { LogoMark } from "./logo";
 
-type FooterLink = { href: string; label: string; external?: boolean };
+/**
+ * `staticFile`: a file in public/ rather than a page. It gets a plain <a>,
+ * because next/link would prefetch it as a page (`?_rsc=…`), which 404s.
+ */
+type FooterLink = {
+  href: string;
+  label: string;
+  external?: boolean;
+  staticFile?: boolean;
+};
 
 const GROUPS: { title: string; links: FooterLink[] }[] = [
   {
@@ -20,7 +29,7 @@ const GROUPS: { title: string; links: FooterLink[] }[] = [
       { href: "/docs#mcp", label: "MCP server" },
       { href: "/docs#sdk", label: "TypeScript SDK" },
       { href: "/docs#getting-started", label: "REST API" },
-      { href: "/llms.txt", label: "llms.txt" },
+      { href: "/llms.txt", label: "llms.txt", staticFile: true },
       {
         href: "https://github.com/agenttrust-ai/agenttrust",
         label: "GitHub",
@@ -57,6 +66,10 @@ export function SiteFooter() {
                     <a href={link.href} rel="noopener noreferrer" className={LINK}>
                       {link.label}
                       <IconExternal className="size-3.5" />
+                    </a>
+                  ) : link.staticFile ? (
+                    <a href={link.href} className={LINK}>
+                      {link.label}
                     </a>
                   ) : (
                     <Link href={link.href} className={LINK}>

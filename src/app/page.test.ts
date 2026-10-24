@@ -1,3 +1,4 @@
+import { isValidElement, type ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SiteFooter } from "@/components/shell/site-footer";
@@ -115,5 +116,54 @@ describe("home page MCP box: public connector first, keyed server labelled", () 
 
   it("keeps the check_agent_trust tool-call example", () => {
     expect(text(developers)).toMatch(/"name": "check_agent_trust"/);
+  });
+});
+
+describe("site footer llms.txt link", () => {
+  /** Every element with an href in the footer's (unrendered) element tree, and whether it's a plain <a>. */
+  const hrefElements = (node: ReactNode): [string, boolean][] => {
+    if (Array.isArray(node)) return node.flatMap(hrefElements);
+    if (!isValidElement<{ href?: string; children?: ReactNode }>(node))
+      return [];
+    const own: [string, boolean][] = node.props.href
+      ? [[node.props.href, node.type === "a"]]
+      : [];
+    return [...own, ...hrefElements(node.props.children)];
+  };
+  const elements = new Map(hrefElements(SiteFooter()));
+  const footer = renderToStaticMarkup(SiteFooter());
+  const anchors = [...footer.matchAll(/<a ([^>]*)>([\s\S]*?)<\/a>/g)].map(
+    (match) => ({ attrs: match[1], label: text(match[2]).trim() }),
+  );
+
+  it("renders /llms.txt as a plain <a> (no next/link prefetch, which 404s for a static file)", () => {
+    expect(elements.get("/llms.txt")).toBe(true);
+  });
+
+  it("keeps next/link for the footer's page links", () => {
+    for (const href of [
+      "/check-agent-trust",
+      "/dashboard",
+      "/docs",
+      "/privacy",
+      "/docs#mcp",
+      "/docs#sdk",
+      "/docs#getting-started",
+    ]) {
+      expect(elements.get(href), href).toBe(false);
+    }
+  });
+
+  it("keeps the llms.txt link's text and styling, in the same tab, like its neighbours", () => {
+    const llms = anchors.find((anchor) =>
+      anchor.attrs.includes('href="/llms.txt"'),
+    );
+    const rest = anchors.find((anchor) =>
+      anchor.attrs.includes('href="/docs#getting-started"'),
+    );
+    expect(llms?.label).toBe("llms.txt");
+    const classOf = (attrs = "") => attrs.match(/class="([^"]*)"/)?.[1];
+    expect(classOf(llms?.attrs)).toBe(classOf(rest?.attrs));
+    expect(llms?.attrs).not.toMatch(/target=|rel=/);
   });
 });
