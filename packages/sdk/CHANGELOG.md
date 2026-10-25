@@ -2,6 +2,22 @@
 
 All notable changes to `@getagenttrust/sdk` are documented here. This project follows [Semantic Versioning](https://semver.org); while the version is `0.x`, minor releases may include breaking changes.
 
+## 0.2.0
+
+### Added
+
+- `assessAgent(endpointUrl, options?)` returns a use-or-avoid decision about an endpoint — `decision` (`allow_with_caution`, `avoid` or `insufficient_evidence`), `confidence`, machine-readable `reasonCodes`, the latest stored `reachability` observation and its age, an `initialRisk` level, the unchanged `historical` reliability score and `trustDecision`, `limitations` and `freshness`. It calls AgentTrust's `assess_agent` tool on the same public endpoint, with the same options, errors and rate limit as `checkAgentTrust`, and never contacts the endpoint being assessed. Also available as a method on clients from `createAgentTrustClient`.
+- Types for the result: `AgentAssessment`, `AssessmentDecision`, `AssessmentConfidence`, `ReachabilityOutcome` and `InitialRiskLevel`.
+- `allow_with_caution` needs either a current historical reliability score or at least two successful observations at least 10 minutes apart. Reachability is not safety: it never means the agent's behavior is safe.
+
+### Changed
+
+- The `AgentTrustClient` interface has a new `assessAgent` method. Code that only uses clients from `createAgentTrustClient` is unaffected; code that implements the interface itself (for example a test double) needs to add it.
+- The `User-Agent` sent with each request now reports `agenttrust-sdk/0.2.0`.
+- An `assessAgent` result with an unrecognized `decision` is rejected with `PROTOCOL_ERROR` rather than passed on.
+
+`checkAgentTrust`, `assertTrusted`, `evaluatePolicy` and `createAgentTrustClient` behave exactly as in 0.1.3, with the same results and error messages. `assessAgent` needs AgentTrust's server to offer the `assess_agent` tool.
+
 ## 0.1.3
 
 ### Documentation

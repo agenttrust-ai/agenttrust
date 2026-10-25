@@ -1,6 +1,6 @@
 {
   "name": "@getagenttrust/sdk",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "description": "Check an AI agent or MCP server endpoint with AgentTrust before you connect to it.",
   "license": "MIT",
   "type": "module",
