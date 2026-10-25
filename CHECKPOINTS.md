@@ -6,6 +6,58 @@ entry above the previous one, not by editing history.
 
 ---
 
+## SDK @getagenttrust/sdk 0.1.1 — EXTERNAL SMOKE TEST — 2026-10-25
+
+**Scope.** An external developer's view of the old 0.1.1 release: fresh
+project outside the repository, Node.js v24.18.1, no API key. npm marks
+0.1.1 deprecated ("Security fix: non-boolean policy values could fail
+open. Upgrade to @getagenttrust/sdk@0.1.2 or later."); `latest` is 0.2.0.
+
+**Works.**
+- Install: `npm install @getagenttrust/sdk@0.1.1` from `registry.npmjs.org`
+  — 1 package, 0 vulnerabilities; installed version and `SDK_VERSION`
+  0.1.1 (gitHead `0827a49`); `npm audit signatures` verifies its
+  provenance attestation.
+- Exports and docs: `checkAgentTrust`, `assertTrusted`, `evaluatePolicy`,
+  `createAgentTrustClient`, `AgentTrustError`, `NotTrustedError`,
+  `SDK_VERSION`, `DEFAULT_ENDPOINT`, `DEFAULT_TIMEOUT_MS`, with TypeScript
+  types; no runtime dependencies; README and `engines` say Node.js 18 or
+  later. ESM `import` works.
+- Live anonymous read-only calls (3 requests):
+  - `checkAgentTrust` on the test agent (1,173 ms): `support-bot`, healthy,
+    verified, reliability 99.85 (fresh), recommended, confidence high.
+  - `checkAgentTrust` on the README's example URL (597 ms):
+    `{ matched: false }`.
+  - `assertTrusted` on the test agent with the README's policy (418 ms):
+    passed.
+- Error handling (local, injected `fetch`, no network): `timeoutMs: 1` →
+  `TIMEOUT`, a non-URL → `INVALID_URL`, a pre-aborted signal → `ABORTED`.
+
+**Issues found in 0.1.1.**
+1. Security — non-boolean policy values fail open:
+   `evaluatePolicy({ matched: false }, { allowUnknown: "false" })` returns
+   no failures, so the string `"false"` accepts an unknown endpoint;
+   `requireRecommended: ""` likewise accepts a non-recommended one.
+2. Security — a URL with credentials is not rejected: for
+   `https://user:secret@…` the SDK sends the URL, credentials included, to
+   AgentTrust (observed in the request body with an injected `fetch`).
+3. Compatibility — `require("@getagenttrust/sdk")` fails with
+   `ERR_PACKAGE_PATH_NOT_EXPORTED`; only ESM `import` works.
+4. Documentation — the README's "Options" TypeScript example doesn't
+   compile as written (undefined `url` and `signal`: TS2552, TS18004); the
+   other two examples compile. The "Check an endpoint" example also uses
+   `mcp.example.com`, which returns `matched: false`, while its comment
+   shows a healthy result.
+
+The SDK CHANGELOG reports issues 1–3 fixed in 0.1.2 and issue 4 in 0.1.3.
+This test didn't re-check those versions.
+
+**Result: PASS** for installation and the documented read-only API;
+0.1.1 itself is not fit for use because of issues 1 and 2. Point
+developers to the current release.
+
+---
+
 ## PRODUCTION DEPLOYMENT FOR 0a2cd0f VERIFIED — 2026-10-25
 
 **Deployment.** Commit `0a2cd0f` ("docs(checkpoints): record scheduled cron
