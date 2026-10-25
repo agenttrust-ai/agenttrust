@@ -6,6 +6,42 @@ entry above the previous one, not by editing history.
 
 ---
 
+## SCHEDULED CRONS VERIFIED AFTER STAGE 2 AND PHASE A — 2026-10-25
+
+**Why.** The Stage 2 and health-check User-Agent entries left the first
+scheduled cron runs on the new deployments pending. The automated check
+for them, set for 2026-10-25 03:45 UTC, was inconclusive: it ran late
+(06:06 UTC) and every Vercel query returned no data, with errors
+suppressed. Re-run read-only at 09:19 UTC from the repository directory,
+the same queries returned data. The failure was in the verification
+script, not the cron jobs.
+
+**Verified (read-only; neither cron triggered manually).**
+
+| Cron (`vercel.json`) | Schedule | Latest run | Deployment | Result | Duration / peak memory |
+|---|---|---|---|---|---|
+| `/api/internal/cron/run-health-checks` | `0 0 * * *` | 2026-10-25 00:00:12 UTC | `dpl_5JuyQyjjjhHcY3dkpiNbABQJpfNK` (Phase A) | HTTP 200 | 41.5 s / 293 MB |
+| `/api/internal/cron/discover-mcp-agents` | `30 3 * * *` | 2026-10-25 03:30:45 UTC | `dpl_7UqwjRNqEJidCQJ2scpkUKpSdSZG` (`ba51d06`) | HTTP 200 | 1.9 s / 245 MB |
+
+- On schedule: both ran once a day, HTTP 200, every day from 2026-10-20 to
+  10-25 (daily metrics); the logs for 10-24 and 10-25 show them at
+  00:00:12 and 03:30:45 UTC both days. Health-check duration has been
+  39–43 s a day since 2026-10-18, well within its 300 s limit.
+- No cron execution errors: the 10-24 and 10-25 runs are info level with no
+  error logs.
+- Since the Stage 2 deploy (2026-10-24 09:21:38 UTC): **0** 5xx of 6,549
+  function calls, on any route; no 413 responses.
+- The 00:00 UTC health check reached `/api/test-agent` with
+  `AgentTrust-HealthCheck/1.0 (+https://getagenttrust.com)` (Vercel
+  metrics, 00:24:59 UTC), and no User-Agent naming agenttrust.dev appeared
+  after that fix's deploy.
+
+**Result: PASS.** Resolves the pending cron and 5xx check in the Stage 2
+entry and the pending User-Agent check in the health-check User-Agent
+entry.
+
+---
+
 ## PRODUCTION DEPLOYMENT FOR 02fad80 VERIFIED — 2026-10-25
 
 **Deployment.** Commit `02fad80` ("docs(checkpoints): record /api/mcp HTTP
