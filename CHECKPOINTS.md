@@ -6,6 +6,28 @@ entry above the previous one, not by editing history.
 
 ---
 
+## PRODUCTION DEPLOYMENT FOR 0a2cd0f VERIFIED — 2026-10-25
+
+**Deployment.** Commit `0a2cd0f` ("docs(checkpoints): record scheduled cron
+verification"), `CHECKPOINTS.md` only. Deployment
+`dpl_H8pr6aa1PHLVYWmVrKefZnh7DtvG`, automatic on push, **READY**
+2026-10-25 09:30:43 UTC; `getagenttrust.com` points at it. The previous
+documentation deployment, `dpl_EBN1ftyLdtwdUGbWvdtEKeutAkZf` (`7dda4f2`),
+was also verified: READY 09:07:08 UTC, 0 build errors, 0 5xx in 51 calls.
+
+**Verified (read-only, 2026-10-25 09:40 UTC).**
+- Homepage 200.
+- Build: 0 errors, "Build Completed"; stderr only CLI status lines and npm
+  warnings, as in earlier builds.
+- 5xx: **0** of 104 function calls after the deploy (200 × 79, 202 × 16,
+  405 × 5, 400 × 4); no 5xx or error-level logs. The 405s and 400s are
+  client responses; the 400s look like the SentinelOracle pattern, cause
+  not checked.
+
+**Result: PASS.**
+
+---
+
 ## SCHEDULED CRONS VERIFIED AFTER STAGE 2 AND PHASE A — 2026-10-25
 
 **Why.** The Stage 2 and health-check User-Agent entries left the first
