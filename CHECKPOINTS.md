@@ -6,6 +6,54 @@ entry above the previous one, not by editing history.
 
 ---
 
+## SDK @getagenttrust/sdk 0.1.3 — INDEPENDENT EXTERNAL SMOKE TEST — 2026-10-25
+
+**Scope.** Fresh project outside the repository, Node.js v24.18.1,
+TypeScript 5.9.3, no API key. Judged on the installed package's behavior
+and its README, not on CHANGELOG claims.
+
+**Two kinds of test.**
+- Production, read-only: 2 anonymous calls to `/api/mcp/public` (test 2
+  only).
+- Mocked: tests 3, 4, 5 and 7 inject a `fetch` that answers like the MCP
+  server and records every request, so they make no network calls; test 6
+  compiles only.
+
+| # | Test | Result | Evidence |
+|---|---|---|---|
+| 1 | Install, exact version, provenance | **PASS** | 1 package from `registry.npmjs.org/@getagenttrust/sdk/-/sdk-0.1.3.tgz`, no dependencies, 0 vulnerabilities; installed version and `SDK_VERSION` 0.1.3; not deprecated |
+| 2 | Read-only `checkAgentTrust` and `assertTrusted` (production) | **PASS** | `checkAgentTrust` on the test agent (1,253 ms): `support-bot`, healthy, verified, reliability 99.85 (fresh), recommended, confidence high; `assertTrusted` with the README's policy (617 ms): passed |
+| 3 | String `"false"` can't bypass policy (mocked) | **PASS** | `allowUnknown: "false"`, `requireRecommended: ""`, `requireRecommended: "false"`, `requireVerified: "true"` and `allowUnknown: 0` each throw `TypeError` ("policy.… must be true or false.") from both `assertTrusted` and `evaluatePolicy`, with 0 requests. Control: `allowUnknown: false` → `NOT_TRUSTED`, `true` → accepted |
+| 4 | Credentials in the URL rejected before any request (mocked) | **PASS** | `user:…@`, `user@` and `:…@` URLs → `INVALID_URL` from `checkAgentTrust` and `assertTrusted`, 0 requests, password not in the message |
+| 5 | CommonJS `require()` (mocked call) | **PASS on Node.js 24** | `require("@getagenttrust/sdk")` in a `.cjs` file loads all 9 exports (`SDK_VERSION` 0.1.3); a mocked check and the credential rejection work through it; a `.cts` file with `import … = require()` compiles |
+| 6 | README TypeScript examples compile | **PASS** | All 5 examples, extracted as written, compile with 0 errors (strict; NodeNext and Bundler); all use the monitored test agent |
+| 7 | Timeout, invalid URL, abort (mocked) | **PASS** | No answer with `timeoutMs: 50` → `TIMEOUT` after 51 ms; `"not a url"`, `ftp://…`, a relative path and `""` → `INVALID_URL`, 0 requests; pre-aborted signal and abort mid-request → `ABORTED` (a pre-aborted signal still reaches the injected `fetch`, already aborted, so nothing is sent) |
+
+**Provenance.** `npm audit signatures`: 1 verified registry signature, 1
+verified attestation. The SLSA v1 attestation names
+`agenttrust-ai/agenttrust`, `refs/heads/main`,
+`.github/workflows/publish-sdk.yml`, commit `e4b668a` and run 39412143701;
+the registry `gitHead` is that commit, and the attested sha512
+(`6b0ab92f…`) matches the registry tarball's integrity.
+
+**0.1.1 issues not reproduced.** The four issues found in 0.1.1 (entry
+below) do not occur in 0.1.3, checked directly here: non-boolean policy
+values throw `TypeError` (test 3), credential URLs are rejected before any
+request (test 4), `require()` works (test 5), and the README examples
+compile (test 6). The "Check an endpoint" example now uses the test agent.
+
+**UNVERIFIED.**
+- Node.js 18, 20 and 22: only Node.js 24 was tested. The README says
+  `require()` needs Node.js 20.19+ or 22.12+; that wasn't checked. No claim
+  of compatibility across Node versions.
+- Running the README examples: compiled only, not executed (to stay
+  within the anonymous rate limit).
+
+**Result: PASS** (7 of 7, on Node.js 24). Only 2 anonymous read-only
+production calls; no API key.
+
+---
+
 ## SDK @getagenttrust/sdk 0.1.1 — EXTERNAL SMOKE TEST — 2026-10-25
 
 **Scope.** An external developer's view of the old 0.1.1 release: fresh
