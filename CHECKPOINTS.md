@@ -6,6 +6,132 @@ entry above the previous one, not by editing history.
 
 ---
 
+## ASSESS_AGENT (PHASE A) LIVE; SDK @getagenttrust/sdk 0.2.0 PUBLISHED — 2026-10-25
+
+**What.** `assess_agent` gives an AI agent an immediate, machine-readable
+use-or-avoid decision about an endpoint: `decision` (`allow_with_caution`,
+`avoid` or `insufficient_evidence`), `confidence` (`high`, `medium`, `low`,
+`none`), `reasonCodes`, the latest stored `reachability` observation and its
+age, an `initialRisk` level, the unchanged `historical` score and
+`trustDecision`, `limitations` and `freshness`. It reads stored data only and
+never contacts the endpoint being assessed. Policy: `allow_with_caution`
+needs a fresh historical score or at least 2 successful observations at
+least 10 minutes apart; one transient or HTTP-error failure, a recovering
+agent, little or stale evidence, or an unknown endpoint gives
+`insufficient_evidence`; `avoid` needs 2+ consecutive failures, a `down`
+agent still failing, a fresh score below 50, or a deterministic failure (TLS
+error, SSRF-blocked endpoint). Reachability is not safety, and every
+response says so.
+
+Available anonymously as an MCP tool on `/api/mcp/public` (beside
+`check_agent_trust`, sharing its 10/min per IP and 300/min global limit), on
+the keyed `/api/mcp`, and as REST `GET /api/v1/assessments?endpoint_url=`
+(API key, 100/min per key). The SDK adds `assessAgent()`.
+
+**Phase A deployment.** Commit `c4f7a68` ("feat(assessment): assess_agent —
+immediate use-or-avoid decisions for AI agents (Phase A)"), 27 files:
+server, docs, tests and SDK source. No migration and no change to cron,
+scoring, auth or telemetry. Deployment `dpl_5JuyQyjjjhHcY3dkpiNbABQJpfNK`,
+automatic on push, READY 2026-10-24 23:47:06 UTC (region, max duration,
+crons and domains unchanged).
+- Validation: full suite 1,379 tests passed, 0 failed (new: 32
+  decision-engine, 11 MCP tool and 4 REST tests). Immediately before the
+  commit, with the SDK release files held back: typecheck, ESLint, the 353
+  related tests and the production build passed again.
+- Live (read-only): the 5 existing `/api/mcp` tools and `initialize`
+  byte-identical to the committed snapshots; `assess_agent` on both
+  endpoints, matching its snapshot, with identical schemas and marked
+  read-only; public `check_agent_trust` definition and test-agent result
+  identical to the pre-deploy baseline (only the public `initialize`
+  instructions changed, intentionally); 7 `assess_agent` responses all
+  valid against the output schema (Ajv), client latency 0.26–0.47 s, server
+  p95 241 ms on a small post-deploy sample; REST without a key 401; pages
+  200, `/dashboard` 307; 0 × 5xx in 46 post-deploy calls.
+- First scheduled health check on this deployment: 2026-10-25 00:00 UTC,
+  HTTP 200.
+
+Rollback target: `dpl_EV5zzYQbX854WZwE4qbcAef5p51g` (`cdfca0b`), then
+`git revert c4f7a68`. Rolling back after the SDK release makes 0.2.0's
+`assessAgent` fail with `TOOL_ERROR`; `checkAgentTrust` is unaffected.
+
+**SDK 0.2.0 release.** Commit `ba51d06` ("chore(sdk): prepare
+@getagenttrust/sdk 0.2.0 release"): version, `SDK_VERSION` (User-Agent
+`agenttrust-sdk/0.2.0`) and CHANGELOG only. Its Vercel deployment
+`dpl_7UqwjRNqEJidCQJ2scpkUKpSdSZG` is READY with no site change, and the push
+didn't trigger a publish. Published to npm 2026-10-25 01:51:09 UTC
+(`latest`) by the "Publish SDK to npm" workflow (run 40152137609) through
+npm Trusted Publishing — no stored npm token.
+- Provenance: the SLSA v1 attestation names `agenttrust-ai/agenttrust`,
+  commit `ba51d06`, workflow `publish-sdk.yml`; registry `gitHead` is
+  `ba51d06`; shasum `c3ec7c794449973349e3aba3072f31cfb54b5336` matches the
+  tarball packed from the reviewed commit; `npm audit signatures` verifies
+  the attestation.
+- Compatibility: runtime exports versus 0.1.3 — 0 removed, 1 added
+  (`assessAgent`); `checkAgentTrust`, `assertTrusted`, `evaluatePolicy` and
+  `createAgentTrustClient` behave as in 0.1.3. The one type-level change:
+  the `AgentTrustClient` interface gains `assessAgent`, so code that
+  implements it itself must add the method (in the CHANGELOG).
+
+**External developer smoke test (read-only, no API key, fresh project
+outside the repository, Node.js v24.18.1).**
+- `npm install @getagenttrust/sdk@0.2.0` from `registry.npmjs.org`: 1
+  package, 0 vulnerabilities; installed version and `SDK_VERSION` 0.2.0.
+  ESM `import` and CommonJS `require()` work; the published README's
+  `assessAgent` example compiles as written (TypeScript strict, NodeNext).
+- `assessAgent` on the test agent (1,470 ms, first call):
+  `allow_with_caution`, confidence high; reasons `OWNERSHIP_VERIFIED`,
+  `REACHABLE_AT_LAST_CHECK`, `NO_RECENT_LIVE_CHECK`, `SUFFICIENT_HISTORY`;
+  initial risk low; 3 limitations, the first "Reachability is not safety";
+  `historical.trustDecision` equal to `checkAgentTrust`'s. On an unknown
+  URL (485 ms): `insufficient_evidence`, confidence none,
+  `UNKNOWN_ENDPOINT`.
+- `checkAgentTrust` on the test agent (423 ms): healthy, verified,
+  reliability 99.85 (fresh), recommended, confidence high. Unknown URL
+  (395 ms): `{ matched: false }`. `assertTrusted` with `minConfidence:
+  "medium"` passes (405 ms) and rejects the unknown URL with `NOT_TRUSTED`;
+  `evaluatePolicy` with a stricter policy gives "reliability score 99.85 is
+  below 100".
+- Error handling, all as documented: `timeoutMs: 1` → `TIMEOUT`; a
+  non-URL → `INVALID_URL`; a URL with credentials → `INVALID_URL`; a
+  pre-aborted signal → `ABORTED`; `allowUnknown: "false"` → `TypeError`.
+  The other four never reached the network (the pre-aborted case calls
+  `fetch` with an already-aborted signal); `TIMEOUT` was a real request
+  cut off after 1 ms.
+
+**Result: PASS.**
+
+**Remaining limitations:**
+- Node.js 18, 20 and 22 not individually tested (only Node.js 24).
+- `reasonCodes` is typed `string[]`; no reason-code union type is
+  exported.
+- Health checks run once a day, so after one failure an agent can stay
+  `insufficient_evidence` for up to 24 hours, and a new agent needs about
+  1–2 days to reach `allow_with_caution`.
+- `check_agent_trust` and `assess_agent` share the anonymous 10/min per IP
+  limit; bulk callers need REST with a key. REST was verified live only
+  as 401 without a key.
+- The Claude Connectors Directory listing was approved with one public
+  tool; the public connector now serves two. The listing decision is
+  pending.
+- Server latency figures come from a small post-deploy sample; the first
+  SDK call (1.47 s) included connection setup.
+
+**Recommended next priorities:**
+1. Decide the Claude Directory listing update (submit an update or ask
+   the review team) for the second public tool.
+2. Confirm the 2026-10-25 03:30 UTC discovery run and the cumulative 5xx
+   rate on this deployment. The automated check after it was inconclusive:
+   it ran late (06:06 UTC) and its metrics queries returned no data.
+3. Phase B: probe at activation and an early check cadence, so new or
+   recovering agents get a decision sooner.
+4. Test the SDK on Node.js 18, 20 and 22 (for example a version matrix in
+   CI).
+5. SDK 0.2.x: export a reason-code type.
+6. Optional: MCP Registry 1.1.0, raising vitest `hookTimeout` for the
+   memory-constrained machine, and Phase C (keyed controlled refresh).
+
+---
+
 ## HEALTH-CHECK USER-AGENT DOMAIN CORRECTED — LIVE — 2026-10-24
 
 **Change.** Commit `75c8a7e` ("fix(monitoring): correct health-check
