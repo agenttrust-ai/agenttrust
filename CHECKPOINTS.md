@@ -6,6 +6,77 @@ entry above the previous one, not by editing history.
 
 ---
 
+## /api/mcp HTTP 400s — SENTINELORACLE PROBE, NO FIX NEEDED — 2026-10-25
+
+**Observed.** Vercel Request Logs showed `POST /api/mcp` answering 400 on
+2026-10-25 around 17:22 and 17:27 KST (08:22 and 08:27 UTC), one with
+User-Agent `SentinelOracle/0.1`. Read-only investigation of Vercel logs and
+metrics, the route and the MCP libraries; no code, deployment or
+production change.
+
+**Findings.**
+- The 400s are steady, not new: typically about 270–290 a day on
+  `/api/mcp` from 2026-10-01 (fewer during the 2026-10-08–11 outage), about
+  520–540 a day from 2026-10-18. From 2026-10-18 to 2026-10-25 08:40 UTC,
+  **3,748 of about 3,870** were from
+  `SentinelOracle/0.1 (+https://glimind.com/opt-out; liveness-only, never
+  invokes tools)`, and it had 3,068 more from 2026-10-01 to 10-16. The
+  rest come from a handful of other probes (largest `rokmcp-collector/0.2`,
+  76). SentinelOracle never calls `/api/mcp/public`.
+- Its traffic is one cycle about every 5.6 minutes of five POSTs, always
+  **200 → 400 → 202 → 400 → 200** (for example 08:27:33.3–34.7 UTC). Glimind
+  documents the probe as `initialize` plus `tools/list`; the 200/202/200
+  match that handshake (`initialize`, `notifications/initialized`,
+  `tools/list`), so its normal MCP requests succeed. The two 400s are
+  additional requests the server rejects.
+- Normal MCP requests return 200/202: other monitors (FixterMonitoring,
+  mcpbeat, BrickBlueBot, Java and node clients) get almost no 400s.
+- No 5xx: SentinelOracle's requests returned only 200, 202 and 400, and
+  `/api/mcp` had no 5xx responses at all from 2026-10-18 to 2026-10-25
+  08:40 UTC.
+- Not caused by recent releases: the 400s predate SDK 0.2.0 (published
+  2026-10-25 01:51 UTC), which calls `/api/mcp/public`, not `/api/mcp`, and
+  sends `agenttrust-sdk/…`, not this User-Agent. SentinelOracle's
+  200 : 400 : 202 ratio is exactly 2 : 2 : 1 both on server MCP SDK 2.0.0
+  (3 days before Stage 2) and on 2.3.1 (after it), so the Stage 2 upgrade
+  didn't change it either.
+
+**Where 400 comes from.** Not from our code: `withMcpRequestLimit` only
+answers 413, `verifyToken` never rejects, and mcp-handler 2.1.1 parses JSON
+and passes everything to the MCP SDK (`legacy: "stateless"`). The SDK
+answers 400 for: invalid or empty JSON; a body that isn't a valid JSON-RPC
+message (for example missing `jsonrpc`, or `id: null`); an empty batch, a
+batch with an invalid element, more than 100 messages, or `initialize`
+batched with other requests; an unsupported `MCP-Protocol-Version` header
+(supported: 2025-11-25, 2025-06-18, 2025-03-26, 2024-11-05, 2024-10-07);
+and the 2026-07-28 checks — that version's header without its per-request
+`_meta` envelope, an invalid envelope, a missing or mismatched `Mcp-Method`
+or `Mcp-Name` header, `initialize` with a 2026-07-28 header, or an
+unsupported newer version. A wrong Accept or Content-Type is 406 or 415,
+not 400, and the bot's other requests pass those checks. Most of these were
+reproduced locally against the installed mcp-handler and SDK with the
+route's wrapper chain (42 requests, no production calls); the rest (an
+oversized batch, an invalid envelope, a mismatched rather than missing
+header) are read from the SDK source.
+
+**Likely cause:** malformed or incompatible MCP requests from the
+SentinelOracle client — an expected client error, answered with a JSON-RPC
+error as the MCP specification requires. Not a server-side compatibility
+issue.
+
+**Limitation:** exact request payloads were unavailable. Vercel logs record
+no bodies, and the route doesn't log SDK rejection reasons, so which
+condition the two requests hit isn't confirmed.
+
+**Decision:** no server-side fix and no client blocking for now (no 403 /
+`X-Sentinel-OptOut` opt-out). Options if needed later: log only the SDK's
+rejection reason (no bodies, header values or tokens) to confirm the
+condition; add tests pinning the 400/406/415 answers so an SDK upgrade
+can't change them unnoticed (none exist today; 413 and 405 are covered);
+or tell Glimind the pattern.
+
+---
+
 ## ASSESS_AGENT (PHASE A) LIVE; SDK @getagenttrust/sdk 0.2.0 PUBLISHED — 2026-10-25
 
 **What.** `assess_agent` gives an AI agent an immediate, machine-readable
