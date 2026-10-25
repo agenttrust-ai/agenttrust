@@ -6,6 +6,35 @@ entry above the previous one, not by editing history.
 
 ---
 
+## PRODUCTION DEPLOYMENT FOR 02fad80 VERIFIED — 2026-10-25
+
+**Deployment.** Commit `02fad80` ("docs(checkpoints): record /api/mcp HTTP
+400 investigation"), `CHECKPOINTS.md` only. Deployment
+`dpl_GH375XeUyfELTA69b6A2Scbcfv7J`, automatic on push, **READY**
+2026-10-25 08:52:31 UTC; `getagenttrust.com` points at it. The previous
+documentation deployment, `dpl_2k7YRviKbkg11xmYW6drVfNMAT7p` (`5d5e3ac`),
+was also READY (06:13:15 UTC); its earlier verification had been blocked.
+
+**Verified (read-only, 2026-10-25 08:54 UTC).**
+- Pages: `/`, `/docs`, `/check-agent-trust`, `/privacy`, `/login`,
+  `/llms.txt` and `/.well-known/agent-card.json` 200; `/dashboard` 307;
+  `/api/v1/agents` without a key 401.
+- Public MCP `/api/mcp/public`: `initialize` 200 (agenttrust 1.0.4,
+  protocol 2025-06-18); `tools/list` 200 with `check_agent_trust` and
+  `assess_agent`, both read-only. No tools were called. `/api/mcp`
+  `tools/list`: 6 tools, the first 5 identical to the committed snapshot.
+- 5xx: **0** of 34 function calls after the deploy (200 × 29, 202 × 2,
+  400 × 2, 401 × 1 — the 401 was this check); no 5xx or error-level logs.
+- Build: 0 errors. The build log's stderr lines are CLI status lines and
+  npm warnings (`cache-dir` config, install scripts not yet in
+  `allowScripts`).
+- The two 400s look like the SentinelOracle pattern recorded below, but
+  their exact cause was not verified.
+
+**Result: PASS.** No production code changes required.
+
+---
+
 ## /api/mcp HTTP 400s — SENTINELORACLE PROBE, NO FIX NEEDED — 2026-10-25
 
 **Observed.** Vercel Request Logs showed `POST /api/mcp` answering 400 on
