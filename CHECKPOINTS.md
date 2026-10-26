@@ -6,6 +6,26 @@ entry above the previous one, not by editing history.
 
 ---
 
+## PRODUCTION DEPLOYMENT FOR 8554a80 VERIFIED — 2026-10-26
+
+**Deployment.** Commit `8554a80` ("docs(checkpoints): record SDK 0.1.3
+Node.js compatibility test"), `CHECKPOINTS.md` only. Deployment
+`dpl_F29n5xxzj3hst6PCeSWZs3kRDtU9`, automatic on push, **READY**
+2026-10-26 12:19:20 UTC; `getagenttrust.com` points at it.
+
+**Verified (read-only, 2026-10-26 12:20 UTC).**
+- Homepage 200 (1.08 s).
+- Build: 0 errors, "Build Completed"; stderr only CLI status lines and npm
+  warnings, as in earlier builds.
+- 5xx: **0** of 24 function calls after the deploy (200 × 23, 202 × 1); no
+  5xx or error-level logs.
+- Observation window: about 1 minute after the deployment became READY,
+  so a small sample.
+
+**Result: PASS.**
+
+---
+
 ## SDK @getagenttrust/sdk 0.1.3 — NODE.JS 18, 20, 22 COMPATIBILITY SMOKE TEST — 2026-10-25
 
 **Scope.** Follow-up to the Node.js 24 smoke test below, whose open item
