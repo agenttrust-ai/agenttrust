@@ -6,6 +6,27 @@ entry above the previous one, not by editing history.
 
 ---
 
+## PRODUCTION DEPLOYMENT FOR f93e7a3 VERIFIED — 2026-10-26
+
+**Deployment.** Commit `f93e7a3` ("docs(checkpoints): record 8554a80
+deployment verification"), `CHECKPOINTS.md` only. Deployment
+`dpl_DNeP3CAyU5bbQjWkhGBirRq9Qqvj`, automatic on push, **READY**
+2026-10-26 12:26:06 UTC; `getagenttrust.com` points at it.
+
+**Verified (read-only, 2026-10-26 12:54 UTC).**
+- Homepage 200 (1.35 s).
+- Build: 0 errors, "Build Completed"; stderr only CLI status lines and npm
+  warnings, as in earlier builds.
+- 5xx: **0** of 148 function calls after the deploy (200 × 115, 202 × 21,
+  400 × 10, 405 × 2); no 5xx or error-level logs.
+- Observation window: about 28 minutes after the deployment was created.
+- The 400 and 405 responses are client responses; their root causes were
+  not investigated.
+
+**Result: PASS.**
+
+---
+
 ## PRODUCTION DEPLOYMENT FOR 8554a80 VERIFIED — 2026-10-26
 
 **Deployment.** Commit `8554a80` ("docs(checkpoints): record SDK 0.1.3
