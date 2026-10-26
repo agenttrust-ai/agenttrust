@@ -6,6 +6,68 @@ entry above the previous one, not by editing history.
 
 ---
 
+## SDK @getagenttrust/sdk 0.1.3 — NODE.JS 18, 20, 22 COMPATIBILITY SMOKE TEST — 2026-10-25
+
+**Scope.** Follow-up to the Node.js 24 smoke test below, whose open item
+was Node.js 18, 20 and 22. Tested on exactly **Node.js 18.20.8, 20.20.2
+and 22.23.4** — the latest release of each line — using the official
+nodejs.org macOS x64 binaries, each matching nodejs.org's published
+SHA-256, kept in a temporary directory (the system Node.js and nvm
+untouched). For each version, a separate project outside the repository
+installed `@getagenttrust/sdk@0.1.3` from `registry.npmjs.org` with that
+version's npm, plus `typescript@5.9.3` and the matching `@types/node`.
+
+| Test | 18.20.8 | 20.20.2 | 22.23.4 |
+|---|---|---|---|
+| npm install (published package; 4 packages, 0 vulnerabilities) | PASS | PASS | PASS |
+| `SDK_VERSION` | 0.1.3 | 0.1.3 | 0.1.3 |
+| ESM `import` (9 exports) | PASS | PASS | PASS |
+| CommonJS `require()` | **FAIL** — `ERR_REQUIRE_ESM` (unsupported, as documented) | PASS | PASS |
+| README TypeScript examples compile (5, 0 errors) | PASS (lib ES2023) | PASS (lib ES2023) | PASS (lib ES2024) |
+| README examples run (5, all exit 0) | PASS | PASS | PASS |
+| Production read-only `checkAgentTrust` | PASS (1,409 ms) | PASS (580 ms) | PASS (562 ms) |
+| Production read-only `assertTrusted` | PASS (624 ms) | PASS (330 ms) | PASS (348 ms) |
+| Mocked security and error-handling tests | 16/16 PASS | 16/16 PASS | 16/16 PASS |
+
+- TypeScript: strict, target ES2022, `module`/`moduleResolution` NodeNext,
+  `@types/node` for the same major version.
+- Production calls: anonymous and read-only, 7 per version (2 direct plus
+  the 5 README examples), 21 in total, spaced 65 s apart per version to
+  stay within the anonymous rate limit. Every version got the same answer
+  for the test agent: `support-bot`, healthy, verified, reliability 99.85
+  (fresh), recommended, confidence high. README example 1 printed
+  `healthy 99.85 { recommended: true, confidence: 'high', reasons: [] }`,
+  example 3 `Meets the policy`, example 4 `true`; examples 2 and 5 print
+  only when the endpoint isn't trusted or the call is rate limited, and
+  printed nothing.
+- Mocked tests (injected `fetch`, no network): 5 non-boolean policy values
+  → `TypeError`, plus a real-boolean control; 3 credential URLs →
+  `INVALID_URL`; `timeoutMs: 50` → `TIMEOUT`; 4 invalid URLs →
+  `INVALID_URL`; pre-aborted and mid-request aborts → `ABORTED`. 0
+  requests wherever none should be made.
+- On Node.js 20 and 22, `require()` loads all 9 exports, and a mocked
+  check and the credential rejection work through it.
+
+**Node.js 18 and `require()`.** Unsupported, as documented: the README
+says "use `import`, or `require()` on Node.js 20.19+ or 22.12+". Node.js
+18.20.8 fails with `Error [ERR_REQUIRE_ESM]: require() of ES Module
+…/@getagenttrust/sdk/dist/index.js … not supported.` A dynamic `import()`
+from CommonJS works on Node.js 18 (`SDK_VERSION` 0.1.3), as the error
+message suggests.
+
+**Not claimed.** Compatibility only for the exact versions tested: 18.20.8,
+20.20.2, 22.23.4, and 24.18.1 (entry below), on macOS x64. Not tested:
+earlier releases in each line (including 20.x before 20.19 and 22.x before
+22.12, where `require()` of an ES module isn't enabled by default), other
+platforms, and other runtimes. Node.js 18 is past end of life; its latest
+release, 18.20.8, is from 2025-03-27.
+
+**Result: PASS** on Node.js 20.20.2 and 22.23.4. **PASS on Node.js
+18.20.8 except CommonJS `require()`**, which is unsupported there, as
+documented.
+
+---
+
 ## SDK @getagenttrust/sdk 0.1.3 — INDEPENDENT EXTERNAL SMOKE TEST — 2026-10-25
 
 **Scope.** Fresh project outside the repository, Node.js v24.18.1,
