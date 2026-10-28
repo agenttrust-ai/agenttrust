@@ -6,6 +6,100 @@ entry above the previous one, not by editing history.
 
 ---
 
+## SDK @getagenttrust/sdk 0.2.0 — NODE.JS 18, 20, 22 COMPATIBILITY SMOKE TEST — 2026-10-28
+
+**Why.** 0.2.0 is npm `latest`, so it is what `npm install
+@getagenttrust/sdk` gives a new developer, but it had only been tested on
+Node.js 24 (Phase A / SDK 0.2.0 entry). The 0.1.3 results below don't
+cover it.
+
+**Scope.** Exactly **Node.js 18.20.8, 20.20.2 and 22.23.4** — the latest
+release of each line — on **macOS x64**, using the official nodejs.org
+binaries already checked against nodejs.org's SHA-256 (system Node.js and
+nvm untouched). For each version, a separate project outside the
+repository installed `@getagenttrust/sdk@0.2.0` from `registry.npmjs.org`
+with that version's npm, plus `typescript@5.9.3` and the matching
+`@types/node`.
+
+| # | Test | 18.20.8 | 20.20.2 | 22.23.4 |
+|---|---|---|---|---|
+| 1 | npm install (published tarball; 4 packages, 0 vulnerabilities) | PASS | PASS | PASS |
+| 2 | Package: version 0.2.0, no dependencies, `engines` `>=18`, 10 exports | PASS | PASS | PASS |
+| 3 | Provenance | PASS | PASS | PASS |
+| 4 | ESM `import` (`SDK_VERSION` 0.2.0) | PASS | PASS | PASS |
+| 5 | CommonJS `require()` | **FAIL** — `ERR_REQUIRE_ESM` (unsupported, as documented) | PASS | PASS |
+| 6 | README TypeScript examples compile (all 6, 0 errors) | PASS (lib ES2023) | PASS (lib ES2023) | PASS (lib ES2024) |
+| 7 | README examples run (all 6, exit 0) | PASS | PASS | PASS |
+| 8a | Production read-only `checkAgentTrust` | PASS (966 ms) | PASS (1,019 ms) | PASS (598 ms) |
+| 8b | Production read-only `assertTrusted` (README policy) | PASS (481 ms) | PASS (975 ms) | PASS (314 ms) |
+| 8c | Production read-only `assessAgent` | PASS (415 ms) | PASS (389 ms) | PASS (211 ms) |
+| 9 | Mocked security and error-handling tests | 25/25 PASS | 25/25 PASS | 25/25 PASS |
+
+**Evidence.**
+- Exports: `assessAgent`, `checkAgentTrust`, `assertTrusted`,
+  `evaluatePolicy`, `createAgentTrustClient`, `AgentTrustError`,
+  `NotTrustedError`, `SDK_VERSION`, `DEFAULT_ENDPOINT`,
+  `DEFAULT_TIMEOUT_MS`.
+- Provenance: `npm audit signatures` verifies the SDK's attestation on
+  every version; each lockfile's integrity equals the registry's
+  (`sha512-aMd1NBry…`); the SLSA v1 attestation names
+  `agenttrust-ai/agenttrust`, `refs/heads/main`, `publish-sdk.yml`, commit
+  `ba51d06`, run 40152137609, and its sha512 matches the tarball.
+- The published README has **six** TypeScript examples (0.2.0 added the
+  `assessAgent` one); all six were compiled (strict, target ES2022,
+  NodeNext, matching `@types/node`) and run. Output, identical on all three
+  versions: example 1 `healthy 100 { recommended: true, confidence:
+  'high', reasons: [] }`; example 3 `Meets the policy`; example 4
+  (`assessAgent`) `Proceed carefully:` with the four reason codes below and
+  the "Reachability is not safety" limitation; example 5 `true`. Examples
+  2 and 6 print only when the endpoint isn't trusted or the call is rate
+  limited, and printed nothing.
+- Production calls: anonymous and read-only only, 9 per version (3 direct
+  plus the 6 README examples), 27 in total, spaced 65 s apart per version
+  to stay within the anonymous rate limit; no API key. Same answers on
+  every version: `checkAgentTrust` — `support-bot`, healthy, verified,
+  reliability 100 (fresh), recommended, confidence high; `assertTrusted` —
+  passed; `assessAgent` — `allow_with_caution`, confidence high, risk low,
+  reasons `OWNERSHIP_VERIFIED`, `REACHABLE_AT_LAST_CHECK`,
+  `NO_RECENT_LIVE_CHECK`, `SUFFICIENT_HISTORY`, first limitation
+  "Reachability is not safety…".
+- Mocked tests (injected `fetch`, no network): the 16 from the 0.1.3 test
+  (5 non-boolean policy values → `TypeError` with 0 requests, plus a
+  real-boolean control; 3 credential URLs → `INVALID_URL`, 0 requests;
+  `timeoutMs: 50` → `TIMEOUT`; 4 invalid URLs → `INVALID_URL`; pre-aborted
+  and mid-request aborts → `ABORTED`), plus 9 for `assessAgent`: a valid
+  result is returned and calls the `assess_agent` tool; an unrecognized
+  decision → `PROTOCOL_ERROR`; an invalid URL and a credential URL →
+  `INVALID_URL`, 0 requests, password not in the message; `timeoutMs: 0` →
+  `TypeError` before any request; 50 ms timeout → `TIMEOUT`; pre-aborted
+  and mid-request aborts → `ABORTED`; a tool rate limit → `RATE_LIMITED`
+  with `retryAfterSeconds` 42.
+- On Node.js 20 and 22, `require()` loads all 10 exports, and a mocked
+  `assessAgent` (`insufficient_evidence`, `UNKNOWN_ENDPOINT`) and the
+  credential rejection work through it.
+
+**Node.js 18 and `require()`.** Unsupported, as documented (README and
+`llms.txt`: use `import`, or `require()` on Node.js 20.19+ or 22.12+): the
+package is ESM-only and Node.js 18 can't `require()` an ES module.
+Node.js 18.20.8 fails with `Error [ERR_REQUIRE_ESM]: require() of ES
+Module …/@getagenttrust/sdk/dist/index.js … not supported.` A dynamic
+`import()` from CommonJS works on Node.js 18 (shown with 0.1.3). No code
+change needed; a dual CJS build for an end-of-life Node.js line isn't
+worth the risk.
+
+**Tested vs not tested.** 0.2.0 has been tested on exactly 18.20.8,
+20.20.2 and 22.23.4 (this entry) and 24.18.1 (Phase A / SDK 0.2.0 entry),
+all on macOS x64. Not tested: earlier releases in each line (including
+20.x before 20.19 and 22.x before 22.12, where `require()` of an ES module
+isn't enabled by default), other platforms (Linux, Windows, ARM), and
+other runtimes (Deno, Bun, edge). No claim of compatibility beyond the
+versions listed.
+
+**Result: PASS** on the tested versions; the one FAIL is the documented
+Node.js 18 CommonJS limitation.
+
+---
+
 ## PRODUCTION DEPLOYMENT FOR f93e7a3 VERIFIED — 2026-10-26
 
 **Deployment.** Commit `f93e7a3` ("docs(checkpoints): record 8554a80
