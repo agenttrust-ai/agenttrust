@@ -7,15 +7,21 @@ import { Callout } from "@/components/ui/callout";
 import { SUPPORT_EMAIL } from "@/lib/contact";
 import {
   SDK_ASSERT_EXAMPLE,
+  SDK_CALL_GUIDE,
+  SDK_CALL_GUIDE_NOTE,
   SDK_CHECK_EXAMPLE,
+  SDK_DECISION_GUIDE,
   SDK_ERROR_CODES,
   SDK_EXAMPLE_ENDPOINT,
   SDK_EXAMPLE_URL,
+  SDK_FIRST_STEPS_EXAMPLE,
   SDK_INSTALL,
+  SDK_INSTALL_FIRST_STEPS,
   SDK_NPM_URL,
   SDK_PACKAGE,
   SDK_POLICY_OPTIONS,
   SDK_README_URL,
+  SDK_UNKNOWN_ENDPOINT,
 } from "./sdk-reference";
 import {
   BROWSER_CHECK_URL,
@@ -66,6 +72,7 @@ export const metadata: Metadata = {
  */
 const DOCS_NAV_ITEMS = [
   { id: "quick-start", label: "Quick Start" },
+  { id: "first-5-minutes", label: "First 5 minutes" },
   { id: "mcp", label: "MCP" },
   { id: "sdk", label: "SDK (TypeScript)" },
   { id: "getting-started", label: "Getting started (REST)" },
@@ -123,6 +130,15 @@ function Section({
       <div className={`mt-4 ${PROSE}`}>{children}</div>
     </section>
   );
+}
+
+/** Text from sdk-reference.ts, with its `backticked` spans rendered as code. */
+function WithCode({ text }: { text: string }) {
+  return text
+    .split("`")
+    .map((part, index) =>
+      index % 2 === 1 ? <code key={index}>{part}</code> : part,
+    );
 }
 
 /** One numbered step: a scannable title line, then its detail. */
@@ -285,6 +301,8 @@ export default function DocsPage() {
           <Code label="checkAgentTrust example">{SDK_CHECK_EXAMPLE}</Code>
           <p>
             Policies, errors and options: <a href="#sdk">SDK (TypeScript)</a>.
+            New to AgentTrust? Start with{" "}
+            <a href="#first-5-minutes">First 5 minutes</a>.
           </p>
 
           <h3 className="mt-2 font-medium text-foreground">
@@ -309,6 +327,89 @@ export default function DocsPage() {
             ownership verification for now — it&apos;s optional (see{" "}
             <a href="#verification">Step 5</a>).
           </Callout>
+        </Section>
+
+        <Section id="first-5-minutes" title="First 5 minutes">
+          <p>No account or API key. Node.js 18 or later.</p>
+          <p>
+            <strong>1. Install.</strong> <code>assessAgent</code> needs SDK
+            0.2.0 or later.
+          </p>
+          <Code label="Install the SDK (0.2.0 or later)">
+            {SDK_INSTALL_FIRST_STEPS}
+          </Code>
+          <p>
+            <strong>2. Check an endpoint.</strong> This checks AgentTrust&apos;s
+            own monitored test agent, so it returns a real result. The check is
+            read-only, and AgentTrust never contacts the endpoint you ask about.
+          </p>
+          <Code label="assessAgent example">{SDK_FIRST_STEPS_EXAMPLE}</Code>
+          <p>
+            <strong>3. Read the answer.</strong> <code>confidence</code>,{" "}
+            <code>reasonCodes</code> and <code>limitations</code> say why.
+          </p>
+          <ul className="flex flex-col gap-2">
+            {SDK_DECISION_GUIDE.map((row) => (
+              <li key={row.decision}>
+                <code>{row.decision}</code> — {row.meaning}{" "}
+                <strong>What to do:</strong> {row.action}
+              </li>
+            ))}
+          </ul>
+
+          <h3 className="mt-2 font-medium text-foreground">
+            Which call should I use?
+          </h3>
+          <ul className="flex flex-col gap-2">
+            {SDK_CALL_GUIDE.map((row) => (
+              <li key={row.call}>
+                <code>{row.call}</code> — <WithCode text={row.when} />{" "}
+                <strong>You get:</strong> <WithCode text={row.returns} />
+              </li>
+            ))}
+          </ul>
+          <p>
+            <WithCode text={SDK_CALL_GUIDE_NOTE} />
+          </p>
+
+          <h3 className="mt-2 font-medium text-foreground">
+            Unknown endpoints are an answer, not an error
+          </h3>
+          <p>{SDK_UNKNOWN_ENDPOINT.intro}</p>
+          <ul className="flex flex-col gap-2">
+            {SDK_UNKNOWN_ENDPOINT.results.map((result) => (
+              <li key={result}>
+                <WithCode text={result} />
+              </li>
+            ))}
+          </ul>
+          <p>
+            <WithCode text={SDK_UNKNOWN_ENDPOINT.errors} />
+          </p>
+          <p>
+            <WithCode text={SDK_UNKNOWN_ENDPOINT.handling} />
+          </p>
+
+          <h3 className="mt-2 font-medium text-foreground">Next steps</h3>
+          <ul className="flex flex-col gap-2">
+            <li>
+              <strong>Gate a real connection:</strong>{" "}
+              <a href={SDK_EXAMPLE_URL}>examples/check-before-connect.ts</a>{" "}
+              puts <code>assertTrusted</code> in front of an MCP client
+              connection.
+            </li>
+            <li>
+              <strong>Tune the gate:</strong> <code>minConfidence</code>,{" "}
+              <code>requireVerified</code> and <code>minReliabilityScore</code>{" "}
+              in the <code>assertTrusted</code> policy — see{" "}
+              <a href="#sdk">SDK (TypeScript)</a>.
+            </li>
+            <li>
+              <strong>Running an agent yourself?</strong> Register it so other
+              agents can check it — that needs an account and an API key:{" "}
+              <a href="#getting-started">Getting started</a>.
+            </li>
+          </ul>
         </Section>
 
         <Section id="mcp" title="MCP">

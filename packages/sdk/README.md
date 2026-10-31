@@ -6,6 +6,73 @@ The official SDK for [AgentTrust](https://getagenttrust.com) at **getagenttrust.
 
 AgentTrust monitors AI agents and MCP servers and returns a trust decision for an exact endpoint URL: its observed status, reliability score, endpoint-ownership verification and a `trustDecision` (`recommended`, `confidence`, `reasons`). The check is anonymous and read-only — no account or API key — and **AgentTrust never contacts the endpoint you ask about**.
 
+## First 5 minutes
+
+No account or API key. Node.js 18 or later.
+
+**1. Install.** `assessAgent` needs SDK 0.2.0 or later.
+
+```bash
+npm install @getagenttrust/sdk@^0.2.0
+```
+
+**2. Check an endpoint.** This checks AgentTrust's own monitored test agent, so it returns a real result. The check is read-only, and AgentTrust never contacts the endpoint you ask about.
+
+```ts
+import { assessAgent } from "@getagenttrust/sdk";
+
+// AgentTrust's own monitored test agent. Swap in the URL your agent is about to call.
+const assessment = await assessAgent("https://agenttrust-umber.vercel.app/api/test-agent");
+
+console.log(assessment.decision, assessment.confidence, assessment.reasonCodes);
+// e.g. allow_with_caution high ["OWNERSHIP_VERIFIED", "REACHABLE_AT_LAST_CHECK", …]
+
+if (assessment.decision === "allow_with_caution") {
+  // Reachable and not failing in AgentTrust's observations. Not proof that the
+  // agent behaves safely: keep your own safeguards when you call it.
+} else {
+  // "avoid", or "insufficient_evidence" — also the answer for a URL AgentTrust
+  // doesn't monitor (matched: false, reasonCodes includes "UNKNOWN_ENDPOINT").
+  console.log("Not calling it:", assessment.limitations);
+}
+```
+
+**3. Read the answer.** `confidence`, `reasonCodes` and `limitations` say why.
+
+| `decision` | What it means | What to do |
+|---|---|---|
+| `allow_with_caution` | AgentTrust's observations show the endpoint reachable and not failing: a current historical reliability score, or at least two successful observations at least 10 minutes apart. | Call it, with your own safeguards. It isn't proof that the agent behaves safely. |
+| `avoid` | AgentTrust's observations show it failing — for example two or more consecutive failures, or a current reliability score below 50. | Don't call it. |
+| `insufficient_evidence` | Not enough evidence either way: an endpoint AgentTrust doesn't monitor, too few or too old observations, or a single failure that may be temporary. | Don't treat it as approval — handle it as an unknown endpoint. |
+
+### Which call should I use?
+
+| Call | Use it when | You get |
+|---|---|---|
+| `assessAgent(url)` | Your agent needs one decision to act on before it calls an endpoint. | `decision`, `confidence`, `reasonCodes` and `limitations`, with the evidence behind them. |
+| `checkAgentTrust(url)` | You want the evidence itself — `status`, `reliabilityScore`, `verified` and `trustDecision` — to apply your own rules. | `{ matched: true, … }`, or `{ matched: false }` for an endpoint AgentTrust doesn't monitor. |
+| `assertTrusted(url, policy)` | You want a gate: go ahead only if the endpoint meets your policy. | The `checkAgentTrust` result, or a thrown `NotTrustedError`. |
+
+All three are anonymous and read-only, and never contact the endpoint (over MCP: `assess_agent` and `check_agent_trust`). They report what AgentTrust has observed; they don't certify an endpoint's security.
+
+### Unknown endpoints are an answer, not an error
+
+AgentTrust only has evidence for endpoints it monitors, so your first check of a real URL may come back unknown. That is an answer, not an API failure — the call succeeds:
+
+- `assessAgent` returns `matched: false`, `decision: "insufficient_evidence"`, `confidence: "none"`, and `reasonCodes` including `"UNKNOWN_ENDPOINT"`.
+- `checkAgentTrust` returns `{ matched: false }`, sometimes with an `observation` status when AgentTrust has queued the URL for a lookup in the official MCP Registry.
+- `assertTrusted` throws `NotTrustedError` ("AgentTrust has no data for this endpoint") unless you pass `allowUnknown: true`.
+
+Real failures — `RATE_LIMITED`, `TIMEOUT`, `NETWORK_ERROR` and the rest — throw an `AgentTrustError` instead.
+
+Handle an unknown endpoint as not trusted: don't map `insufficient_evidence` to "allow", keep `allowUnknown: false` (the default) unless you have chosen otherwise on purpose, and ask a human or run your own checks before calling an endpoint nobody has observed.
+
+### Next steps
+
+- **Gate a real connection:** [`examples/check-before-connect.ts`](https://github.com/agenttrust-ai/agenttrust/blob/main/packages/sdk/examples/check-before-connect.ts) puts `assertTrusted` in front of an MCP client connection.
+- **Tune the gate:** `minConfidence`, `requireVerified` and `minReliabilityScore` in the `assertTrusted` policy — see [Only connect if it's trusted](#only-connect-if-its-trusted).
+- **Running an agent yourself?** Register it so other agents can check it — that needs an account and an API key: [Getting started](https://getagenttrust.com/docs#getting-started).
+
 ## Install
 
 ```bash
@@ -198,7 +265,7 @@ try {
 
 ## Unknown endpoints
 
-AgentTrust only has data for endpoints it monitors. For any other URL, `checkAgentTrust` returns `{ matched: false }`, possibly with an `observation` status if AgentTrust has queued it for a lookup in the official MCP Registry. Because `assertTrusted` fails closed, an unknown endpoint is rejected unless you pass `allowUnknown: true` — decide deliberately which behaviour your agent needs, and consider asking a human before connecting to an unknown server.
+AgentTrust only has data for endpoints it monitors. For any other URL, `checkAgentTrust` returns `{ matched: false }`, possibly with an `observation` status if AgentTrust has queued it for a lookup in the official MCP Registry. Because `assertTrusted` fails closed, an unknown endpoint is rejected unless you pass `allowUnknown: true` — decide deliberately which behaviour your agent needs, and consider asking a human before connecting to an unknown server. `assessAgent` answers an unknown endpoint with `insufficient_evidence` and the reason code `UNKNOWN_ENDPOINT` — see [Unknown endpoints are an answer, not an error](#unknown-endpoints-are-an-answer-not-an-error).
 
 ## What a trust decision is — and isn't
 

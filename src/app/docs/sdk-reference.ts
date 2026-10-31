@@ -53,6 +53,101 @@ try {
   }
 }`;
 
+/**
+ * "First 5 minutes": one walkthrough shown in README.md, the SDK README,
+ * /docs and /llms.txt. src/lib/discovery/first-five-minutes.test.ts checks
+ * that all four carry this text and that its facts match the SDK and the
+ * assessment code.
+ */
+
+/** `assessAgent` needs SDK 0.2.0 or later. */
+export const SDK_INSTALL_FIRST_STEPS = `npm install ${SDK_PACKAGE}@^0.2.0`;
+
+export const SDK_FIRST_STEPS_EXAMPLE = `import { assessAgent } from "@getagenttrust/sdk";
+
+// AgentTrust's own monitored test agent. Swap in the URL your agent is about to call.
+const assessment = await assessAgent("${SDK_EXAMPLE_ENDPOINT}");
+
+console.log(assessment.decision, assessment.confidence, assessment.reasonCodes);
+// e.g. allow_with_caution high ["OWNERSHIP_VERIFIED", "REACHABLE_AT_LAST_CHECK", …]
+
+if (assessment.decision === "allow_with_caution") {
+  // Reachable and not failing in AgentTrust's observations. Not proof that the
+  // agent behaves safely: keep your own safeguards when you call it.
+} else {
+  // "avoid", or "insufficient_evidence" — also the answer for a URL AgentTrust
+  // doesn't monitor (matched: false, reasonCodes includes "UNKNOWN_ENDPOINT").
+  console.log("Not calling it:", assessment.limitations);
+}`;
+
+/** Every `assessAgent` decision, in the SDK's order: what it means, what to do. */
+export const SDK_DECISION_GUIDE: {
+  decision: string;
+  meaning: string;
+  action: string;
+}[] = [
+  {
+    decision: "allow_with_caution",
+    meaning:
+      "AgentTrust's observations show the endpoint reachable and not failing: a current historical reliability score, or at least two successful observations at least 10 minutes apart.",
+    action:
+      "Call it, with your own safeguards. It isn't proof that the agent behaves safely.",
+  },
+  {
+    decision: "avoid",
+    meaning:
+      "AgentTrust's observations show it failing — for example two or more consecutive failures, or a current reliability score below 50.",
+    action: "Don't call it.",
+  },
+  {
+    decision: "insufficient_evidence",
+    meaning:
+      "Not enough evidence either way: an endpoint AgentTrust doesn't monitor, too few or too old observations, or a single failure that may be temporary.",
+    action: "Don't treat it as approval — handle it as an unknown endpoint.",
+  },
+];
+
+/** Which SDK call to use. Backticks mark code. */
+export const SDK_CALL_GUIDE: { call: string; when: string; returns: string }[] =
+  [
+    {
+      call: "assessAgent(url)",
+      when: "Your agent needs one decision to act on before it calls an endpoint.",
+      returns:
+        "`decision`, `confidence`, `reasonCodes` and `limitations`, with the evidence behind them.",
+    },
+    {
+      call: "checkAgentTrust(url)",
+      when: "You want the evidence itself — `status`, `reliabilityScore`, `verified` and `trustDecision` — to apply your own rules.",
+      returns:
+        "`{ matched: true, … }`, or `{ matched: false }` for an endpoint AgentTrust doesn't monitor.",
+    },
+    {
+      call: "assertTrusted(url, policy)",
+      when: "You want a gate: go ahead only if the endpoint meets your policy.",
+      returns: "The `checkAgentTrust` result, or a thrown `NotTrustedError`.",
+    },
+  ];
+
+/** Said under the call guide: what all three calls are, and aren't. */
+export const SDK_CALL_GUIDE_NOTE =
+  "All three are anonymous and read-only, and never contact the endpoint (over MCP: `assess_agent` and `check_agent_trust`). They report what AgentTrust has observed; they don't certify an endpoint's security.";
+
+/** What an unknown endpoint looks like, and how to handle it. Backticks mark code. */
+export const SDK_UNKNOWN_ENDPOINT = {
+  intro:
+    "AgentTrust only has evidence for endpoints it monitors, so your first check of a real URL may come back unknown. That is an answer, not an API failure — the call succeeds:",
+  results: [
+    '`assessAgent` returns `matched: false`, `decision: "insufficient_evidence"`, `confidence: "none"`, and `reasonCodes` including `"UNKNOWN_ENDPOINT"`.',
+    "`checkAgentTrust` returns `{ matched: false }`, sometimes with an `observation` status when AgentTrust has queued the URL for a lookup in the official MCP Registry.",
+    '`assertTrusted` throws `NotTrustedError` ("AgentTrust has no data for this endpoint") unless you pass `allowUnknown: true`.',
+  ],
+  errors:
+    "Real failures — `RATE_LIMITED`, `TIMEOUT`, `NETWORK_ERROR` and the rest — throw an `AgentTrustError` instead.",
+  handling:
+    'Handle an unknown endpoint as not trusted: don\'t map `insufficient_evidence` to "allow", keep `allowUnknown: false` (the default) unless you have chosen otherwise on purpose, and ask a human or run your own checks before calling an endpoint nobody has observed.',
+};
+
 /** Every `TrustPolicy` option, in the SDK's order. */
 export const SDK_POLICY_OPTIONS: {
   name: string;

@@ -12,6 +12,7 @@ import DocsPage, { metadata } from "./page";
 import {
   SDK_ASSERT_EXAMPLE,
   SDK_CHECK_EXAMPLE,
+  SDK_FIRST_STEPS_EXAMPLE,
   SDK_ERROR_CODES,
   SDK_EXAMPLE_ENDPOINT,
   SDK_INSTALL,
@@ -98,7 +99,11 @@ describe("/docs SDK section", () => {
   });
 
   it("shows code examples that also appear verbatim in the SDK README (where they're compiled)", () => {
-    for (const example of [SDK_CHECK_EXAMPLE, SDK_ASSERT_EXAMPLE]) {
+    for (const example of [
+      SDK_CHECK_EXAMPLE,
+      SDK_ASSERT_EXAMPLE,
+      SDK_FIRST_STEPS_EXAMPLE,
+    ]) {
       expect(README).toContain(example);
       expect(text(html)).toContain(text(example));
     }

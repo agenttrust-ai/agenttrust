@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   SDK_CHECK_EXAMPLE,
   SDK_EXAMPLE_ENDPOINT,
+  SDK_FIRST_STEPS_EXAMPLE,
   SDK_INSTALL,
   SDK_NPM_URL,
 } from "@/app/docs/sdk-reference";
@@ -55,13 +56,16 @@ describe("README quick start (no account)", () => {
     );
   });
 
-  it("gives the SDK install command and only the compile-tested SDK example", () => {
+  it("gives the SDK install command and only compile-tested SDK examples", () => {
     expect(codeBlocks("bash")).toContain(SDK_INSTALL);
     const tsBlocks = codeBlocks("ts");
     expect(tsBlocks.length).toBeGreaterThan(0);
-    for (const block of tsBlocks) expect(block).toBe(SDK_CHECK_EXAMPLE);
-    // The same example is compiled by packages/sdk/src/readme.test.ts.
-    expect(SDK_README).toContain(SDK_CHECK_EXAMPLE);
+    // The quick start's checkAgentTrust example, and First 5 minutes' assessAgent one.
+    const examples = [SDK_CHECK_EXAMPLE, SDK_FIRST_STEPS_EXAMPLE];
+    for (const block of tsBlocks) expect(examples).toContain(block);
+    expect(quickStart()).toContain(SDK_CHECK_EXAMPLE);
+    // The same examples are compiled by packages/sdk/src/readme.test.ts.
+    for (const example of examples) expect(SDK_README).toContain(example);
   });
 
   it("links the browser checker, the SDK README and npm", () => {

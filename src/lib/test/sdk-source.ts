@@ -46,6 +46,26 @@ export const sdkMatchedResultFields = () => interfaceKeys("MatchedTrustResult");
 /** The fields of `trustDecision`. */
 export const sdkTrustDecisionFields = () => interfaceKeys("TrustDecision");
 
+/** The string members of `export type <name> = "a" | "b";` in types.ts, in order. */
+function stringUnion(name: string): string[] {
+  const union = read("types.ts").match(
+    new RegExp(`export type ${name} =([^;]*);`),
+  )?.[1];
+  if (!union)
+    throw new Error(`type ${name} not found in packages/sdk/src/types.ts`);
+  return [...union.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+}
+
+/** Every `assessAgent` decision (`AssessmentDecision`), in declaration order. */
+export const sdkAssessmentDecisions = () => stringUnion("AssessmentDecision");
+
+/** Every `assessAgent` confidence (`AssessmentConfidence`), in declaration order. */
+export const sdkAssessmentConfidences = () =>
+  stringUnion("AssessmentConfidence");
+
+/** The fields of an `assessAgent` result (`AgentAssessment`). */
+export const sdkAssessmentFields = () => interfaceKeys("AgentAssessment");
+
 /** The functions and classes the SDK exports at runtime (not types or constants). */
 export function sdkExportedFunctions(): string[] {
   return Object.entries(sdk)
