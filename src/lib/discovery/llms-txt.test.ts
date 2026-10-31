@@ -39,9 +39,9 @@ describe("llms.txt authentication facts", () => {
     expect(flat()).not.toMatch(/every request,? REST or MCP/i);
   });
 
-  it("says check_agent_trust over MCP needs no account or API key, at the public connector", () => {
+  it("says check_agent_trust and assess_agent over MCP need no account or API key, at the public connector", () => {
     expect(flat()).toMatch(
-      /The MCP tool `check_agent_trust` at \/api\/mcp\/public is anonymous and read-only: no AgentTrust account or API key/,
+      /The MCP tools `check_agent_trust` and `assess_agent` at \/api\/mcp\/public are anonymous and read-only: no AgentTrust account or API key/,
     );
     // The workflow's no-key lookup step points at the public connector too.
     expect(flat()).toContain(
@@ -49,8 +49,10 @@ describe("llms.txt authentication facts", () => {
     );
   });
 
-  it("still says REST and every other MCP tool require an API key", () => {
-    expect(flat()).toMatch(/Every REST `\/api\/v1\/\*` request, and every other MCP tool, requires an API key/);
+  it("still says REST and every MCP tool except the two anonymous ones require an API key", () => {
+    expect(flat()).toMatch(
+      /Every REST `\/api\/v1\/\*` request, and every MCP tool except `check_agent_trust` and `assess_agent`, requires an API key/,
+    );
     expect(flat()).toContain("Every `/api/v1/*` request requires `Authorization: Bearer <API_KEY>`.");
   });
 

@@ -242,7 +242,9 @@ describe("/api/mcp/public", () => {
       const { result } = await callTool("check_agent_trust", args, ip);
       expect(result?.isError).toBeFalsy();
     }
-    const { result } = await callTool("check_agent_trust", args, ip);
+    const { status, result } = await callTool("check_agent_trust", args, ip);
+    // In-band: still HTTP 200, as /docs and /llms.txt say — not a 429.
+    expect(status).toBe(200);
     expect(result?.isError).toBe(true);
     expect(JSON.stringify(result)).toMatch(/RATE_LIMITED/);
     expect(JSON.stringify(result)).toMatch(/retryAfterSeconds/);

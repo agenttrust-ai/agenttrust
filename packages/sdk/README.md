@@ -214,7 +214,7 @@ switch (assessment.decision) {
 
 ## Options
 
-`createAgentTrustClient(options?)` returns a client with its own settings; `checkAgentTrust` and `assertTrusted` are its methods:
+`createAgentTrustClient(options?)` returns a client with its own settings; `checkAgentTrust`, `assertTrusted` and `assessAgent` are its methods:
 
 ```ts
 import { createAgentTrustClient } from "@getagenttrust/sdk";
@@ -241,11 +241,11 @@ Invalid client options, per-call options or policies are programming errors: the
 | `code` | When |
 |---|---|
 | `INVALID_URL` | Not an absolute `http://` or `https://` URL, or it contains a username or password. No request is made. |
-| `RATE_LIMITED` | AgentTrust's anonymous limit (10 checks/minute per IP) was reached. `retryAfterSeconds` says when to retry, when known. The SDK never retries on its own. |
+| `RATE_LIMITED` | AgentTrust's anonymous limit was reached: 10 checks per minute per IP address, shared by `checkAgentTrust`, `assertTrusted` and `assessAgent`, and 300 per minute across all anonymous callers. `retryAfterSeconds` says when to retry, when known. The SDK never retries on its own. |
 | `TIMEOUT` / `ABORTED` | The timeout elapsed, or your `signal` aborted. |
 | `NETWORK_ERROR` | AgentTrust couldn't be reached. |
 | `HTTP_ERROR` | A non-2xx response; see `status`. |
-| `PROTOCOL_ERROR` | The response wasn't a valid MCP / `check_agent_trust` result. |
+| `PROTOCOL_ERROR` | The response wasn't a valid MCP / `check_agent_trust` or `assess_agent` result. |
 | `TOOL_ERROR` | The tool reported an error (e.g. input the server rejected). |
 | `NOT_TRUSTED` | `NotTrustedError` from `assertTrusted`; see `failures` and `result`. |
 

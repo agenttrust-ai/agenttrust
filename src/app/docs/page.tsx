@@ -30,6 +30,12 @@ import {
   PUBLIC_MCP_URL,
 } from "./quick-start";
 import {
+  ANONYMOUS_LIMIT_OVER_TEXT,
+  ANONYMOUS_LIMIT_TEXT,
+  KEYED_LIMIT,
+  KEYED_LIMIT_LABEL,
+} from "./rate-limits";
+import {
   AUTHENTICATED_MCP_URL,
   CLAUDE_CODE_ADD_AUTHENTICATED_COMMAND,
   CLAUDE_DIRECTORY_URL,
@@ -525,8 +531,10 @@ export default function DocsPage() {
               }
             </code>{" "}
             for a known public+active agent. Anonymous calls are rate-limited
-            per caller IP; a <code>429</code> carries{" "}
-            <code>retryAfterSeconds</code>. See{" "}
+            per caller IP; over the limit the tool returns an error result with
+            the code <code>RATE_LIMITED</code> and{" "}
+            <code>retryAfterSeconds</code> (see{" "}
+            <a href="#rate-limits">Rate limits</a>). See{" "}
             <a href="/check-agent-trust">Check an AI Agent Before You Invoke It</a>{" "}
             for a plain-language walkthrough of this check.
           </Callout>
@@ -598,12 +606,15 @@ Response: structuredContent.agents[0] has the exact same fields as
             <a href={SDK_NPM_URL}>
               <code>{SDK_PACKAGE}</code>
             </a>{" "}
-            is the official TypeScript SDK for the anonymous trust check: it
-            calls <code>check_agent_trust</code> on{" "}
-            <code>{PUBLIC_MCP_URL}</code> and returns typed results and errors.
-            No API key or account. It runs on Node.js 18 or later and is an ES
-            module; <code>require()</code> works on Node.js 20.19+ and 22.12+.
-            Use version 0.1.2 or later — 0.1.0 and 0.1.1 are deprecated.
+            is the official TypeScript SDK for AgentTrust&apos;s two anonymous
+            checks: <code>checkAgentTrust</code> and <code>assertTrusted</code>{" "}
+            call <code>check_agent_trust</code>, and <code>assessAgent</code>{" "}
+            calls <code>assess_agent</code>, on <code>{PUBLIC_MCP_URL}</code>,
+            with typed results and errors. No API key or account. It runs on
+            Node.js 18 or later and is an ES module; <code>require()</code>{" "}
+            works on Node.js 20.19+ and 22.12+. Use version 0.2.0 or later —
+            the current release, and the first with <code>assessAgent</code>;
+            0.1.0 and 0.1.1 are deprecated.
           </p>
           <Code label="Install the SDK">{SDK_INSTALL}</Code>
           <p>
@@ -800,11 +811,15 @@ Response: structuredContent.agents[0] has the exact same fields as
               Authenticate — for REST and the keyed MCP tools, a human creates an
               API key once, via the dashboard (see below), and it&apos;s sent as{" "}
               <code>Authorization: Bearer &lt;API_KEY&gt;</code>. The anonymous
-              MCP tool <code>check_agent_trust</code> needs no key.
+              MCP tools <code>check_agent_trust</code> and{" "}
+              <code>assess_agent</code> need no key.
             </li>
             <li>
               Look up the agent by the URL you&apos;re about to call:{" "}
-              <code>GET /api/v1/agents?endpoint_url=&lt;url&gt;</code>
+              <code>GET /api/v1/agents?endpoint_url=&lt;url&gt;</code> (API
+              key), or with no key, <code>check_agent_trust</code> over MCP at{" "}
+              <code>/api/mcp/public</code> or the{" "}
+              <a href="#sdk">SDK</a>.
             </li>
             <li>
               Receive trust information: reliability score, status, verification
@@ -852,12 +867,20 @@ Response: structuredContent.agents[0] has the exact same fields as
 
         <Section id="rate-limits" title="Rate limits">
           <p>
-            100 requests / 60 seconds, per API key, fixed window. Every response
+            <WithCode text={ANONYMOUS_LIMIT_TEXT} />
+          </p>
+          <p>
+            <WithCode text={ANONYMOUS_LIMIT_OVER_TEXT} />
+          </p>
+          <p>
+            <WithCode text={KEYED_LIMIT_LABEL} /> {KEYED_LIMIT.perKey}{" "}
+            requests / {KEYED_LIMIT.windowSeconds} seconds, per API key, fixed
+            window. Every response
             carries <code>X-RateLimit-Limit</code>,{" "}
             <code>X-RateLimit-Remaining</code>, and{" "}
             <code>X-RateLimit-Reset</code> headers.
           </p>
-          <p>Over the limit:</p>
+          <p>Over the API-key limit:</p>
           <Code>{`429
 Retry-After: 37
 {"error":{"code":"RATE_LIMITED","message":"Rate limit exceeded. Try again later."}}`}</Code>
@@ -1081,9 +1104,10 @@ Authorization: Bearer at_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}</Code>
 
         <Section id="not-built" title="Not yet built">
           <p>
-            The official SDK covers only the anonymous trust check (see{" "}
-            <a href="#sdk">SDK</a>); for everything else, use the REST API and
-            MCP tools above directly. No programmatic/self-service account
+            The official SDK covers only the two anonymous checks,{" "}
+            <code>check_agent_trust</code> and <code>assess_agent</code> (see{" "}
+            <a href="#sdk">SDK</a>); for everything else — registering agents,
+            and the REST API and keyed MCP tools — use those directly. No programmatic/self-service account
             creation — a human creates the account and first API key. No
             batch/multi-URL lookup — call <code>?endpoint_url=</code> once per
             URL.

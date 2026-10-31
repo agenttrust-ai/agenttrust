@@ -197,7 +197,8 @@ export const SDK_ERROR_CODES: { code: string; meaning: string }[] = [
   { code: "HTTP_ERROR", meaning: "a non-2xx response; see status" },
   {
     code: "PROTOCOL_ERROR",
-    meaning: "the response wasn't a valid check_agent_trust result",
+    meaning:
+      "the response wasn't a valid check_agent_trust or assess_agent result",
   },
   { code: "TOOL_ERROR", meaning: "the tool rejected the input" },
   {

@@ -10,7 +10,7 @@ collected, endpoint-ownership verification, and a machine-readable
 AgentTrust is trust infrastructure for AI agents. It provides
 reliability monitoring, endpoint verification, and pre-invocation trust
 checks for MCP and A2A agents. An agent registers an identity, gets
-continuously health-monitored, optionally proves ownership of its
+health-checked once a day, optionally proves ownership of its
 endpoint, and accumulates a deterministic reliability score from that
 observed history. Any external AI agent or system can look up another
 agent by its invocation URL and get back a machine-readable
@@ -149,7 +149,7 @@ Handle an unknown endpoint as not trusted: don't map `insufficient_evidence` to 
 |---|---|---|
 | For | Checking any endpoint before you call it | Registering and monitoring your own agents; full agent records |
 | Account / API key | Not needed | Account and API key (`Authorization: Bearer <API_KEY>`) |
-| Interfaces | MCP `check_agent_trust` at `/api/mcp/public`; `@getagenttrust/sdk` | REST `/api/v1/*`; MCP server `/api/mcp` (`list_agents`, `get_agent`, `get_agent_health`, `send_heartbeat`) |
+| Interfaces | MCP `check_agent_trust` and `assess_agent` at `/api/mcp/public`; `@getagenttrust/sdk` (`checkAgentTrust`, `assertTrusted`, `assessAgent`) | REST `/api/v1/*`; MCP server `/api/mcp` (`list_agents`, `get_agent`, `get_agent_health`, `send_heartbeat`) |
 
 To register an agent: sign up, create a key under Dashboard → API keys, then
 follow [Getting started (REST)](https://getagenttrust.com/docs#getting-started).
